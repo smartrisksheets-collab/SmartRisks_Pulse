@@ -1,0 +1,8 @@
+[lint]
+ignore = [
+    "E402",   # module-level import not at top of file (intentional in conftest and services)
+    "E701",   # multiple statements on one line (style choice)
+    "E741",   # ambiguous variable name `l` (in pdf/email services)
+    "F401",   # imported but unused (many are re-exports in models/__init__.py)
+    "F841",   # local variable assigned but never used
+]
