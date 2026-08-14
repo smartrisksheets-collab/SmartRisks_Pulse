@@ -1,0 +1,11 @@
+class QuotaExceededError(Exception): pass
+class WorkspaceLimitError(Exception): pass
+class PermissionDeniedError(Exception): pass
+class ResourceNotFoundError(Exception): pass
+class TrialExpiredError(Exception): pass
+class PlanExpiredError(Exception): pass
+class DuplicateResourceError(Exception): pass
+class InvalidCredentialsError(Exception): pass
+class InvalidTokenError(Exception): pass
+class InvalidPINError(Exception): pass
+class ValidationError(Exception): pass
