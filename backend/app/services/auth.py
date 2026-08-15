@@ -1,9 +1,13 @@
+import logging
+
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
+
+logger = logging.getLogger(__name__)
 from datetime import timedelta, datetime, timezone
 from uuid import UUID
 from app.core.config import settings
-from app.core.security import create_access_token, create_refresh_token, verify_pin, decode_token, hash_password, verify_password
+from app.core.security import create_access_token, create_refresh_token, create_reset_token, verify_pin, decode_token, hash_password, verify_password
 from app.core.exceptions import (
     InvalidCredentialsError, ResourceNotFoundError,
     InvalidPINError, WorkspaceLimitError, InvalidTokenError,
@@ -220,6 +224,35 @@ async def refresh_access_token(db: AsyncSession, refresh_token: str) -> dict:
     token = _build_workspace_token(account, member, tenant)
     new_refresh = create_refresh_token(str(account_id), account.token_version)  # type: ignore[arg-type]
     return {"access_token": token, "refresh_token": new_refresh}
+
+
+async def forgot_password(db: AsyncSession, email: str, frontend_url: str) -> dict:
+    from app.services.email import send_reset_email
+    account = await db.scalar(select(Account).where(Account.email == email.lower()))
+    if account and account.password_hash:
+        token = create_reset_token(str(account.id), str(account.email))
+        reset_link = f"{frontend_url}/reset-password?token={token}"
+        try:
+            send_reset_email(to=str(account.email), reset_link=reset_link)
+        except Exception as exc:
+            logger.error("forgot_password: email failed | %s", exc)
+    # Always return success to avoid leaking whether email exists
+    return {"message": "If that email exists, a reset link has been sent."}
+
+
+async def reset_password(db: AsyncSession, token: str, new_password: str) -> dict:
+    claims = decode_token(token)
+    if not claims or claims.get("type") != "reset":
+        raise InvalidTokenError("Invalid or expired reset link.")
+    account_id = UUID(claims["sub"])
+    account = await db.get(Account, account_id)
+    if not account:
+        raise InvalidTokenError("Invalid or expired reset link.")
+    account.password_hash = hash_password(new_password)  # type: ignore[assignment]
+    account.token_version = (int(account.token_version or 1)) + 1  # type: ignore[assignment]
+    db.add(account)
+    await db.flush()
+    return {"message": "Password updated. Please sign in with your new password."}
 
 
 async def register(db: AsyncSession, email: str, password: str, name: str) -> dict:

@@ -46,3 +46,12 @@ class ValidateInviteResponse(BaseModel):
 class AcceptInviteRequest(BaseModel):
     token:    str
     password: str
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    token:    str
+    password: str

@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import { apiPost } from '../services/api';
 import { validateEmail } from '../utils/validation';
 
 export default function ForgotPassword() {
@@ -21,10 +21,7 @@ export default function ForgotPassword() {
     }
     setLoading(true);
     try {
-      const { error: sbError } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/reset-password`,
-      });
-      if (sbError) throw new Error(sbError.message);
+      await apiPost('/api/v1/auth/forgot-password', { email });
       setSent(true);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to send reset email.');
@@ -50,7 +47,7 @@ export default function ForgotPassword() {
         <h2>Reset your<br /><span style={{ color: '#01b88e' }}>password.</span></h2>
         <p className="auth-left-sub">
           Enter the email address on your account and we will send you a link to
-          reset your password. The link expires in 60 minutes.
+          reset your password. The link expires in 15 minutes.
         </p>
         <div className="auth-left-footer">
           &copy; {new Date().getFullYear()} SmartRisk Pulse. All rights reserved.

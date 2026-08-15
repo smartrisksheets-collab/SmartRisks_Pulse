@@ -21,6 +21,15 @@ def verify_password(plain: str, hashed: str) -> bool:
     return bcrypt.checkpw(plain.encode(), hashed.encode())
 
 
+def create_reset_token(account_id: str, email: str) -> str:
+    expire = datetime.now(timezone.utc) + timedelta(minutes=15)
+    return jwt.encode(
+        {"sub": account_id, "email": email, "type": "reset", "exp": expire},
+        settings.JWT_SECRET,
+        algorithm=settings.JWT_ALGORITHM,
+    )
+
+
 def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
     to_encode = data.copy()
     to_encode["type"] = "access"

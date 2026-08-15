@@ -1,6 +1,7 @@
 import { useState, useEffect, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import { useSearchParams } from 'react-router-dom';
+import { apiPost } from '../services/api';
 import {
   validatePassword, validateConfirm,
   getPasswordStrength, type PasswordStrength,
@@ -35,12 +36,12 @@ export default function ResetPassword() {
   const [confirmErr, setConfirmErr]   = useState('');
   const [strength, setStrength]       = useState<PasswordStrength | ''>('');
 
+  const [searchParams] = useSearchParams();
+
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'PASSWORD_RECOVERY') setReady(true);
-    });
-    return () => subscription.unsubscribe();
-  }, []);
+    const token = searchParams.get('token');
+    if (token) setReady(true);
+  }, [searchParams]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -54,8 +55,8 @@ export default function ResetPassword() {
     }
     setLoading(true);
     try {
-      const { error: sbError } = await supabase.auth.updateUser({ password });
-      if (sbError) throw new Error(sbError.message);
+      const token = searchParams.get('token') ?? '';
+      await apiPost('/api/v1/auth/reset-password', { token, password });
       setDone(true);
       setTimeout(() => navigate('/login'), 2500);
     } catch (err: unknown) {

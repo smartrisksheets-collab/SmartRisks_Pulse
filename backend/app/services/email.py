@@ -731,6 +731,39 @@ def send_invite_email(
     logger.info("Invite email sent | to=%s | workspace=%s", to, workspace_name)
 
 
+def send_reset_email(to: str, reset_link: str) -> None:
+    """Password reset email. Link expires in 15 minutes."""
+    _init()
+    if not settings.RESEND_FROM_EMAIL:
+        raise ValueError("RESEND_FROM_EMAIL is not configured")
+    body = (
+        f'<tr><td style="padding:36px;">'
+        f'<p style="font-size:15px;color:#1e293b;margin:0 0 16px;">Hi there,</p>'
+        f'<p style="font-size:14px;color:#475569;line-height:1.7;margin:0 0 24px;">'
+        f'We received a request to reset your SmartRisk Pulse password. '
+        f'Click the button below to set a new password. '
+        f'This link expires in <strong>15 minutes</strong>.</p>'
+        f'<table cellpadding="0" cellspacing="0" border="0" style="margin-bottom:28px;">'
+        f'<tr><td style="background:#1F2854;border-radius:8px;padding:12px 26px;">'
+        f'<a href="{reset_link}" style="font-size:14px;font-weight:700;'
+        f'color:#ffffff;text-decoration:none;">Reset Password &#8594;</a>'
+        f'</td></tr></table>'
+        f'<p style="font-size:13px;color:#94a3b8;margin:0 0 16px;">'
+        f'If you did not request this, you can safely ignore this email.</p>'
+        f'<p style="font-size:14px;color:#475569;margin:0;">Best regards,<br>'
+        f'<strong style="color:#1e293b;">The SmartRisk Team</strong></p>'
+        f'</td></tr>'
+    )
+    params: resend.Emails.SendParams = {
+        "from":    settings.RESEND_FROM_EMAIL,
+        "to":      [to],
+        "subject": "Reset your SmartRisk Pulse password",
+        "html":    _ext_wrap("SmartRisk Pulse", body),
+    }
+    resend.Emails.send(params)
+    logger.info("Reset email sent | to=%s", to)
+
+
 async def send_brief_email(
     to: str,
     bcc: list[str],

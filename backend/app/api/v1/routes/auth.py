@@ -2,7 +2,12 @@ from fastapi import APIRouter, Depends, Response, Cookie, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.dependencies import get_db, get_current_account
 from app.core.rate_limit import limiter
-from app.schemas.auth import LoginRequest, RegisterRequest, WorkspaceSelectRequest, PINVerifyRequest, AcceptInviteRequest
+from app.core.config import settings
+from app.schemas.auth import (
+    LoginRequest, RegisterRequest, WorkspaceSelectRequest,
+    PINVerifyRequest, AcceptInviteRequest,
+    ForgotPasswordRequest, ResetPasswordRequest,
+)
 from app.services import auth as auth_service
 from app.services import invite as invite_service
 
@@ -109,4 +114,26 @@ async def accept_invite(
 ):
     result = await invite_service.accept_invite(db, payload.token, payload.password)
     _set_refresh(response, result)
+    return {"data": result, "error": None, "meta": {}}
+
+
+@router.post("/forgot-password")
+@limiter.limit("3/minute")
+async def forgot_password(
+    request: Request,
+    payload: ForgotPasswordRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    result = await auth_service.forgot_password(db, payload.email, settings.FRONTEND_URL)
+    return {"data": result, "error": None, "meta": {}}
+
+
+@router.post("/reset-password")
+@limiter.limit("5/minute")
+async def reset_password(
+    request: Request,
+    payload: ResetPasswordRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    result = await auth_service.reset_password(db, payload.token, payload.password)
     return {"data": result, "error": None, "meta": {}}
