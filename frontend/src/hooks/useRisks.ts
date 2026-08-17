@@ -105,7 +105,6 @@ export function useRisks(params: ListRisksParams = {}) {
     total,
     loading:       query.isLoading || query.isFetching,
     error:         query.error instanceof Error ? query.error.message : null,
-    dataUpdatedAt: query.dataUpdatedAt,
     create,
     update,
     remove,

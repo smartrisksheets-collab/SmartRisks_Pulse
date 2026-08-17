@@ -1,7 +1,7 @@
 // src/pages/RiskRegister.tsx
 
 import { useEffect, useState, useCallback } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQueryClient, useQuery, keepPreviousData } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { useRisks }        from '../hooks/useRisks';
 import { useLookups } from '../hooks/useLookups';
@@ -23,7 +23,7 @@ import ExternalLinkModal        from '../components/risks/ExternalLinkModal';
 import PendingSubmissionsModal  from '../components/risks/PendingSubmissionsModal';
 import RecycleBinModal          from '../components/recycle/RecycleBinModal';
 import { useAuth }              from '../hooks/useAuth';
-import type { Risk, RiskCreate, RiskStats, AIInsightRequest, AIInsightResult } from '../types/risk';
+import type { Risk, RiskCreate, AIInsightRequest, AIInsightResult } from '../types/risk';
 
 const PAGE_SIZE = 5;
 
@@ -55,9 +55,6 @@ export default function RiskRegister() {
   const [debouncedSearch, setDebouncedSearch]   = useState('');
   const [debouncedRiskId, setDebouncedRiskId]   = useState('');
 
-  // Stats
-  const [stats, setStats]               = useState<RiskStats | null>(null);
-  const [statsLoading, setStatsLoading] = useState(true);
 
   // Risk list query — params declared after all state is initialised
   const riskParams: ListRisksParams = {
@@ -69,7 +66,7 @@ export default function RiskRegister() {
     owner:     owner           || undefined,
     category:  category        || undefined,
   };
-  const { risks, quota, total, loading, dataUpdatedAt, create, update, remove, importRisks, generateAI } = useRisks(riskParams);
+    const { risks, quota, total, loading, create, update, remove, importRisks, generateAI } = useRisks(riskParams);
 
   // Modals
   const [showAdd, setShowAdd]       = useState(false);
@@ -118,21 +115,22 @@ export default function RiskRegister() {
     return () => clearTimeout(t);
   }, [riskId]);
 
-  // Stats — re-fetch whenever filters or data changes
-  useEffect(() => {
-    let cancelled = false;
-    const params: StatsParams = {};
-    if (category)        params.category  = category;
-    if (level)           params.level     = level;
-    if (treatment)       params.treatment = treatment;
-    if (owner)           params.owner     = owner;
-    if (debouncedSearch) params.search    = debouncedSearch;
-    getStats(params)
-      .then(data  => { if (!cancelled) setStats(data); })
-      .catch(console.error)
-      .finally(() => { if (!cancelled) setStatsLoading(false); });
-    return () => { cancelled = true; };
-  }, [dataUpdatedAt, category, level, treatment, owner, debouncedSearch]);
+  // Stats query — cached by filter combination, invalidated by useRisks mutations
+  const statsParams: StatsParams = {
+    category:  category        || undefined,
+    level:     level           || undefined,
+    treatment: treatment       || undefined,
+    owner:     owner           || undefined,
+    search:    debouncedSearch || undefined,
+  };
+  const statsQuery   = useQuery({
+    queryKey:        ['risks', 'stats', statsParams],
+    queryFn:         () => getStats(statsParams),
+    staleTime:       2 * 60 * 1000,
+    placeholderData: keepPreviousData,
+  });
+  const stats        = statsQuery.data    ?? null;
+  const statsLoading = statsQuery.isLoading;
 
   function clearFilters() {
     setRiskId(''); setCategory(''); setOwner('');
