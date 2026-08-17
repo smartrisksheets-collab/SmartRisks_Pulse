@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { applyBrandColors } from "../utils/brand";
+import { useAuthStore } from "../store/authStore";
 import {
   fetchNotificationPrefs,
   fetchSettings,
@@ -20,10 +21,11 @@ const NOTIF_KEY = ["notification_prefs"] as const;
 
 
 export function useSettings() {
-  const queryClient = useQueryClient();
-  const setCurrency = useSettingsStore((s) => s.setCurrency);
-  const setLogoUrl = useSettingsStore((s) => s.setLogoUrl);
-  const setTheme = useUIStore((s) => s.setTheme);
+  const queryClient   = useQueryClient();
+  const setCurrency   = useSettingsStore((s) => s.setCurrency);
+  const setLogoUrl    = useSettingsStore((s) => s.setLogoUrl);
+  const setTheme      = useUIStore((s) => s.setTheme);
+  const { claims, workspaces, setWorkspaces } = useAuthStore();
 
   const query = useQuery<SettingsData>({
     queryKey: SETTINGS_KEY,
@@ -39,6 +41,13 @@ export function useSettings() {
       applyBrandColors(data.primary_color, data.accent_color);
       setTheme(data.theme_mode as "light" | "dark" | "auto");
       setLogoUrl(data.logo_url ?? null);
+      // Sync updated workspace name into auth store so sidebar reflects immediately
+      if (data.name && claims?.active_tenant_id) {
+        const updated = workspaces.map((w) =>
+          w.tenant_id === claims.active_tenant_id ? { ...w, name: data.name } : w
+        );
+        setWorkspaces(updated);
+      }
     },
   });
 
