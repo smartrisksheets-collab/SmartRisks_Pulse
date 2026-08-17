@@ -1,31 +1,44 @@
+import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useAuthStore } from './store/authStore';
 import type { Permissions } from './types/auth';
 import type { ModuleKey } from './types/api';
 import { ToastProvider } from './components/layout/Toast';
-import NotFound from './pages/NotFound';
-import PageShell from './components/layout/PageShell';
-import Login from './pages/Login';
-import Register from './pages/Register';
+
+// ── Eager: shell, auth flow, and the two most-visited app pages ──────────
+import NotFound       from './pages/NotFound';
+import PageShell      from './components/layout/PageShell';
+import Login          from './pages/Login';
+import Register       from './pages/Register';
 import ForgotPassword from './pages/ForgotPassword';
-import ResetPassword from './pages/ResetPassword';
+import ResetPassword  from './pages/ResetPassword';
 import WorkspacePicker from './pages/WorkspacePicker';
-import VerifyPin from './pages/VerifyPin';
+import VerifyPin      from './pages/VerifyPin';
 import CreateWorkspace from './pages/CreateWorkspace';
-import RiskRegister    from './pages/RiskRegister';
-import Incidents       from './pages/Incidents';
-import Dashboard       from './pages/Dashboard';
-import Settings        from './pages/Settings';
-import Frameworks      from './pages/Frameworks';
-import Help            from './pages/Help';
-import ReportBuilder     from './pages/ReportBuilder';
-import ExternalRisk      from './pages/ExternalRisk';
-import ExternalIncident  from './pages/ExternalIncident';
-import AuditLog          from './pages/AuditLog';
-import Users             from './pages/Users';
-import AcceptInvite      from './pages/AcceptInvite';
-import PlanExpired       from './pages/PlanExpired';
+import AcceptInvite   from './pages/AcceptInvite';
+import PlanExpired    from './pages/PlanExpired';
+import Dashboard      from './pages/Dashboard';
+import RiskRegister   from './pages/RiskRegister';
+import Incidents      from './pages/Incidents';
+
+// ── Lazy: heavy or infrequently visited pages ─────────────────────────────
+const ReportBuilder    = lazy(() => import('./pages/ReportBuilder'));
+const Settings         = lazy(() => import('./pages/Settings'));
+const Frameworks       = lazy(() => import('./pages/Frameworks'));
+const Help             = lazy(() => import('./pages/Help'));
+const AuditLog         = lazy(() => import('./pages/AuditLog'));
+const Users            = lazy(() => import('./pages/Users'));
+const ExternalRisk     = lazy(() => import('./pages/ExternalRisk'));
+const ExternalIncident = lazy(() => import('./pages/ExternalIncident'));
+
+function PageLoader() {
+  return (
+    <div className="page-loader">
+      <div className="sr-spinner" />
+    </div>
+  );
+}
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
@@ -78,8 +91,8 @@ export default function App() {
           <Route path="/register"        element={<Register />} />
           <Route path="/forgot-password"      element={<ForgotPassword />} />
           <Route path="/reset-password"       element={<ResetPassword />} />
-          <Route path="/external/risk"        element={<ExternalRisk />} />
-          <Route path="/external/incident"    element={<ExternalIncident />} />
+          <Route path="/external/risk"     element={<Suspense fallback={<PageLoader />}><ExternalRisk /></Suspense>} />
+          <Route path="/external/incident" element={<Suspense fallback={<PageLoader />}><ExternalIncident /></Suspense>} />
           <Route path="/accept-invite"        element={<AcceptInvite />} />
 
           <Route path="/expired"    element={<PlanExpired />} />
@@ -95,18 +108,20 @@ export default function App() {
           <Route path="/*" element={
             <RequireAuth>
               <PageShell>
-                <Routes>
-                  <Route path="/"          element={<Dashboard />} />
-                  <Route path="/risks"     element={<RequireModule module="risk"><RiskRegister /></RequireModule>} />
-                  <Route path="/incidents" element={<RequireModule module="incident"><Incidents /></RequireModule>} />
-                  <Route path="/reports"   element={<ReportBuilder />} />
-                  <Route path="/audit"     element={<RequirePermission permission="manage_settings"><AuditLog /></RequirePermission>} />
-                  <Route path="/users"     element={<RequirePermission permission="manage_users"><Users /></RequirePermission>} />
-                  <Route path="/settings"   element={<RequirePermission permission="manage_settings"><Settings /></RequirePermission>} />
-                  <Route path="/frameworks" element={<Frameworks />} />
-                  <Route path="/help"       element={<Help />} />
-                  <Route path="*"           element={<NotFound />} />
-                </Routes>
+                <Suspense fallback={<PageLoader />}>
+                  <Routes>
+                    <Route path="/"          element={<Dashboard />} />
+                    <Route path="/risks"     element={<RequireModule module="risk"><RiskRegister /></RequireModule>} />
+                    <Route path="/incidents" element={<RequireModule module="incident"><Incidents /></RequireModule>} />
+                    <Route path="/reports"   element={<ReportBuilder />} />
+                    <Route path="/audit"     element={<RequirePermission permission="manage_settings"><AuditLog /></RequirePermission>} />
+                    <Route path="/users"     element={<RequirePermission permission="manage_users"><Users /></RequirePermission>} />
+                    <Route path="/settings"   element={<RequirePermission permission="manage_settings"><Settings /></RequirePermission>} />
+                    <Route path="/frameworks" element={<Frameworks />} />
+                    <Route path="/help"       element={<Help />} />
+                    <Route path="*"           element={<NotFound />} />
+                  </Routes>
+                </Suspense>
               </PageShell>
             </RequireAuth>
           } />

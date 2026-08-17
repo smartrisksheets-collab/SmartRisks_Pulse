@@ -202,7 +202,9 @@ export function useReports(toast: ToastFn) {
   const saveSettings = useCallback(async () => {
     try {
       await reportsApi.saveReportSettings(state.settings);
-    } catch { /* silent */ }
+    } catch (e) {
+      console.error('saveSettings failed:', e);
+    }
   }, [state.settings]);
 
   const loadSavedSettings = useCallback(async () => {
@@ -211,7 +213,9 @@ export function useReports(toast: ToastFn) {
       if (saved && Object.keys(saved).length) {
         set({ settings: { ...DEFAULTS, ...saved, signoff: { ...DEFAULTS.signoff, ...(saved.signoff || {}) } } });
       }
-    } catch { /* silent */ }
+    } catch (e) {
+      console.error('loadSavedSettings failed:', e);
+    }
   }, []);
 
   // ── Narrative edits ────────────────────────────────────────────────────────

@@ -4,7 +4,9 @@ import logging
 from datetime import date, datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from app.core.exceptions import ValidationError, ResourceNotFoundError, ServerError
+from app.core.rate_limit import limiter
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -63,13 +65,15 @@ async def preview_report(
         return {"data": result, "error": None, "meta": {}}
     except Exception as exc:
         logger.error("preview_report failed | tenant=%s | %s", tenant_id, exc, exc_info=True)
-        raise HTTPException(status_code=500, detail="Report preview failed. Please try again.")
+        raise ServerError("Report preview failed. Please try again.")
 
 
 # ── AI narrative ───────────────────────────────────────────────────────────────
 
 @router.post("/ai-narrative")
+@limiter.limit("5/minute")
 async def generate_ai_narrative(
+    request: Request,
     payload: AIReportRequest,
     db:      AsyncSession = Depends(get_db),
     claims:  dict         = Depends(require_permission("generate_ai")),
@@ -100,16 +104,18 @@ async def generate_ai_narrative(
         )
         return {"data": {"ai_data": ai_data}, "error": None, "meta": {}}
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise ValidationError(str(exc))
     except Exception as exc:
         logger.error("generate_ai_narrative failed | tenant=%s | %s", tenant_id, exc, exc_info=True)
-        raise HTTPException(status_code=500, detail="AI narrative generation failed. Please try again.")
+        raise ServerError("AI narrative generation failed. Please try again.")
 
 
 # ── Export PDF ─────────────────────────────────────────────────────────────────
 
 @router.post("/export")
+@limiter.limit("10/minute")
 async def export_report(
+    request: Request,
     payload: ReportExportRequest,
     db:      AsyncSession = Depends(get_db),
     claims:  dict         = Depends(get_active_tenant),
@@ -142,20 +148,22 @@ async def export_report(
         }
     except Exception as exc:
         logger.error("export_report failed | tenant=%s | %s", tenant_id, exc, exc_info=True)
-        raise HTTPException(status_code=500, detail="PDF export failed. Please try again.")
+        raise ServerError("PDF export failed. Please try again.")
 
 
 # ── Email report ───────────────────────────────────────────────────────────────
 
 @router.post("/email")
+@limiter.limit("5/minute")
 async def email_report(
+    request: Request,
     payload: ReportEmailRequest,
     db:      AsyncSession = Depends(get_db),
     claims:  dict         = Depends(get_active_tenant),
 ):
     tenant_id = UUID(claims["active_tenant_id"])
     if not payload.to:
-        raise HTTPException(status_code=400, detail="Recipient email is required.")
+        raise ValidationError("Recipient email is required.")
 
     try:
         settings_dict = payload.settings.model_dump()
@@ -183,10 +191,10 @@ async def email_report(
         return {"data": {"sent": True}, "error": None, "meta": {}}
     except ValueError as exc:
         logger.error("email_report ValueError | tenant=%s | %s", tenant_id, exc, exc_info=True)
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise ValidationError(str(exc))
     except Exception as exc:
         logger.error("email_report failed | tenant=%s | %s", tenant_id, exc, exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to send report email. Please try again.")
+        raise ServerError("Failed to send report email. Please try again.")
 
 
 # ── Templates ──────────────────────────────────────────────────────────────────
@@ -202,7 +210,7 @@ async def list_templates(
         return {"data": {"templates": templates}, "error": None, "meta": {}}
     except Exception as exc:
         logger.error("list_templates failed | tenant=%s | %s", tenant_id, exc, exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to load templates.")
+        raise ServerError("Failed to load templates.")
 
 
 @router.post("/templates")
@@ -219,7 +227,7 @@ async def save_template(
         return {"data": result, "error": None, "meta": {}}
     except Exception as exc:
         logger.error("save_template failed | tenant=%s | %s", tenant_id, exc, exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to save template.")
+        raise ServerError("Failed to save template.")
 
 
 @router.get("/templates/{template_id}")
@@ -231,7 +239,7 @@ async def get_template(
     tenant_id = UUID(claims["active_tenant_id"])
     template  = await report_service.get_template(db, tenant_id, template_id)
     if not template:
-        raise HTTPException(status_code=404, detail=f"Template {template_id} not found.")
+        raise ResourceNotFoundError(f"Template {template_id} not found.")
     return {"data": {"template": template}, "error": None, "meta": {}}
 
 
@@ -244,7 +252,7 @@ async def delete_template(
     tenant_id = UUID(claims["active_tenant_id"])
     deleted   = await report_service.delete_template(db, tenant_id, template_id)
     if not deleted:
-        raise HTTPException(status_code=404, detail=f"Template {template_id} not found.")
+        raise ResourceNotFoundError(f"Template {template_id} not found.")
     return {"data": {"deleted": True}, "error": None, "meta": {}}
 
 
@@ -258,7 +266,7 @@ async def set_default_template(
     tenant_id = UUID(claims["active_tenant_id"])
     ok = await report_service.set_default_template(db, tenant_id, template_id, report_type)
     if not ok:
-        raise HTTPException(status_code=404, detail=f"Template {template_id} not found.")
+        raise ResourceNotFoundError(f"Template {template_id} not found.")
     return {"data": {"updated": True}, "error": None, "meta": {}}
 
 
@@ -275,7 +283,7 @@ async def get_report_settings(
         return {"data": {"settings": settings}, "error": None, "meta": {}}
     except Exception as exc:
         logger.error("get_report_settings failed | tenant=%s | %s", tenant_id, exc, exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to load report settings.")
+        raise ServerError("Failed to load report settings.")
 
 
 @router.post("/settings")
@@ -292,4 +300,4 @@ async def save_report_settings_route(
         return {"data": {"saved": True}, "error": None, "meta": {}}
     except Exception as exc:
         logger.error("save_report_settings failed | tenant=%s | %s", tenant_id, exc, exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to save report settings.")
+        raise ServerError("Failed to save report settings.")

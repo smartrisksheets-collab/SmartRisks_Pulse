@@ -31,6 +31,7 @@ function ItemRow({ item, onDone }: ItemRowProps) {
   const [showReturn, setShowReturn]  = useState(false);
   const [returnMsg,  setReturnMsg]   = useState('');
   const [done,       setDone]        = useState(false);
+  const [rowError,   setRowError]    = useState<string | null>(null);
 
   const approve = useApproveSubmission();
   const ret     = useReturnSubmission();
@@ -53,7 +54,7 @@ function ItemRow({ item, onDone }: ItemRowProps) {
       { id: item.id, message: returnMsg.trim() },
       {
         onSuccess: () => { setDone(true); onDone(item.id); },
-        onError:   (err) => alert(err instanceof Error ? err.message : 'Return failed'),
+        onError:   (err) => setRowError(err instanceof Error ? err.message : 'Return failed'),
       },
     );
   }
@@ -95,6 +96,9 @@ function ItemRow({ item, onDone }: ItemRowProps) {
         </div>
       )}
 
+      {rowError && (
+        <div className="auth-error" style={{ margin: '6px 0 0' }}>{rowError}</div>
+      )}
       {showReturn && !done && (
         <div className="psub-return-box">
           <textarea

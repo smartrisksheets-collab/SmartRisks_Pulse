@@ -1,6 +1,6 @@
 // src/components/incidents/IncidentDetailDrawer.tsx
 
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { X, Sparkles } from 'lucide-react';
 import { useCanDo } from '../../utils/permissions';
 import type { Incident, IncidentUpdate } from '../../types/incident';
@@ -11,7 +11,7 @@ interface Props {
   members:   { name: string; email: string }[];
   onClose:   () => void;
   onSaved:   (updated: Incident) => void;
-  onDeleted: (id: string) => void;
+  onDeleted: () => void;
 }
 
 const REVIEW_STATUSES = ['Triaged', 'Investigating', 'Pending Evidence', 'Remediating', 'Validated'];
@@ -39,6 +39,12 @@ export default function IncidentDetailDrawer({ incident, members, onClose, onSav
   const [saving, setSaving]             = useState(false);
   const [deleting, setDeleting]         = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [drawerError, setDrawerError]     = useState<string | null>(null);
+
+  const showError = useCallback((msg: string) => {
+    setDrawerError(msg);
+    setTimeout(() => setDrawerError(null), 5000);
+  }, []);
 
   const ownerOptions = members.map(m => m.name || m.email);
 
@@ -49,7 +55,7 @@ export default function IncidentDetailDrawer({ incident, members, onClose, onSav
       const updated = await incidentsApi.updateIncident(incident.id, patch);
       onSaved(updated);
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Save failed');
+      showError(e instanceof Error ? e.message : 'Save failed');
     } finally {
       setSaving(false);
     }
@@ -62,7 +68,7 @@ export default function IncidentDetailDrawer({ incident, members, onClose, onSav
       const updated = await incidentsApi.updateIncident(incident.id, patch);
       onSaved(updated);
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Failed to mark resolved');
+      showError(e instanceof Error ? e.message : 'Failed to mark resolved');
     } finally {
       setSaving(false);
     }
@@ -73,9 +79,9 @@ export default function IncidentDetailDrawer({ incident, members, onClose, onSav
     setDeleting(true);
     try {
       await incidentsApi.deleteIncident(incident.id);
-      onDeleted(incident.id);
+      onDeleted();
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Delete failed');
+      showError(e instanceof Error ? e.message : 'Delete failed');
       setDeleting(false);
       setConfirmDelete(false);
     }
@@ -91,7 +97,7 @@ export default function IncidentDetailDrawer({ incident, members, onClose, onSav
       setAiImpact(impact.text);
       setAiActions(actions.text);
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'AI generation failed');
+      showError(e instanceof Error ? e.message : 'AI generation failed');
     } finally {
       setAiLoading(false);
     }
@@ -208,6 +214,9 @@ export default function IncidentDetailDrawer({ incident, members, onClose, onSav
         </div>
 
         {/* Footer */}
+        {drawerError && (
+          <div className="auth-error" style={{ margin: '0 20px 8px' }}>{drawerError}</div>
+        )}
         <div className="srs-drawer-ft">
           {canReview && (
             <button className="srs-btn srs-btn-primary" onClick={handleSave} disabled={saving} type="button">

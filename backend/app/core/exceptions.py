@@ -9,3 +9,4 @@ class InvalidCredentialsError(Exception): pass
 class InvalidTokenError(Exception): pass
 class InvalidPINError(Exception): pass
 class ValidationError(Exception): pass
+class ServerError(Exception): pass

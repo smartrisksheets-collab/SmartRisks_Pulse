@@ -1,92 +1,89 @@
-// src/hooks/useIncidents.ts
-
-import { useState, useCallback } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import type { Incident, IncidentCreate, IncidentUpdate, IncidentStats } from '../types/incident';
 import type { ListIncidentsParams } from '../services/incidents';
 import * as incidentsApi from '../services/incidents';
 
-interface UseIncidentsState {
-  incidents: Incident[];
-  total:     number;
-  loading:   boolean;
-  error:     string | null;
-}
+const INCIDENTS_KEY = 'incidents' as const;
+const STALE_MS      = 2 * 60 * 1000;
 
-export function useIncidents() {
-  const queryClient = useQueryClient();
-  const [state, setState] = useState<UseIncidentsState>({
-    incidents: [], total: 0, loading: false, error: null,
+export function useIncidents(params: ListIncidentsParams = {}) {
+  const qc = useQueryClient();
+
+  // ── List query ──────────────────────────────────────────────────────────
+  const query = useQuery({
+    queryKey:        [INCIDENTS_KEY, params],
+    queryFn:         () => incidentsApi.listIncidents(params),
+    staleTime:       STALE_MS,
+    placeholderData: keepPreviousData,
   });
-  const [stats, setStats] = useState<IncidentStats | null>(null);
-  const [statsLoading, setStatsLoading] = useState(false);
 
-  const setLoading = (loading: boolean) =>
-    setState(s => ({ ...s, loading, error: loading ? null : s.error }));
+  const incidents: Incident[] = query.data?.items      ?? [];
+  const total: number          = query.data?.meta?.total ?? 0;
 
-  const setError = (error: string) =>
-    setState(s => ({ ...s, error, loading: false }));
+  // ── Stats: separate non-blocking query ─────────────────────────────────
+  const statsQuery = useQuery<IncidentStats>({
+    queryKey:  [INCIDENTS_KEY, 'stats'],
+    queryFn:   incidentsApi.getIncidentStats,
+    staleTime: STALE_MS,
+  });
 
-  const fetch = useCallback(async (params: ListIncidentsParams = {}) => {
-    setLoading(true);
+  function invalidate() {
+    qc.invalidateQueries({ queryKey: [INCIDENTS_KEY] });
+    qc.invalidateQueries({ queryKey: ['dashboard'] });
+  }
+
+  // ── Mutations ───────────────────────────────────────────────────────────
+  const createM = useMutation({
+    mutationFn: (payload: IncidentCreate) => incidentsApi.createIncident(payload),
+    onSuccess: invalidate,
+  });
+
+  const updateM = useMutation({
+    mutationFn: ({ id, payload }: { id: string; payload: IncidentUpdate }) =>
+      incidentsApi.updateIncident(id, payload),
+    onSuccess: invalidate,
+  });
+
+  const removeM = useMutation({
+    mutationFn: (id: string) => incidentsApi.deleteIncident(id),
+    onSuccess: invalidate,
+  });
+
+  // ── Adapters preserving existing call signatures ────────────────────────
+  async function create(payload: IncidentCreate): Promise<Incident | null> {
     try {
-      const { items, meta } = await incidentsApi.listIncidents(params);
-      setState({ incidents: items, total: meta.total, loading: false, error: null });
+      return await createM.mutateAsync(payload);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load incidents');
+      throw new Error(e instanceof Error ? e.message : 'Failed to create incident', { cause: e });
     }
-  }, []);
+  }
 
-  const fetchStats = useCallback(async () => {
-    setStatsLoading(true);
+  async function update(id: string, payload: IncidentUpdate): Promise<Incident | null> {
     try {
-      const s = await incidentsApi.getIncidentStats();
-      setStats(s);
-    } catch {
-      // stats are non-blocking
-    } finally {
-      setStatsLoading(false);
-    }
-  }, []);
-
-  const create = useCallback(async (payload: IncidentCreate): Promise<Incident | null> => {
-    setLoading(true);
-    try {
-      const inc = await incidentsApi.createIncident(payload);
-      setState(s => ({ ...s, loading: false, error: null, incidents: [...s.incidents, inc], total: s.total + 1 }));
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      return inc;
+      return await updateM.mutateAsync({ id, payload });
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to create incident');
-      return null;
+      throw new Error(e instanceof Error ? e.message : 'Failed to update incident', { cause: e });
     }
-  }, []);
+  }
 
-  const update = useCallback(async (id: string, payload: IncidentUpdate): Promise<Incident | null> => {
-    setLoading(true);
+  async function remove(id: string): Promise<boolean> {
     try {
-      const updated = await incidentsApi.updateIncident(id, payload);
-      setState(s => ({ ...s, loading: false, error: null, incidents: s.incidents.map(i => i.id === id ? updated : i) }));
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      return updated;
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to update incident');
-      return null;
-    }
-  }, []);
-
-  const remove = useCallback(async (id: string): Promise<boolean> => {
-    setLoading(true);
-    try {
-      await incidentsApi.deleteIncident(id);
-      setState(s => ({ ...s, loading: false, error: null, incidents: s.incidents.filter(i => i.id !== id), total: Math.max(0, s.total - 1) }));
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      await removeM.mutateAsync(id);
       return true;
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to delete incident');
-      return false;
+      throw new Error(e instanceof Error ? e.message : 'Failed to delete incident', { cause: e });
     }
-  }, []);
+  }
 
-  return { ...state, stats, statsLoading, fetch, fetchStats, create, update, remove };
+  return {
+    incidents,
+    total,
+    loading:      query.isLoading || query.isFetching,
+    error:        query.error instanceof Error ? query.error.message : null,
+    stats:        statsQuery.data         ?? null,
+    statsLoading: statsQuery.isLoading,
+    create,
+    update,
+    remove,
+  };
 }

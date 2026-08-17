@@ -17,6 +17,7 @@ from app.core.exceptions import (
     PlanExpiredError,
     QuotaExceededError,
     ValidationError,
+    ServerError,
     WorkspaceLimitError,
     DuplicateResourceError,
     ResourceNotFoundError,
@@ -90,6 +91,7 @@ _EXCEPTION_MAP = {
     ResourceNotFoundError: 404,
     DuplicateResourceError: 409,
     ValidationError: 422,
+    ServerError: 500,
     QuotaExceededError: 429,
     WorkspaceLimitError: 429,
 }
@@ -102,6 +104,14 @@ for _exc_class, _status in _EXCEPTION_MAP.items():
             {"data": None, "error": str(exc), "meta": {}},
             status_code=_code,
         )
+
+
+@app.exception_handler(Exception)
+async def _unhandled_handler(request: Request, exc: Exception):
+    return JSONResponse(
+        {"data": None, "error": "An unexpected error occurred. Please try again.", "meta": {}},
+        status_code=500,
+    )
 
 
 app.include_router(auth.router, prefix="/api/v1")

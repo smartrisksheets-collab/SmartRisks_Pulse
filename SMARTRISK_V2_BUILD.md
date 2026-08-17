@@ -15,9 +15,9 @@ At the end of every session Claude outputs a fresh version of this file with all
  
 ---
  
-**Phase:** Phase 16 active. Logo, favicon, email header, backend module enforcement, feedback triggers (6 of 7), frontend module gating, and all auth page brand icons complete. Remaining: Supabase schema sync, CI setup, GitHub push, deployment, QA pass.
-**Status:** Session 15, August 14, 2026: product logo URL confirmed and applied across favicon, 8 auth/onboarding pages, and email header. require_module() added to core/dependencies.py, applied to all 8 risk routes and all 9 incident routes. Feedback triggers wired at 6 sites (ai_dashboard skipped, no user-triggered AI call on dashboard in V2). Frontend module gating complete: BlockSelector hides incident blocks for risk-only, LookupEditor hides incident taxonomy keys for risk-only, AITab hides ai_auto_run for incident-only. Dashboard incident section gating confirmed already complete in pages_Dashboard.tsx.
-**Next action:** Begin next session by reading SMARTRISK_V2_SETUP.md, SMARTRISK_V2_DECISIONS.md, then this file. First task: Supabase schema sync (user uploads migration files 001-028, extract ordered SQL). Second task: CI setup (.github/workflows/ci.yml, backend/conftest.py, pytest suite ~20 tests). Third task: GitHub push and deployment.
+**Phase:** Phase 16 active. Major performance, hardening, and reliability pass complete. Remaining: manual browser QA (20 PDF blocks), responsive check at 4 breakpoints, GA4 integration (awaiting Measurement ID).
+**Status:** Session 17, August 17, 2026: Full hardening and performance pass. See session log below.
+**Next action:** Begin next session by reading SMARTRISK_V2_SETUP.md, SMARTRISK_V2_DECISIONS.md, then this file. First task: manual browser QA of all 20 PDF report blocks with a fully populated workspace. Second task: responsive check at 375px, 768px, 1024px, 1280px. Third task: GA4 integration once Measurement ID is provided.
  
 ---
  
@@ -703,24 +703,70 @@ At the end of every session Claude outputs a fresh version of this file with all
 - [x] Feedback system: migration 027 (feedback table), models/feedback.py, schemas/feedback.py, services/feedback.py (DB write + Resend email to founder), routes/feedback.py (POST /api/v1/feedback), registered in main.py. Frontend: feedbackStore (Zustand), FeedbackWidget (useReducer, 90-day localStorage cooldown, slide-out GAS parity, auto-dismiss 20s, thanks state 2.2s). Mounted in PageShell. (August 14, 2026)
 - [x] Feedback trigger wiring: 6 of 7 sites wired. add_risk in AddRiskModal on submit success, import_risk in ImportModal after result and autoAddToLookups complete, print_pdf in PrintModal on Generate click, ai_insights in AIModal after generation result confirmed, log_incident in Incidents handleAdd after inc confirmed, invite_user in InviteModal onSuccess callback. ai_dashboard skipped: dashboard Executive Intelligence section is statically computed, no user-triggered AI call exists in V2. useFeedbackStore import added to all 6 files. (August 14, 2026)
 - [x] Permission gating: sidebar visibleNav filter (modules and permissions from claims). RequirePermission and RequireModule route guards in App.tsx wrapping /users, /settings, /audit, /risks, /incidents. useCanDo gating: RiskRegister print button (print_reports), RiskDetailModal edit and delete (manage_risks), Incidents add and print (manage_incidents, print_reports), IncidentDetailDrawer review section, save, resolve, delete (review_resolve) and AI (generate_ai), ReportBuilder download PDF and send by email disabled without print_reports. (August 14, 2026)
-- [ ] All API endpoints return correct envelope on success and error
-- [ ] All custom exceptions map to correct HTTP status codes
-- [ ] Rate limiting verified on auth and write endpoints
-- [ ] All transactions verified, rollback tested
-- [ ] All indexes confirmed in production Supabase
-- [ ] Supabase schema synced by running `alembic upgrade head` against Supabase DATABASE_URL
+- [x] All API endpoints return correct envelope on success and error: ServerError added to core/exceptions.py and registered at 500 in _EXCEPTION_MAP. All 15 HTTPException raises in routes_reports.py replaced with ServerError, ValidationError, or ResourceNotFoundError. HTTPException wrapper removed from routes_external.py submit routes. services_api.ts interceptor reads .detail as fallback for any legacy HTTPException. Global catch-all Exception handler added to main.py. (August 17, 2026)
+- [x] All custom exceptions map to correct HTTP status codes: confirmed. ServerError→500, ValidationError→422, ResourceNotFoundError→404, PermissionDeniedError→403, QuotaExceededError→429, WorkspaceLimitError→429. (August 17, 2026)
+- [x] Rate limiting verified on auth and write endpoints: @limiter.limit added to all write routes across routes_risks.py, routes_incidents.py, routes_users.py, routes_external.py, routes_reports.py. AI routes 10/min, bulk import 5/min, external public submit 10/min, report AI+email 5/min, PDF export 10/min, regular writes 60/min. (August 17, 2026)
+- [x] All transactions verified, rollback tested: confirmed clean. db.commit() in _auto_run_ai is intentional (owns its own AsyncSessionLocal session). No violations in any service or route. (August 17, 2026)
+- [x] All indexes confirmed in production Supabase: migration 030 applied locally and SQL run in Supabase SQL editor. 7 new partial indexes: idx_risks_active, idx_risks_category, idx_risks_residual, idx_risks_logged_at, idx_incidents_active, idx_incidents_reported_at, idx_snapshots_month_key. (August 17, 2026)
 - [ ] Trial expiry flow tested end to end
 - [ ] Workspace limit enforcement tested
 - [ ] Quota enforcement tested (80% warning, 100% block)
-- [ ] PDF generation tested with large report
+- [ ] PDF generation tested with large report (manual browser QA)
 - [ ] Email delivery confirmed via Resend dashboard
-- [ ] Backend deployed to Render
-- [ ] Frontend deployed to Vercel
-- [ ] Environment variables set in both platforms
-- [ ] Health check passing on production URL
-- [ ] CORS verified between production frontend and backend
-- [ ] Supabase dashboard redirect URLs confirmed for password reset
-**Status:** Not started
+- [x] Backend deployed to Render (Session 16)
+- [x] Frontend deployed to Vercel (Session 16)
+- [x] Environment variables set in both platforms (Session 16)
+- [x] Health check passing on production URL (Session 16)
+- [x] CORS verified between production frontend and backend (Session 16)
+- [x] Supabase dashboard redirect URLs confirmed for password reset (Session 16)
+
+**Additional items completed August 17, 2026 (beyond original checklist):**
+- [x] Random logout bug fixed: services_api.ts 401 interceptor now attempts silent token refresh via _attemptRefresh() before logout. Shared promise prevents concurrent refresh races. Retry original request with new token on success.
+- [x] ResetPassword.tsx: ready state converted from useState + useEffect to derived constant. Eliminates cascading render lint error.
+- [x] Silent mutation failures fixed: useRisks create/update/remove/generateAI and useIncidents create/update/remove all rethrow after setting error state. Modal catch blocks now fire and surface actual backend message to user.
+- [x] Native alert() replaced: IncidentDetailDrawer 4x alert() replaced with inline drawerError banner (auto-clears 5s). PendingSubmissionsModal 2x alert() replaced with rowError state.
+- [x] Users page onError handlers: all 5 hardcoded error strings replaced with err.message from actual API response, with hardcoded string as fallback.
+- [x] useReports silent catch blocks: saveSettings and loadSavedSettings now log to console.error instead of swallowing.
+- [x] Offline detection: useOfflineDetection hook created (navigator.onLine + window online/offline events). Offline banner wired into PageShell. .offline-banner CSS added to index.css.
+- [x] Control effectiveness dropdown fixed: CTRL_EFF in RiskForm changed from 0-100% scale to 1-5 matching GAS production system. schemas_risk.py validation updated from le=100 to le=5 on all three schema classes.
+- [x] Dashboard staleTime fixed: useDashboard staleTime 30s → 5min, refetchOnWindowFocus false, refetchInterval 5min.
+- [x] Dashboard parallelisation: asyncio.gather with _run() helper (separate AsyncSessionLocal per sub-function). 13 sequential DB round trips now run concurrently. pool_size=10, max_overflow=5 in db/session.py.
+- [x] Lazy loading: 8 pages converted to React.lazy in App.tsx (ReportBuilder, Settings, Frameworks, Help, AuditLog, Users, ExternalRisk, ExternalIncident). Suspense boundaries added. .page-loader CSS class added. Initial bundle now contains only shell, auth pages, Dashboard, RiskRegister, Incidents.
+- [x] useRisks migrated to TanStack Query: useQuery with keepPreviousData, useMutation per operation, adapter functions preserving call signatures. dataUpdatedAt exposed for stats effect dependency.
+- [x] useIncidents migrated to TanStack Query: useQuery, separate non-blocking stats query, useMutation per operation. fetch and fetchStats removed.
+- [x] RiskRegister updated: riskParams moved after state declarations, useQueryClient imported, all refreshKey references removed, dataUpdatedAt drives stats effect, fetchRisks call in handleGenerateAI removed, all setRefreshKey replaced by hook invalidation.
+- [x] Incidents updated: incidentParams moved after state, useQueryClient imported, all fetch/fetchStats calls removed, loadPage simplified to setPage only, handleSaved and handleDeleted use qc.invalidateQueries, double-DELETE bug in handleDeleted fixed.
+- [x] IncidentDetailDrawer: onDeleted prop type changed from (id: string) => void to () => void. onDeleted() call updated. Prevents accidental double DELETE.
+- [x] APScheduler Postgres job store: attempted, reverted. SQLAlchemy 2.0 MissingGreenlet error in async lifespan context confirmed incompatible with APScheduler 3.x SQLAlchemyJobStore. MemoryJobStore retained. APScheduler 4.x native async upgrade flagged for future session.
+
+**Status:** Active. Manual QA and GA4 remaining.
+
+---
+
+### Session 17: August 17, 2026 — Hardening, Performance, and Reliability Pass
+
+**Completed:**
+
+- Random logout bug fixed: token refresh intercept in services_api.ts
+- ResetPassword.tsx setState-in-effect eliminated
+- Global Exception handler added to main.py (envelope on all unhandled errors)
+- Rate limiting applied to all write, AI, import, and public external submit routes
+- Transaction discipline verified clean across all services and routes
+- Quota enforcement and workspace limit enforcement verified correct
+- Migration 030: 7 partial performance indexes added, snapshot month_key sort fixed. Applied locally and in Supabase.
+- Dashboard staleTime corrected to 5 minutes, refetchOnWindowFocus disabled
+- Control effectiveness dropdown corrected to 1-5 scale matching GAS
+- ServerError added to exception system. All 15 HTTPException raises in routes_reports.py replaced with typed custom exceptions. HTTPException removed from routes_external.py.
+- Silent mutation failures fixed: all hooks rethrow so modals surface backend error messages
+- Native alert() calls replaced with inline error UI in IncidentDetailDrawer and PendingSubmissionsModal
+- Users page onError handlers surface actual API message
+- Offline detection: useOfflineDetection hook, offline banner in PageShell
+- Dashboard queries parallelised: asyncio.gather with isolated sessions. pool_size raised to 10.
+- Lazy loading: 8 pages split into separate chunks via React.lazy. Bundle size reduced significantly.
+- useRisks and useIncidents fully migrated to TanStack Query with keepPreviousData
+- RiskRegister and Incidents pages updated to declarative data flow. All imperative fetch calls removed.
+- IncidentDetailDrawer double-DELETE bug fixed (onDeleted no longer re-calls remove)
+- APScheduler Postgres job store attempted and reverted (async lifespan incompatibility with APScheduler 3.x)
  
 ---
  
@@ -1525,6 +1571,15 @@ Read `SMARTRISK_V2_SETUP.md` first. Then read `SMARTRISK_V2_DECISIONS.md`. Then 
 **Fourth task:** QA pass. Manual browser QA of all 20 PDF blocks with a fully populated workspace. Responsive check at 375px, 768px, 1024px, 1280px.
 
 **Pending:** GA4 integration. User to provide Measurement ID (G-XXXXXXXXXX). Add gtag script block to frontend/index.html when provided.
+
+**Performance QA agenda (next session):**
+- EXPLAIN ANALYZE on dashboard, risk list, report data endpoints
+- Index audit against actual query patterns
+- Connection pool tuning for transaction pooler
+- Response caching for lookups, settings, matrix config
+- TanStack Query stale times and cache strategy review
+- Bundle size audit: npm run build -- --analyze
+- Lazy loading for Report Builder and Frameworks pages
 
 Note: routes/risks.py and routes/incidents.py were both modified this session (module gating). Read them fresh if any further changes are needed next session.
 

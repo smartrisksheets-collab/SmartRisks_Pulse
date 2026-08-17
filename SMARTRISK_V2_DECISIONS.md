@@ -555,7 +555,54 @@ Why: DOM order stays unchanged for accessibility and tab order. CSS order only a
 Raised by: Audit log returning 403 for all roles after the 403 fix was applied.
 Root cause: `routes/audit.py` used `require_permission("risks")`. Valid token keys are manage_risks, manage_incidents, generate_ai, print_reports, manage_users, manage_settings, review_resolve. "risks" matches nothing, so the permission check always fails.
 Chosen: Changed to `require_permission("manage_risks")` on both the list route and the CSV export route. manage_risks is True for Owner and Manager by default, False for Analyst, which matches the intended access level.
-Why: One-character-group fix, no schema change. The valid key set is defined in services/auth.py _PERM_MAP and must be the sole reference for all future permission gate strings.
+Why: One-character-group fix, no schema change.
+
+---
+
+### Session 17: August 17, 2026 — Hardening, Performance, Reliability
+
+**Decision: 401 interceptor retries token refresh before logout (August 17, 2026)**
+Raised by: Users randomly kicked to login screen mid-session when access token expired.
+Root cause: services_api.ts 401 handler immediately called logout() and redirected. No refresh attempt. Any background fetch (TanStack Query refetch, presence heartbeat, dashboard interval) firing on an expired token caused immediate logout.
+Chosen: _attemptRefresh() tries POST /api/v1/auth/refresh first. Shared _refreshPromise prevents concurrent refresh races when multiple requests fail simultaneously. Original request retried with new token on success. Logout only fires if refresh itself returns 401 or fails.
+Why: Refresh cookie lives 7 days. Access token is 15 minutes. The gap is intentional but the interceptor was never built to bridge it. This is the standard pattern for short-lived access tokens with long-lived refresh cookies.
+
+**Decision: dashboard queries parallelised with asyncio.gather and isolated sessions (August 17, 2026)**
+Raised by: Dashboard fired 13 sequential DB round trips. At 15-30ms per hop to Supabase, total latency was 195-390ms before response.
+Chosen: _run() helper creates a fresh AsyncSessionLocal session per sub-function. asyncio.gather runs all 13 concurrently. pool_size raised from 5 (default) to 10, max_overflow=5 to support concurrent connections.
+Why: asyncpg does not allow concurrent queries on the same connection. Separate sessions are the only way to achieve true parallelism. Each sub-function is fully independent (no result dependencies between them). _build_attention runs after gather since it needs kpis and incident_health.
+
+**Decision: APScheduler Postgres job store reverted (August 17, 2026)**
+Raised by: Phase 16 checklist item: Postgres job store for scheduler resilience.
+Attempted: SQLAlchemyJobStore from apscheduler.jobstores.sqlalchemy with psycopg2-binary.
+Failure: SQLAlchemy 2.0 raises MissingGreenlet when SQLAlchemyJobStore calls metadata.create_all() synchronously inside FastAPI's async lifespan context.
+Chosen: MemoryJobStore retained. APScheduler 4.x has native async support and would solve this cleanly but is a breaking API change from 3.x.
+Why: The workaround (run_sync in thread executor) adds complexity that exceeds the benefit for five cron-style jobs with fixed schedules. If the server restarts, jobs resume at their next scheduled time with no data loss. Flag APScheduler 4.x upgrade for a dedicated future session.
+
+**Decision: useRisks and useIncidents migrated from raw useState to TanStack Query (August 17, 2026)**
+Raised by: Both hooks used imperative fetch() calls with no caching. Every page visit and every filter change fired a fresh network request. No deduplication, no background updates, no cache.
+Chosen: useQuery with parameterised queryKey drives list fetching. keepPreviousData keeps previous page visible during pagination. useMutation per operation with onSuccess invalidation. Adapter functions (create, update, remove) preserve existing call signatures so modal code required only surgical changes. dataUpdatedAt exposed from useRisks to drive the stats useEffect dependency.
+Why: TanStack Query ownership means the same filter combination is instant on revisit. Mutations automatically trigger background refetch of only the current query. The refreshKey integer pattern is eliminated entirely. keepPreviousData makes pagination feel instant.
+
+**Decision: IncidentDetailDrawer onDeleted prop changed to () => void (August 17, 2026)**
+Raised by: Incidents.handleDeleted was calling remove(id) after the drawer already called incidentsApi.deleteIncident() directly, causing a double DELETE against an already-deleted record.
+Chosen: onDeleted prop type changed from (id: string) => void to () => void. handleDeleted uses qc.invalidateQueries instead of remove(). Drawer call site updated to onDeleted() with no argument.
+Why: The drawer owns the delete API call. The parent only needs to know it happened so it can invalidate the cache. Passing the ID implies the parent should act on it, which caused the double-delete bug.
+
+**Decision: ServerError added to exception system (August 17, 2026)**
+Raised by: routes_reports.py contained 15 raise HTTPException() calls returning {"detail": "..."} instead of the {"data": null, "error": "...", "meta": {}} envelope. Frontend interceptor could not read these.
+Chosen: ServerError class added to core_exceptions.py. Registered in _EXCEPTION_MAP at status 500. All 15 HTTPException raises replaced with ServerError, ValidationError, or ResourceNotFoundError. HTTPException removed from routes_reports.py and routes_external.py imports entirely.
+Why: Every route in the system now speaks the same language. The frontend reads error.response?.data?.error everywhere consistently without format-specific fallbacks.
+
+**Decision: control effectiveness scale corrected to 1-5 (August 17, 2026)**
+Raised by: RiskForm showed 10%/20%/.../100% dropdown. GAS production system uses 1-5 numeric scale stored in the Lookups sheet. DashboardService.gs confirms numeric values with .map(x => Number(x)).filter(x => !isNaN(x) && x > 0).
+Chosen: CTRL_EFF constant in RiskForm changed to 1/2/3/4/5 with None (0) option. schemas_risk.py validation changed from le=100 to le=5 on RiskCreate, RiskUpdate, and the third carrying schema. No migration needed (Integer column, no DB constraint).
+Why: V2 must match GAS data. GAS stores 1-5. The percentage scale was invented during initial V2 build without reading the GAS source.
+
+**Decision: lazy loading for 8 frontend pages (August 17, 2026)**
+Raised by: All pages loaded in one JS bundle. ReportBuilder (recharts, PDF logic, block canvas) and Settings (matrix editor, lookup editor, color picker) significantly inflate initial bundle size.
+Chosen: ReportBuilder, Settings, Frameworks, Help, AuditLog, Users, ExternalRisk, ExternalIncident converted to React.lazy(). Dashboard, RiskRegister, Incidents remain eager (most-visited pages). Auth pages remain eager (small, entry point). Suspense boundary inside PageShell so sidebar and topbar stay visible during chunk load.
+Why: Vite automatically code-splits on dynamic import(). First meaningful paint for Dashboard-landing users no longer pays the cost of ReportBuilder and Settings. Estimated 30-50% initial bundle reduction. The valid key set is defined in services/auth.py _PERM_MAP and must be the sole reference for all future permission gate strings.
 
 **Decision: paginated API responses must use direct api.get, not apiGet (August 12, 2026)**
 Raised by: Audit log table always showed 0 entries despite data existing in the database.
@@ -682,8 +729,33 @@ Raised by: Login page and all auth pages used a placeholder SVG icon. Email head
 Confirmed URL: https://smartrisksheets.com/wp-content/uploads/2025/09/cropped-Smartrisksheets-favicon-v2.png. Source: App.html line 6, Github_index.html line 7, Unified_code.gs line 457.
 Chosen: This URL used in frontend/index.html (favicon), app/services/email.py _ext_header() (email header image), and all 8 auth/onboarding page brand icons replacing placeholder SVGs. Sizes: 40x40 on auth-shell pages (Login, Register, ForgotPassword, ResetPassword), 36x36 on picker and expired pages (WorkspacePicker, CreateWorkspace, AcceptInvite, PlanExpired).
 Why: Single URL confirmed from three independent GAS reference files. Centralised as _PRODUCT_LOGO constant in email.py so it is defined once for all email templates.
+**Decision: Supabase Auth dropped in favour of self-managed bcrypt passwords (August 15, 2026)**
+Raised by: Supabase Auth created a structural CI gap (login tests required live Supabase), split user identity across two systems (auth.users + accounts), and ran two JWT systems simultaneously with only one actually used for session management.
+Chosen: password_hash TEXT column added to accounts (migration 029). bcrypt via direct import handles hashing and verification. hash_password and verify_password added to core/security.py. login() and register() in services/auth.py rewritten to use local bcrypt. accept_invite() in services/invite.py sets password_hash directly instead of calling Supabase admin.create_user. supabase_uid column retained in schema but no longer written to. Supabase Storage (logo uploads) unaffected.
+Why: Pre-launch with no real users is the correct moment to make this change. The codebase already had bcrypt imported. Self-managed auth eliminates the Supabase Auth dependency, makes CI fully hermetic, simplifies the invite flow, and removes the identity split entirely.
+
+**Decision: password reset implemented with 15-minute JWT tokens via Resend (August 15, 2026)**
+Raised by: ForgotPassword.tsx and ResetPassword.tsx used supabase.auth.resetPasswordForEmail and supabase.auth.updateUser. Both broken after Supabase Auth removal.
+Chosen: create_reset_token() in core/security.py generates a JWT with type=reset and 15-minute expiry. POST /auth/forgot-password generates the token and sends it via send_reset_email() in services/email.py using Resend. POST /auth/reset-password validates the token and updates password_hash. token_version is incremented on reset to invalidate all existing sessions. Frontend reads ?token= query param from URL instead of Supabase auth state change event.
+Why: Consistent with the existing invite token pattern (same JWT secret, same jose library). No new DB columns needed. 15-minute expiry is tighter than the previous 60-minute Supabase default and appropriate for a security-sensitive action.
+
+**Decision: asyncpg statement_cache_size=0 for Supabase transaction pooler (August 15, 2026)**
+Raised by: OSError Network unreachable on Render with direct Supabase connection (IPv6 vs IPv4). Switched to transaction pooler. Pooler uses pgbouncer which does not persist prepared statements between connections, causing InvalidSQLStatementNameError.
+Chosen: statement_cache_size=0 in connect_args on the SQLAlchemy async engine. Forces asyncpg to use simple queries instead of prepared statements.
+Why: Transaction pooler is the correct connection method for a hosted backend on Render. The statement cache is an optimisation that only works with persistent connections. Disabling it has negligible performance impact at current scale.
+
+**Decision: Vercel SPA routing via vercel.json (August 15, 2026)**
+Raised by: Direct URL navigation to /login and other routes returned 404 because Vercel was looking for static files at those paths.
+Chosen: frontend/vercel.json with a single catch-all rewrite rule routing all paths to /index.html.
+Why: Standard requirement for any React SPA deployed to Vercel without Next.js.
+
+**Decision: CI test suite uses Alembic migrations not create_all() (August 15, 2026)**
+Raised by: SQLAlchemy create_all() failed with asyncpg on Windows because the Tenant model uses server_default="ARRAY['risk']" which asyncpg rejects inside CREATE TABLE DDL.
+Chosen: setup_db fixture runs alembic upgrade head in a subprocess with os.environ.copy() so the test DATABASE_URL overrides .env. Teardown drops and recreates the public schema.
+Why: Alembic uses raw op.execute() SQL which asyncpg handles correctly. Also guarantees the test schema is always identical to production migrations, not an ORM approximation.
 
 **Decision: auth-brand-icon and picker-brand-icon divs removed when replacing with product logo img (August 14, 2026)**
+
 Raised by: The CSS classes applied a teal background behind the placeholder SVG. The product logo image has its own background and would render incorrectly over a teal layer.
 Chosen: The wrapping div is removed entirely. The img tag uses inline style for borderRadius and flexShrink only. These are one-off values on a single element and meet the inline style exception rule in the setup document.
 Why: Keeping the div would double-background the image. Two simple inline values are cleaner than a new CSS class for a single element across 8 pages.

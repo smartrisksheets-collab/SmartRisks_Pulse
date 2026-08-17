@@ -7,7 +7,8 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from app.core.rate_limit import limiter
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_active_tenant, get_db
@@ -28,29 +29,27 @@ router = APIRouter(tags=["external"])
 # ── PUBLIC — no auth ──────────────────────────────────────────────────────────
 
 @router.post("/external/submit/risk", response_model=ExternalSubmitResponse)
+@limiter.limit("10/minute")
 async def submit_risk(
+    request:   Request,
     tenant_id: UUID,
     payload:   ExternalRiskSubmit,
     db:        AsyncSession = Depends(get_db),
 ):
     """Accept a risk submission from an unauthenticated external user."""
-    try:
-        return await ext_svc.submit_risk(db, tenant_id, payload)
-    except ResourceNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
+    return await ext_svc.submit_risk(db, tenant_id, payload)
 
 
 @router.post("/external/submit/incident", response_model=ExternalSubmitResponse)
+@limiter.limit("10/minute")
 async def submit_incident(
+    request:   Request,
     tenant_id: UUID,
     payload:   ExternalIncidentSubmit,
     db:        AsyncSession = Depends(get_db),
 ):
     """Accept an incident submission from an unauthenticated external user."""
-    try:
-        return await ext_svc.submit_incident(db, tenant_id, payload)
-    except ResourceNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
+    return await ext_svc.submit_incident(db, tenant_id, payload)
 
 
 @router.get("/external/lookups/{tenant_id}")

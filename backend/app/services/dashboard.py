@@ -1,15 +1,17 @@
 """
 Dashboard service — translates DashboardService.gs for v2.
 All KPI aggregation is done in SQL, not Python loops.
+Queries run concurrently via asyncio.gather, each in its own session.
 """
 
+import asyncio
 from datetime import datetime, timezone, timedelta
 from uuid import UUID
 
 from sqlalchemy import select, func, case, text, cast, DateTime, literal_column
-
-
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.session import AsyncSessionLocal
 
 from app.models.risk import Risk
 from app.models.incident import Incident
@@ -38,25 +40,53 @@ _TOP_RISKS_LIMIT = 6
 _TREND_MONTHS = 6
 
 
+async def _run(fn, *args):
+    """Run a query function in its own isolated session for parallel execution."""
+    async with AsyncSessionLocal() as session:
+        return await fn(session, *args)
+
+
 async def get_dashboard(
     db: AsyncSession,
     tenant_id: UUID,
     days: int = _DAYS_DEFAULT,
 ) -> DashboardResponse:
-    kpis = await _get_kpis(db, tenant_id)
-    risks_by_level = await _risks_by_level(db, tenant_id)
-    risks_by_category = await _risks_by_category(db, tenant_id)
-    top_risks = await _top_risks(db, tenant_id)
-    top_open_incidents = await _top_open_incidents(db, tenant_id)
-    residual_trend = await _residual_trend(db, tenant_id)
-    incident_velocity = await _incident_velocity(db, tenant_id, days)
-    incident_health = await _incident_health(db, tenant_id)
-    total_incidents = await _total_incidents(db, tenant_id)
-    lifecycle = await _lifecycle(db, tenant_id)
-    avg_resolution = await _avg_resolution(db, tenant_id)
-    activity_feed = await _activity_feed(db, tenant_id)
-    attention = _build_attention(kpis, incident_health)
-    snapshot_delta = await get_snapshot_delta(db, tenant_id)
+    # All 13 queries are independent. Run them concurrently, each on its own
+    # connection from the pool. Sequential baseline: ~15-30ms * 13 = 195-390ms.
+    # Parallel with pool_size=10: ~2 rounds = 30-60ms total.
+    (
+        kpis,
+        risks_by_level,
+        risks_by_category,
+        top_risks,
+        top_open_incidents,
+        residual_trend,
+        incident_velocity,
+        incident_health,
+        total_incidents,
+        lifecycle,
+        avg_resolution,
+        activity_feed,
+        snapshot_delta,
+    ) = await asyncio.gather(
+        _run(_get_kpis,           tenant_id),
+        _run(_risks_by_level,     tenant_id),
+        _run(_risks_by_category,  tenant_id),
+        _run(_top_risks,          tenant_id),
+        _run(_top_open_incidents, tenant_id),
+        _run(_residual_trend,     tenant_id),
+        _run(_incident_velocity,  tenant_id, days),
+        _run(_incident_health,    tenant_id),
+        _run(_total_incidents,    tenant_id),
+        _run(_lifecycle,          tenant_id),
+        _run(_avg_resolution,     tenant_id),
+        _run(_activity_feed,      tenant_id),
+        _run(get_snapshot_delta,  tenant_id),
+    )
+
+    # _build_attention is synchronous and needs kpis + incident_health,
+    # so it runs after the gather resolves.
+    attention = _build_attention(kpis, incident_health)  # type: ignore[arg-type]
 
     return DashboardResponse(
         kpis=kpis,

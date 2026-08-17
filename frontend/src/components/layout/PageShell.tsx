@@ -1,4 +1,5 @@
 import { type ReactNode, useState } from 'react';
+import { useOfflineDetection } from '../../hooks/useOfflineDetection';
 import { useLocation } from 'react-router-dom';
 import { useUIStore } from '../../store/uiStore';
 import { useAuth } from '../../hooks/useAuth';
@@ -74,6 +75,7 @@ export default function PageShell({ children, title }: PageShellProps) {
   const { sidebarCollapsed, mobSidebarOpen } = useUIStore();
   const { logout } = useAuth();
   const { countdown, stayLoggedIn } = useInactivityLogout(logout);
+  const isOffline = useOfflineDetection();
 
   const appClass = [
     'app',
@@ -83,6 +85,12 @@ export default function PageShell({ children, title }: PageShellProps) {
 
   return (
     <>
+    {isOffline && (
+      <div className="offline-banner">
+        <div className="offline-banner-dot" />
+        No internet connection. Changes may not be saved.
+      </div>
+    )}
     {countdown !== null && (
       <div className="inactivity-warn">
         <div className="inactivity-warn-circle">{countdown}</div>

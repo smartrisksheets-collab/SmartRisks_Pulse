@@ -1,9 +1,11 @@
 // src/pages/Incidents.tsx
 
-import { useEffect, useState, useCallback } from 'react';
+import { useState, useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Link2, RefreshCw, Printer } from 'lucide-react';
 import { useFeedbackStore } from '../store/feedbackStore';
 import { useIncidents } from '../hooks/useIncidents';
+import type { ListIncidentsParams } from '../services/incidents';
 import { useAuth } from '../hooks/useAuth';
 import { useLookups } from '../hooks/useLookups';
 import IncidentStatCards from '../components/incidents/IncidentStatCards';
@@ -24,12 +26,12 @@ export default function Incidents() {
   const { claims } = useAuth();
   const canManageInc = useCanDo('manage_incidents');
   const canPrint     = useCanDo('print_reports');
-  const { incidents, total, loading, error, stats, statsLoading, fetch, fetchStats, create, remove } = useIncidents();
+  const qc           = useQueryClient();
   const { lookups } = useLookups();
 
   // Pagination + filters
-  const [page, setPage]                   = useState(1);
-  const [filterId, setFilterId]           = useState('');
+  const [page, setPage]                     = useState(1);
+  const [filterId, setFilterId]             = useState('');
   const [filterCategory, setFilterCategory] = useState('');
   const [filterSeverity, setFilterSeverity] = useState('');
   const [filterStatus, setFilterStatus]     = useState('');
@@ -42,6 +44,19 @@ export default function Incidents() {
   const [showAdd, setShowAdd]         = useState(false);
   const [showPrint, setShowPrint]     = useState(false);
   const [showExtLink, setShowExtLink] = useState(false);
+
+  // Incident list query — declared after all state is initialised
+  const incidentParams: ListIncidentsParams = {
+    page,
+    page_size:     PAGE_SIZE,
+    incident_id:   filterId           || undefined,
+    category:      filterCategory     || undefined,
+    severity:      filterSeverity     || undefined,
+    status:        filterStatus       || undefined,
+    business_unit: filterBusinessUnit || undefined,
+    search:        filterSearch       || undefined,
+  };
+  const { incidents, total, loading, error, stats, statsLoading, create } = useIncidents(incidentParams);
 
   // Add form state
   const [addForm, setAddForm] = useState<Partial<IncidentCreate>>({
@@ -57,27 +72,12 @@ export default function Incidents() {
 
   const loadPage = useCallback((p: number) => {
     setPage(p);
-    fetch({
-      page:          p,
-      page_size:     PAGE_SIZE,
-      incident_id:   filterId          || undefined,
-      category:      filterCategory    || undefined,
-      severity:      filterSeverity    || undefined,
-      status:        filterStatus      || undefined,
-      business_unit: filterBusinessUnit || undefined,
-      search:        filterSearch      || undefined,
-    });
-  }, [fetch, filterId, filterCategory, filterSeverity, filterStatus, filterBusinessUnit, filterSearch]);
-
-  useEffect(() => {
-    fetch({ page: 1, page_size: PAGE_SIZE });
-    fetchStats();
   }, []);
 
-  function applyFilters() { loadPage(1); }
+  function applyFilters() { setPage(1); }
   function clearFilters() {
-    setFilterId(''); setFilterCategory(''); setFilterSeverity(''); setFilterStatus(''); setFilterBU(''); setFilterSearch('');
-    fetch({ page: 1, page_size: PAGE_SIZE });
+    setFilterId(''); setFilterCategory(''); setFilterSeverity('');
+    setFilterStatus(''); setFilterBU(''); setFilterSearch('');
     setPage(1);
   }
 
@@ -93,7 +93,6 @@ export default function Incidents() {
         setAddForm({ severity: 'Medium', status: 'New' });
         setFlashId(inc.id);
         setTimeout(() => setFlashId(null), 3500);
-        fetchStats();
       }
     } finally {
       setAddBusy(false);
@@ -104,14 +103,14 @@ export default function Incidents() {
     setDetailInc(null);
     setFlashId(updated.id);
     setTimeout(() => setFlashId(null), 3500);
-    loadPage(page);
-    fetchStats();
+    qc.invalidateQueries({ queryKey: ['incidents'] });
+    qc.invalidateQueries({ queryKey: ['dashboard'] });
   }
 
-  function handleDeleted(id: string) {
+  function handleDeleted() {
     setDetailInc(null);
-    remove(id);
-    fetchStats();
+    qc.invalidateQueries({ queryKey: ['incidents'] });
+    qc.invalidateQueries({ queryKey: ['dashboard'] });
   }
 
   const today = new Date().toISOString().slice(0, 10);
@@ -127,7 +126,7 @@ export default function Incidents() {
             <button className="btn-icon" title="External Submission Link" type="button" onClick={() => setShowExtLink(true)}>
               <Link2 size={16} />
             </button>
-            <button className="btn-icon" title="Refresh" type="button" onClick={() => { loadPage(page); fetchStats(); }}>
+            <button className="btn-icon" title="Refresh" type="button" onClick={() => qc.invalidateQueries({ queryKey: ['incidents'] })}>
               <RefreshCw size={16} />
             </button>
             {canPrint && (

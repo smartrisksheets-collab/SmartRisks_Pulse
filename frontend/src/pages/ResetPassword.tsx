@@ -1,4 +1,4 @@
-import { useState, useEffect, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSearchParams } from 'react-router-dom';
 import { apiPost } from '../services/api';
@@ -27,7 +27,6 @@ export default function ResetPassword() {
   const [password, setPassword] = useState('');
   const [confirm, setConfirm]   = useState('');
   const [loading, setLoading]   = useState(false);
-  const [ready, setReady]       = useState(false);
   const [showPwd, setShowPwd]     = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [error, setError]       = useState('');
@@ -38,10 +37,7 @@ export default function ResetPassword() {
 
   const [searchParams] = useSearchParams();
 
-  useEffect(() => {
-    const token = searchParams.get('token');
-    if (token) setReady(true);
-  }, [searchParams]);
+  const ready = !!searchParams.get('token');
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();

@@ -8,6 +8,8 @@ engine = create_async_engine(
     _db_url,
     echo=False,
     pool_pre_ping=True,
+    pool_size=10,
+    max_overflow=5,
     connect_args={"statement_cache_size": 0},
 )
 

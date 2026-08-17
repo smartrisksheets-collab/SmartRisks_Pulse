@@ -1,11 +1,12 @@
 // src/pages/RiskRegister.tsx
 
 import { useEffect, useState, useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { useRisks }        from '../hooks/useRisks';
 import { useLookups } from '../hooks/useLookups';
 import { useCanDo }        from '../utils/permissions';
-import { getStats, listRisks, type StatsParams } from '../services/risks';
+import { getStats, listRisks, type StatsParams, type ListRisksParams } from '../services/risks';
 import { useMatrix } from '../hooks/useMatrix';
 import { usePendingCount } from '../hooks/useExternalSubmissions';
 import { useToast } from '../hooks/useToast';
@@ -33,7 +34,7 @@ export default function RiskRegister() {
   const { claims } = useAuth();
   const navigate = useNavigate();
   const toast    = useToast();
-  const { risks, quota, total, loading, fetch: fetchRisks, create, update, remove, importRisks, generateAI } = useRisks();
+  const qc       = useQueryClient();
   const { query: matrixQuery } = useMatrix();
   const { data: pendingData } = usePendingCount();
   const pendingCount = pendingData?.count ?? 0;
@@ -47,7 +48,6 @@ export default function RiskRegister() {
   const [treatment, setTreatment]   = useState('');
   const [search, setSearch]         = useState('');
   const [page, setPage]             = useState(1);
-  const [refreshKey, setRefreshKey] = useState(0);
   const [flashId, setFlashId]       = useState<string | null>(null);
   const [aiFlashIds, setAiFlashIds] = useState<Set<string>>(new Set());
 
@@ -58,6 +58,18 @@ export default function RiskRegister() {
   // Stats
   const [stats, setStats]               = useState<RiskStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
+
+  // Risk list query — params declared after all state is initialised
+  const riskParams: ListRisksParams = {
+    page, page_size: PAGE_SIZE,
+    risk_id:   debouncedRiskId || undefined,
+    search:    debouncedSearch || undefined,
+    level:     level           || undefined,
+    treatment: treatment       || undefined,
+    owner:     owner           || undefined,
+    category:  category        || undefined,
+  };
+  const { risks, quota, total, loading, dataUpdatedAt, create, update, remove, importRisks, generateAI } = useRisks(riskParams);
 
   // Modals
   const [showAdd, setShowAdd]       = useState(false);
@@ -106,19 +118,6 @@ export default function RiskRegister() {
     return () => clearTimeout(t);
   }, [riskId]);
 
-  // Main fetch
-  useEffect(() => {
-    fetchRisks({
-      page, page_size: PAGE_SIZE,
-      risk_id:   debouncedRiskId || undefined,
-      search:    debouncedSearch || undefined,
-      level:     level     || undefined,
-      treatment: treatment || undefined,
-      owner:     owner     || undefined,
-      category:  category  || undefined,
-    });
-  }, [page, debouncedRiskId, debouncedSearch, level, treatment, owner, category, refreshKey, fetchRisks]);
-
   // Stats — re-fetch whenever filters or data changes
   useEffect(() => {
     let cancelled = false;
@@ -133,7 +132,7 @@ export default function RiskRegister() {
       .catch(console.error)
       .finally(() => { if (!cancelled) setStatsLoading(false); });
     return () => { cancelled = true; };
-  }, [refreshKey, category, level, treatment, owner, debouncedSearch]);
+  }, [dataUpdatedAt, category, level, treatment, owner, debouncedSearch]);
 
   function clearFilters() {
     setRiskId(''); setCategory(''); setOwner('');
@@ -154,7 +153,6 @@ export default function RiskRegister() {
     setDeleteLoading(true);
     try {
       await remove(deleteTarget.id);
-      setRefreshKey(k => k + 1);
       setShowDelete(false);
       setDeleteTarget(null);
     } catch { /* handled in hook */ } finally {
@@ -199,16 +197,6 @@ export default function RiskRegister() {
     }
     const r = await generateAI(payload);
     if (r) {
-      await fetchRisks({
-        page, page_size: PAGE_SIZE,
-        risk_id:   debouncedRiskId || undefined,
-        search:    debouncedSearch || undefined,
-        category:  category  || undefined,
-        level:     level     || undefined,
-        treatment: treatment || undefined,
-        owner:     owner     || undefined,
-      });
-      setRefreshKey(k => k + 1);
       if (r.updated_ids.length > 0) {
         setAiFlashIds(new Set(r.updated_ids));
         setTimeout(() => setAiFlashIds(new Set()), 2400);
@@ -433,7 +421,6 @@ export default function RiskRegister() {
         onSubmit={async (payload: RiskCreate) => {
           const r = await create(payload);
           if (r) {
-            setRefreshKey(k => k + 1);
             setFlashId(r.id);
             setTimeout(() => setFlashId(null), 2400);
           }
@@ -447,7 +434,6 @@ export default function RiskRegister() {
         onSubmit={async (id, payload) => {
           const r = await update(id, payload);
           if (r) {
-            setRefreshKey(k => k + 1);
             setFlashId(id);
             setTimeout(() => setFlashId(null), 2400);
           }
@@ -466,7 +452,6 @@ export default function RiskRegister() {
         onClose={() => setShowImport(false)}
         onImport={async rows => {
           const r = await importRisks(rows);
-          if (r) setRefreshKey(k => k + 1);
           return r;
         }}
       />
@@ -488,7 +473,7 @@ export default function RiskRegister() {
       <RecycleBinModal
         open={showBin}
         onClose={() => setShowBin(false)}
-        onRestored={() => setRefreshKey(k => k + 1)}
+        onRestored={() => qc.invalidateQueries({ queryKey: ['risks'] })}
       />
       <PrintModal
         open={showPrint}

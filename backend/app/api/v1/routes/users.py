@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
+from app.core.rate_limit import limiter
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 from app.core.dependencies import get_db, get_active_tenant, require_permission
@@ -36,7 +37,9 @@ async def list_users(
 
 
 @router.post("")
+@limiter.limit("10/minute")
 async def add_user(
+    request: Request,
     payload: AddMemberRequest,
     db: AsyncSession = Depends(get_db),
     claims: dict = Depends(require_permission("manage_users")),
@@ -47,7 +50,9 @@ async def add_user(
 
 
 @router.patch("/{member_id}")
+@limiter.limit("60/minute")
 async def update_user(
+    request: Request,
     member_id: UUID,
     payload: UpdateMemberRequest,
     db: AsyncSession = Depends(get_db),
@@ -61,7 +66,9 @@ async def update_user(
 
 
 @router.delete("/{member_id}")
+@limiter.limit("60/minute")
 async def deactivate_user(
+    request: Request,
     member_id: UUID,
     db: AsyncSession = Depends(get_db),
     claims: dict = Depends(require_permission("manage_users")),
@@ -72,7 +79,9 @@ async def deactivate_user(
 
 
 @router.delete("/{member_id}/remove")
+@limiter.limit("60/minute")
 async def remove_user(
+    request: Request,
     member_id: UUID,
     db: AsyncSession = Depends(get_db),
     claims: dict = Depends(require_permission("manage_users")),
@@ -83,7 +92,9 @@ async def remove_user(
 
 
 @router.post("/{member_id}/reactivate")
+@limiter.limit("60/minute")
 async def reactivate_user(
+    request: Request,
     member_id: UUID,
     db: AsyncSession = Depends(get_db),
     claims: dict = Depends(require_permission("manage_users")),

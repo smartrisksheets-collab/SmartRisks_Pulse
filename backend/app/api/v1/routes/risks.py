@@ -4,7 +4,8 @@ from uuid import UUID
 
 import logging
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
+from app.core.rate_limit import limiter
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_db, get_active_tenant, require_module, require_permission
@@ -50,9 +51,11 @@ async def list_risks(
     }
 
 
-@router.post("/import")
-async def bulk_import(
-    payload: BulkImportRequest,
+@router.post("/ai")
+@limiter.limit("10/minute")
+async def generate_ai_insights(
+    request: Request,
+    payload: AIInsightRequest,
     db: AsyncSession = Depends(get_db),
     claims: dict     = Depends(require_permission("manage_risks")),
     _:       dict    = Depends(require_module("risk")),
@@ -126,7 +129,9 @@ async def _auto_run_ai(tenant_id: UUID, risk_id: str, user_email: str) -> None:
 
 
 @router.post("")
+@limiter.limit("60/minute")
 async def create_risk(
+    request:          Request,
     payload:          RiskCreate,
     background_tasks: BackgroundTasks,
     db:               AsyncSession = Depends(get_db),
@@ -140,7 +145,9 @@ async def create_risk(
 
 
 @router.patch("/{risk_id}")
+@limiter.limit("60/minute")
 async def update_risk(
+    request: Request,
     risk_id: str,
     payload: RiskUpdate,
     db: AsyncSession = Depends(get_db),
@@ -153,7 +160,9 @@ async def update_risk(
 
 
 @router.delete("/{risk_id}")
+@limiter.limit("60/minute")
 async def delete_risk(
+    request: Request,
     risk_id: str,
     db: AsyncSession = Depends(get_db),
     claims: dict     = Depends(require_permission("manage_risks")),

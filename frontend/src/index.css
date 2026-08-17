@@ -984,6 +984,12 @@ tr.row-flash { animation: rowFlash 2.2s ease; }
    SPINNERS
 ============================================================ */
 
+/* ── Page-level lazy load fallback ──────────────────────────────────────── */
+.page-loader {
+  display: flex; align-items: center; justify-content: center;
+  height: 100%; min-height: 320px; width: 100%;
+}
+
 .spinner {
   width: 14px; height: 14px; border-radius: 50%;
   border: 2px solid rgba(255,255,255,.35);
@@ -2781,6 +2787,25 @@ tr.row-flash { animation: rowFlash 2.2s ease; }
 @keyframes iw-in {
   from { opacity: 0; transform: translateX(-50%) translateY(12px); }
   to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+/* ── Offline banner ──────────────────────────────────────────────────────── */
+.offline-banner {
+  position: fixed; top: 0; left: 0; right: 0;
+  background: #1F2854; color: #fff;
+  padding: 10px 20px;
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  font-size: 13px; font-weight: 600;
+  z-index: 99999;
+  animation: ob-in .2s ease;
+}
+.offline-banner-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: #ef4444; flex-shrink: 0;
+}
+@keyframes ob-in {
+  from { transform: translateY(-100%); }
+  to   { transform: translateY(0); }
 }
 
 /* ============================================================

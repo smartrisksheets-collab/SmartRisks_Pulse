@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { AxiosResponse } from 'axios';
+import type { AxiosResponse, InternalAxiosRequestConfig } from 'axios';
 import type { ApiResponse } from '../types/api';
 import { useAuthStore } from '../store/authStore';
 
@@ -14,16 +14,62 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// Shared refresh promise: prevents concurrent refresh calls when multiple
+// requests fail with 401 at the same time.
+let _refreshPromise: Promise<string | null> | null = null;
+
+async function _attemptRefresh(): Promise<string | null> {
+  if (_refreshPromise) return _refreshPromise;
+  _refreshPromise = axios
+    .post<ApiResponse<{ access_token: string }>>(
+      `${import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'}/api/v1/auth/refresh`,
+      null,
+      { withCredentials: true }
+    )
+    .then((res) => {
+      const token = res.data?.data?.access_token ?? null;
+      if (token) useAuthStore.getState().setToken(token);
+      return token;
+    })
+    .catch(() => null)
+    .finally(() => { _refreshPromise = null; });
+  return _refreshPromise;
+}
+
+function _forceLogout() {
+  useAuthStore.getState().logout();
+  window.location.href = '/login';
+}
+
 api.interceptors.response.use(
   (response: AxiosResponse) => response,
   async (error) => {
     const status = error.response?.status;
+    const originalRequest = error.config as InternalAxiosRequestConfig & { _retried?: boolean };
     const isAuthRoute = ['/login', '/register', '/forgot-password', '/reset-password'].includes(window.location.pathname);
+    const isRefreshCall = originalRequest?.url?.includes('/auth/refresh');
 
     if (status === 401 && !isAuthRoute) {
-      useAuthStore.getState().logout();
-      window.location.href = '/login';
-      return Promise.reject(error);
+      // If the refresh endpoint itself returned 401, the refresh token is
+      // expired or invalid. Log out immediately, no retry.
+      if (isRefreshCall || originalRequest._retried) {
+        _forceLogout();
+        return Promise.reject(error);
+      }
+
+      // First 401 on a normal request: try to refresh the access token.
+      originalRequest._retried = true;
+      const newToken = await _attemptRefresh();
+
+      if (!newToken) {
+        // Refresh failed (cookie missing, expired, or server error).
+        _forceLogout();
+        return Promise.reject(error);
+      }
+
+      // Retry the original request with the fresh token.
+      originalRequest.headers.Authorization = `Bearer ${newToken}`;
+      return api(originalRequest);
     }
 
     if (status === 403) {
@@ -39,7 +85,7 @@ api.interceptors.response.use(
       }
     }
 
-    const backendMessage = error.response?.data?.error;
+    const backendMessage = error.response?.data?.error ?? error.response?.data?.detail;
     if (backendMessage) {
       return Promise.reject(new Error(backendMessage));
     }

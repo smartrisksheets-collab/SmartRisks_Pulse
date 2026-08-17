@@ -115,7 +115,7 @@ function InviteModal({ onClose, toast }: InviteModalProps) {
           toast("User invited successfully.");
           onClose();
         },
-        onError: () => setErr("Failed to invite user. Check the email and try again."),
+        onError: (err: unknown) => setErr(err instanceof Error ? err.message : "Failed to invite user. Check the email and try again."),
       }
     );
   }
@@ -215,7 +215,7 @@ function EditModal({ member, selfId, onClose, toast }: EditModalProps) {
       { id: member.id, body },
       {
         onSuccess: () => { toast("User updated."); onClose(); },
-        onError:   () => setErr("Update failed. Please try again."),
+        onError:   (err: unknown) => setErr(err instanceof Error ? err.message : "Update failed. Please try again."),
       }
     );
   }
@@ -233,7 +233,7 @@ function EditModal({ member, selfId, onClose, toast }: EditModalProps) {
     setErr("");
     reactivateUser.mutate(member.id, {
       onSuccess: () => { toast("User reactivated."); onClose(); },
-      onError:   () => setErr("Reactivation failed. User limit may be reached."),
+      onError:   (err: unknown) => setErr(err instanceof Error ? err.message : "Reactivation failed. User limit may be reached."),
     });
   }
 
@@ -242,7 +242,7 @@ function EditModal({ member, selfId, onClose, toast }: EditModalProps) {
     setErr("");
     removeUser.mutate(member.id, {
       onSuccess: () => { toast("User removed from workspace.", "info"); onClose(); },
-      onError:   () => { setErr("Removal failed. Cannot remove the last Owner."); setConfirmRemove(false); },
+      onError:   (err: unknown) => { setErr(err instanceof Error ? err.message : "Removal failed. Cannot remove the last Owner."); setConfirmRemove(false); },
     });
   }
 

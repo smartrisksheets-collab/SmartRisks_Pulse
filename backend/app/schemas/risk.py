@@ -15,7 +15,7 @@ class RiskCreate(BaseModel):
     impact_score: int        = Field(..., ge=1, le=5)
     primary_impact: str | None           = None
     controls: str | None                 = None
-    control_effectiveness: int | None    = Field(default=None, ge=0, le=100)
+    control_effectiveness: int | None    = Field(default=None, ge=0, le=5)
     mitigation_plan: str | None          = None
     comments: str | None                 = None
     ai_insight: str | None               = None

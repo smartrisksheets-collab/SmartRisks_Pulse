@@ -1,7 +1,4 @@
-// src/hooks/useRisks.ts
-
-import { useState, useCallback } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import type {
   Risk, RiskCreate, RiskUpdate, RiskQuota,
   BulkImportRow, BulkImportResult,
@@ -10,113 +7,109 @@ import type {
 import type { ListRisksParams } from '../services/risks';
 import * as risksApi from '../services/risks';
 
-interface UseRisksState {
-  risks:    Risk[];
-  quota:    RiskQuota | null;
-  total:    number;
-  loading:  boolean;
-  error:    string | null;
-}
+const RISKS_KEY = 'risks' as const;
+const STALE_MS  = 2 * 60 * 1000;
 
-export function useRisks() {
-  const queryClient = useQueryClient();
-  const [state, setState] = useState<UseRisksState>({
-    risks: [], quota: null, total: 0, loading: false, error: null,
+export function useRisks(params: ListRisksParams = {}) {
+  const qc = useQueryClient();
+
+  // ── List query ──────────────────────────────────────────────────────────
+  const query = useQuery({
+    queryKey:        [RISKS_KEY, params],
+    queryFn:         () => risksApi.listRisks(params),
+    staleTime:       STALE_MS,
+    placeholderData: keepPreviousData,
   });
 
-  const setLoading = (loading: boolean) =>
-    setState(s => ({ ...s, loading, error: loading ? null : s.error }));
+  const risks: Risk[]           = query.data?.items        ?? [];
+  const quota: RiskQuota | null = query.data?.meta?.quota  ?? null;
+  const total: number           = query.data?.meta?.total  ?? 0;
 
-  const setError = (error: string) =>
-    setState(s => ({ ...s, error, loading: false }));
+  function invalidate() {
+    qc.invalidateQueries({ queryKey: [RISKS_KEY] });
+    qc.invalidateQueries({ queryKey: ['dashboard'] });
+  }
 
-  const fetch = useCallback(async (params: ListRisksParams = {}) => {
-    setLoading(true);
+  // ── Mutations ───────────────────────────────────────────────────────────
+  const createM = useMutation({
+    mutationFn: (payload: RiskCreate) => risksApi.createRisk(payload),
+    onSuccess: invalidate,
+  });
+
+  const updateM = useMutation({
+    mutationFn: ({ id, payload }: { id: string; payload: RiskUpdate }) =>
+      risksApi.updateRisk(id, payload),
+    onSuccess: invalidate,
+  });
+
+  const removeM = useMutation({
+    mutationFn: (id: string) => risksApi.deleteRisk(id),
+    onSuccess: invalidate,
+  });
+
+  const importM = useMutation({
+    mutationFn: (rows: BulkImportRow[]) => risksApi.bulkImport(rows),
+    onSuccess: invalidate,
+  });
+
+  const aiM = useMutation({
+    mutationFn: (payload: AIInsightRequest) => risksApi.generateAI(payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: [RISKS_KEY] }),
+  });
+
+  // ── Adapters preserving existing call signatures ────────────────────────
+  async function create(payload: RiskCreate): Promise<Risk | null> {
     try {
-      const { items, meta } = await risksApi.listRisks(params);
-      setState({ risks: items, quota: meta.quota, total: meta.total, loading: false, error: null });
+      return await createM.mutateAsync(payload);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load risks');
+      throw new Error(e instanceof Error ? e.message : 'Failed to create risk', { cause: e });
     }
-  }, []);
+  }
 
-  const create = useCallback(async (payload: RiskCreate): Promise<Risk | null> => {
-    setLoading(true);
+  async function update(id: string, payload: RiskUpdate): Promise<Risk | null> {
     try {
-      const risk = await risksApi.createRisk(payload);
-      setState(s => ({
-        ...s, loading: false, error: null,
-        risks: [risk, ...s.risks],
-        total: s.total + 1,
-        quota: s.quota ? { ...s.quota, current: s.quota.current + 1 } : s.quota,
-      }));
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      return risk;
+      return await updateM.mutateAsync({ id, payload });
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to create risk');
-      return null;
+      throw new Error(e instanceof Error ? e.message : 'Failed to update risk', { cause: e });
     }
-  }, []);
+  }
 
-  const update = useCallback(async (id: string, payload: RiskUpdate): Promise<Risk | null> => {
-    setLoading(true);
+  async function remove(id: string): Promise<boolean> {
     try {
-      const updated = await risksApi.updateRisk(id, payload);
-      setState(s => ({
-        ...s, loading: false, error: null,
-        risks: s.risks.map(r => r.id === id ? updated : r),
-      }));
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      return updated;
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to update risk');
-      return null;
-    }
-  }, []);
-
-  const remove = useCallback(async (id: string): Promise<boolean> => {
-    setLoading(true);
-    try {
-      await risksApi.deleteRisk(id);
-      setState(s => ({
-        ...s, loading: false, error: null,
-        risks: s.risks.filter(r => r.id !== id),
-        total: Math.max(0, s.total - 1),
-        quota: s.quota ? { ...s.quota, current: Math.max(0, s.quota.current - 1) } : s.quota,
-      }));
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      await removeM.mutateAsync(id);
       return true;
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to delete risk');
-      return false;
+      throw new Error(e instanceof Error ? e.message : 'Failed to delete risk', { cause: e });
     }
-  }, []);
+  }
 
-  const importRisks = useCallback(async (rows: BulkImportRow[]): Promise<BulkImportResult | null> => {
-    setLoading(true);
+  async function importRisks(rows: BulkImportRow[]): Promise<BulkImportResult | null> {
     try {
-      const result = await risksApi.bulkImport(rows);
-      setState(s => ({ ...s, loading: false, error: null }));
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      return result;
+      return await importM.mutateAsync(rows);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Import failed';
-      setError(msg);
-      throw new Error(msg, { cause: e });
+      throw new Error(e instanceof Error ? e.message : 'Import failed', { cause: e });
     }
-  }, []);
+  }
 
-  const generateAI = useCallback(async (payload: AIInsightRequest): Promise<AIInsightResult | null> => {
-    setLoading(true);
+  async function generateAI(payload: AIInsightRequest): Promise<AIInsightResult | null> {
     try {
-      const result = await risksApi.generateAI(payload);
-      setState(s => ({ ...s, loading: false, error: null }));
-      return result;
+      return await aiM.mutateAsync(payload);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'AI generation failed');
-      return null;
+      throw new Error(e instanceof Error ? e.message : 'AI generation failed', { cause: e });
     }
-  }, []);
+  }
 
-  return { ...state, fetch, create, update, remove, importRisks, generateAI };
+  return {
+    risks,
+    quota,
+    total,
+    loading:       query.isLoading || query.isFetching,
+    error:         query.error instanceof Error ? query.error.message : null,
+    dataUpdatedAt: query.dataUpdatedAt,
+    create,
+    update,
+    remove,
+    importRisks,
+    generateAI,
+  };
 }

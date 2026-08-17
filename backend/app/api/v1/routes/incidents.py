@@ -2,7 +2,8 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
+from app.core.rate_limit import limiter
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_db, get_active_tenant, require_module, require_permission
@@ -58,7 +59,9 @@ async def list_incidents(
 
 
 @router.post("")
+@limiter.limit("60/minute")
 async def create_incident(
+    request: Request,
     payload: IncidentCreate,
     db: AsyncSession = Depends(get_db),
     claims: dict     = Depends(require_permission("manage_incidents")),
@@ -72,7 +75,9 @@ async def create_incident(
 
 
 @router.patch("/{incident_id}")
+@limiter.limit("60/minute")
 async def update_incident(
+    request: Request,
     incident_id: str,
     payload: IncidentUpdate,
     db: AsyncSession = Depends(get_db),
@@ -87,7 +92,9 @@ async def update_incident(
 
 
 @router.delete("/{incident_id}")
+@limiter.limit("60/minute")
 async def delete_incident(
+    request: Request,
     incident_id: str,
     db: AsyncSession = Depends(get_db),
     claims: dict     = Depends(require_permission("manage_incidents")),
@@ -105,7 +112,9 @@ async def delete_incident(
 
 
 @router.post("/{incident_id}/ai/impact")
+@limiter.limit("10/minute")
 async def generate_impact(
+    request: Request,
     incident_id: str,
     payload: AIIncidentRequest,
     db: AsyncSession = Depends(get_db),
@@ -120,7 +129,9 @@ async def generate_impact(
 
 
 @router.post("/{incident_id}/ai/actions")
+@limiter.limit("10/minute")
 async def generate_actions(
+    request: Request,
     incident_id: str,
     payload: AIIncidentRequest,
     db: AsyncSession = Depends(get_db),
@@ -135,7 +146,9 @@ async def generate_actions(
 
 
 @router.post("/ai/suggest-category")
+@limiter.limit("10/minute")
 async def suggest_category(
+    request: Request,
     payload: AIIncidentSuggestRequest,
     db:      AsyncSession = Depends(get_db),
     claims:  dict         = Depends(require_permission("generate_ai")),
@@ -146,7 +159,9 @@ async def suggest_category(
 
 
 @router.post("/ai/suggest-severity")
+@limiter.limit("10/minute")
 async def suggest_severity(
+    request: Request,
     payload: AIIncidentSuggestRequest,
     db:      AsyncSession = Depends(get_db),
     claims:  dict         = Depends(require_permission("generate_ai")),
