@@ -31,7 +31,7 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: 'sr-auth',
-      partialize: (s) => ({ token: s.token, workspaces: s.workspaces }),
+      partialize: (s) => ({ token: s.token, claims: s.claims, workspaces: s.workspaces }),
     }
   )
 );
