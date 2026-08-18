@@ -333,7 +333,7 @@ export default function ActivityFeed({ items }: { items: ActivityEntry[] }) {
         {showViewAll && (
           <div className="af-viewall">
             <button className="af-viewall-btn" onClick={() => setFeedOpen(true)}>
-              View all {items.length} events
+              View all {Math.min(items.length, 10)} events
             </button>
           </div>
         )}

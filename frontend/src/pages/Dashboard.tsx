@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Sparkles } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import { useDashboard } from '../hooks/useDashboard';
 import RiskSection from '../components/dashboard/RiskSection';
@@ -75,7 +76,7 @@ export default function Dashboard() {
           left = welcome, right = updated label + (no refresh button in v2 —
           query invalidation on every write handles freshness automatically) ── */}
       <div className="dash-topbar">
-        <div className="dash-welcome">Welcome, {displayName} ✨</div>
+        <div className="dash-welcome">Welcome, {displayName} <Sparkles size={14} color="#01b88e" style={{ display: 'inline', verticalAlign: 'middle', marginLeft: 4 }} /></div>
         <div className="dash-topbar-right">
           {isFetching && (
             <span className="dash-refresh">

@@ -471,7 +471,10 @@ export default function RiskRegister() {
       <RecycleBinModal
         open={showBin}
         onClose={() => setShowBin(false)}
-        onRestored={() => qc.invalidateQueries({ queryKey: ['risks'] })}
+        onRestored={() => {
+          qc.invalidateQueries({ queryKey: ['risks'] });
+          qc.invalidateQueries({ queryKey: ['dashboard'] });
+        }}
       />
       <PrintModal
         open={showPrint}

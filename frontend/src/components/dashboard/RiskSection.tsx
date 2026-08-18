@@ -61,18 +61,17 @@ const CAT_COLORS = ['#1F2854', '#01b88e', '#94a3b8', '#f59e0b', '#ef4444'];
 // At scale 1.4: r=90 renders as 252px diameter, strokeWidth=10 renders as 14px
 
 function ExposureGauge({ health, exposure }: { health: number; exposure: number }) {
-  const r        = 90;
+  const r        = 84;
   const cx       = 100;
   const cy       = 100;
-  const circ     = 2 * Math.PI * r;  // 565.49
-  const halfCirc = circ / 2;          // 282.74
+  const circ     = 2 * Math.PI * r;
+  const halfCirc = circ / 2;
   const clamped  = Math.max(0, Math.min(100, health));
   const fillLen  = (clamped / 100) * halfCirc;
   const color    = healthColor(clamped);
-  const offset   = halfCirc; // shift start from 3 o'clock to 9 o'clock
+  const offset   = halfCirc;
 
   return (
-    // Matches GAS .sr-gauge-wrap { position:relative; height:140px }
     <div className="rs-gauge-wrap">
       <svg
         viewBox="0 0 200 100"
@@ -81,14 +80,14 @@ function ExposureGauge({ health, exposure }: { health: number; exposure: number 
       >
         {/* Background track — full semicircle */}
         <circle cx={cx} cy={cy} r={r} fill="none"
-          stroke="var(--line)" strokeWidth="10"
+          stroke="var(--line)" strokeWidth="24"
           strokeDasharray={`${halfCirc} ${halfCirc}`}
           strokeDashoffset={offset}
           strokeLinecap="round"
         />
         {/* Value arc — fills left→top→right proportional to health */}
         <circle cx={cx} cy={cy} r={r} fill="none"
-          stroke={color} strokeWidth="10"
+          stroke={color} strokeWidth="24"
           strokeDasharray={`${fillLen} ${circ - fillLen}`}
           strokeDashoffset={offset}
           strokeLinecap="round"
@@ -322,7 +321,7 @@ export default function RiskSection({ data }: Props) {
         {/* Card 1: Risk Health
             GAS .sr-hero: border-top:3px solid var(--sr-emerald)
             GAS .sr-gauge-wrap: height:140px; position:relative */}
-        <div className="im-card im-accent-teal">
+        <div className="im-card">
           <div className="im-card-head">
             <span className="im-label">RISK HEALTH</span>
             <div className="rs-signal-col">
@@ -554,7 +553,10 @@ export default function RiskSection({ data }: Props) {
       <div className="im-card">
         <div className="im-card-head">
           <span className="im-label">OPERATIONAL INTELLIGENCE FEED</span>
-          <span className="im-badge" style={{ background: '#e8faf5', color: '#18c29c' }}>Live</span>
+          <span className="af-live-wrap">
+            <span className="af-live-dot" />
+            <span className="im-badge" style={{ background: '#e8faf5', color: '#18c29c' }}>Live</span>
+          </span>
         </div>
         <ActivityFeed items={activity_feed} />
       </div>
@@ -563,7 +565,7 @@ export default function RiskSection({ data }: Props) {
           GAS .sr-ai-card: border-top:3px solid var(--sr-navy)
           GAS .sr-ai-body: styled background box
           GAS .sr-cross-insight: border-top:1px dashed ── */}
-      <div className="im-card im-accent-navy">
+      <div className="im-card">
         <div className="im-card-head">
           <span className="im-label">EXECUTIVE INSIGHTS</span>
           <span className="rs-exec-badge">Executive</span>
