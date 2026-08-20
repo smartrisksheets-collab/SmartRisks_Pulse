@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ResponsiveContainer,
@@ -16,6 +16,9 @@ import {
 } from 'recharts';
 import type { DashboardData, KPISummary, TopRisk, TrendPoint } from '../../types/dashboard';
 import ActivityFeed from './ActivityFeed';
+import { useQuery } from '@tanstack/react-query';
+import { fetchExecInsight } from '../../services/dashboard';
+import type { ExecInsight, ActionItem } from '../../types/dashboard';
 
 // ── Color helpers (match GAS health bands exactly) ────────────────────────────
 
@@ -37,7 +40,7 @@ function healthLabel(h: number): string {
 function healthStatusCls(h: number): string {
   if (h <= 25) return 'down';
   if (h <= 50) return 'warn';
-  if (h <= 75) return '';
+  if (h <= 75) return 'neutral';
   return 'up';
 }
 
@@ -61,7 +64,7 @@ const CAT_COLORS = ['#1F2854', '#01b88e', '#94a3b8', '#f59e0b', '#ef4444'];
 // At scale 1.4: r=90 renders as 252px diameter, strokeWidth=10 renders as 14px
 
 function ExposureGauge({ health, exposure }: { health: number; exposure: number }) {
-  const r        = 84;
+  const r        = 88;
   const cx       = 100;
   const cy       = 100;
   const circ     = 2 * Math.PI * r;
@@ -70,6 +73,12 @@ function ExposureGauge({ health, exposure }: { health: number; exposure: number 
   const fillLen  = (clamped / 100) * halfCirc;
   const color    = healthColor(clamped);
   const offset   = halfCirc;
+
+  const [animatedFill, setAnimatedFill] = useState(0);
+  useEffect(() => {
+    const t = setTimeout(() => setAnimatedFill(fillLen), 50);
+    return () => clearTimeout(t);
+  }, [fillLen]);
 
   return (
     <div className="rs-gauge-wrap">
@@ -80,18 +89,18 @@ function ExposureGauge({ health, exposure }: { health: number; exposure: number 
       >
         {/* Background track — full semicircle */}
         <circle cx={cx} cy={cy} r={r} fill="none"
-          stroke="var(--line)" strokeWidth="24"
+          stroke="var(--line)" strokeWidth="16"
           strokeDasharray={`${halfCirc} ${halfCirc}`}
           strokeDashoffset={offset}
           strokeLinecap="round"
         />
-        {/* Value arc — fills left→top→right proportional to health */}
+        {/* Value arc — animates from 0 to fill on mount */}
         <circle cx={cx} cy={cy} r={r} fill="none"
-          stroke={color} strokeWidth="24"
-          strokeDasharray={`${fillLen} ${circ - fillLen}`}
+          stroke={color} strokeWidth="16"
+          strokeDasharray={`${animatedFill} ${circ - animatedFill}`}
           strokeDashoffset={offset}
           strokeLinecap="round"
-          style={{ transition: 'stroke-dasharray 0.6s ease' }}
+          style={{ transition: 'stroke-dasharray 0.8s ease-out' }}
         />
       </svg>
       {/* Text overlay */}
@@ -117,30 +126,79 @@ function buildTrendInsight(points: TrendPoint[], index: number): string {
   return `<strong>${points[index].label}:</strong> Avg residual <b>${cur}</b> — ${dir}. ${vol}`;
 }
 
-// ── Risk narrative — mirrors GAS _renderRiskNarrative() ──────────────────────
+// ── Action Plan Modal ─────────────────────────────────────────────────────────
 
-function RiskNarrative({ kpis }: { kpis: KPISummary }) {
-  const total   = kpis.total_risks;
-  const high    = kpis.high_risks;
-  const avgRes  = kpis.risk_severity_avg.toFixed(1);
-  const pct     = total > 0 ? Math.round((high / total) * 100) : 0;
-  const posture = pct > 30 ? 'under pressure' : pct > 15 ? 'elevated' : 'stable';
-  const ctrl    = kpis.control_effectiveness_avg;
-  const ctrlText = ctrl > 0
-    ? ctrl >= 75
-      ? 'Control environment is operating effectively.'
-      : 'Control effectiveness may need review.'
-    : '';
+function ActionPlanModal({ open, onClose, insight }: { open: boolean; onClose: () => void; insight: ExecInsight }) {
+  if (!open) return null;
+  return (
+    <div className="dl-modal-back z-top" onClick={onClose}>
+      <div className="dl-modal lg" style={{ padding: 0, overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
+        <div className="ap-modal-hd">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div>
+              <p className="ap-modal-title">30-Day Action Plan</p>
+              <p className="ap-modal-sub">Built directly from this cycle's Executive Insights — not a generic checklist.</p>
+            </div>
+            <button className="dl-modal-x lg" style={{ color: '#fff', marginTop: 2 }} onClick={onClose}>✕</button>
+          </div>
+          <span className="ap-horizon-tag">⚡ Near-term response, not a maturity roadmap</span>
+        </div>
+        <div className="dl-modal-bd" style={{ padding: '20px 24px' }}>
+          <div className="ap-basis-note">
+            Each action below responds directly to one fact from this cycle's summary. <strong>Nothing here is generic advice.</strong> If a fact changes next cycle, this plan changes with it.
+          </div>
+          <div className="ap-action-list">
+            {insight.action_items.map((item: ActionItem, idx: number) => (
+              <div key={idx} className="ap-action-item">
+                <div className="ap-action-num">{item.sentence_num}</div>
+                <div className="ap-action-body">
+                  <div className="ap-action-source">{item.source_label}</div>
+                  <div className="ap-action-title">{item.title}</div>
+                  <div className="ap-action-done"><strong>Done when:</strong> {item.done_when}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="ap-modal-footer">
+          <span className="ap-footer-note">Regenerates automatically each cycle as Executive Insights updates.</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Executive Insights card with AI summary ───────────────────────────────────
+
+function ExecInsightCard({ totalRisks }: { totalRisks: number }) {
+  const [planOpen, setPlanOpen] = useState(false);
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ['exec-insights'],
+    queryFn:  () => fetchExecInsight(),
+    staleTime: 30 * 60 * 1000,
+    enabled:   totalRisks > 0,
+  });
+
+  if (totalRisks === 0) {
+    return <div className="rs-exec-empty">No risks recorded. Add risks to the register to generate insights.</div>;
+  }
+  if (isLoading) {
+    return <div className="ap-loading">Generating executive insights…</div>;
+  }
+  if (isError || !data) {
+    return <div className="rs-exec-empty">Could not generate insights. Check AI is enabled in Settings.</div>;
+  }
 
   return (
-    // Matches GAS .sr-ai-body { background:#f8fafc; border:1px solid #e5e7eb; padding:14px 16px; border-radius:12px }
-    <div className="rs-risk-narrative">
-      Enterprise risk posture is <strong>{posture}</strong>.{' '}
-      <strong>{total}</strong> active risks recorded,{' '}
-      <strong>{high}</strong> ({pct}%) rated High or Critical.{' '}
-      Average residual score: <strong>{avgRes}</strong>.{' '}
-      {ctrlText}
-    </div>
+    <>
+      <div className="rs-risk-narrative" dangerouslySetInnerHTML={{ __html: data.summary }} />
+      <div style={{ marginTop: 10, display: 'flex', justifyContent: 'flex-end' }}>
+        <button className="ap-plan-link" onClick={() => setPlanOpen(true)}>
+          💬 What should we do about this? →
+        </button>
+      </div>
+      {planOpen && <ActionPlanModal open={planOpen} onClose={() => setPlanOpen(false)} insight={data} />}
+    </>
   );
 }
 
@@ -163,7 +221,7 @@ function PressureModal({
 
   return (
     <div className="dl-modal-back z-top" onClick={onClose}>
-      <div className="dl-modal md" onClick={e => e.stopPropagation()}>
+      <div className="dl-modal lg" onClick={e => e.stopPropagation()}>
         <div className="dl-modal-hd flat">
           <span>Risk Pressure — Insights</span>
           <button className="dl-modal-x md" onClick={onClose}>✕</button>
@@ -231,7 +289,7 @@ function DistributionModal({
 
   return (
     <div className="dl-modal-back z-top" onClick={onClose}>
-      <div className="dl-modal md" onClick={e => e.stopPropagation()}>
+      <div className="dl-modal lg" onClick={e => e.stopPropagation()}>
         <div className="dl-modal-hd flat">
           <span>Risk Distribution — Detail</span>
           <button className="dl-modal-x md" onClick={onClose}>✕</button>
@@ -286,7 +344,7 @@ interface Props {
 }
 
 export default function RiskSection({ data }: Props) {
-  const { kpis, snapshot_delta, risks_by_category, top_risks, residual_trend, activity_feed, attention } = data;
+  const { kpis, snapshot_delta, risks_by_category, top_risks, residual_trend, activity_feed } = data;
 
   const navigate = useNavigate();
   const [pressureOpen, setPressureOpen] = useState(false);
@@ -479,10 +537,10 @@ export default function RiskSection({ data }: Props) {
                   />
                   <Area
                     type="monotone" dataKey="avg" name="Avg residual"
-                    stroke="#1F2854" strokeWidth={2.5}
+                    stroke="#94a3b8" strokeWidth={2.5}
                     fill="rgba(31,40,84,0.06)"
-                    dot={{ fill: '#1F2854', stroke: '#1F2854', r: 5 }}
-                    activeDot={{ r: 7, fill: '#01b88e', stroke: 'none' }}
+                    dot={{ fill: '#1F2854', stroke: '#1F2854', r: 3 }}
+                    activeDot={{ r: 5, fill: '#01b88e', stroke: 'none' }}
                   />
                 </AreaChart>
               </ResponsiveContainer>
@@ -539,16 +597,6 @@ export default function RiskSection({ data }: Props) {
 
       </div>
 
-      {/* ── Needs Attention (v2 addition — not in GAS but kept as user approved) ── */}
-      {attention.length > 0 && (
-        <div className="im-card">
-          <div className="im-card-head"><span className="im-label">NEEDS ATTENTION</span></div>
-          <div className="dash-attention">
-            {attention.map((msg, i) => <div key={i} className="dash-attention-item">{msg}</div>)}
-          </div>
-        </div>
-      )}
-
       {/* ── Operational Intelligence Feed ── */}
       <div className="im-card">
         <div className="im-card-head">
@@ -570,12 +618,7 @@ export default function RiskSection({ data }: Props) {
           <span className="im-label">EXECUTIVE INSIGHTS</span>
           <span className="rs-exec-badge">Executive</span>
         </div>
-        {kpis.total_risks === 0
-          ? <div className="rs-exec-empty">
-              No risks recorded. Add risks to the register to generate insights.
-            </div>
-          : <RiskNarrative kpis={kpis} />
-        }
+        <ExecInsightCard totalRisks={kpis.total_risks} />
         {/* GAS .sr-cross-insight: border-top:1px dashed, font-size:12px */}
         <div className="rs-exec-footer">
           <div className="rs-exec-footer-row">

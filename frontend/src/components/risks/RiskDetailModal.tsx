@@ -60,7 +60,7 @@ export default function RiskDetailModal({ open, risk, onClose, onEdit, onDelete 
             <GridField label="Residual"          value={risk.residual != null ? Math.round(risk.residual) : null} />
             <GridField label="Freshness"         value={risk.freshness} />
             <GridField label="Controls"          value={risk.controls} />
-            <GridField label="Control Eff."      value={risk.control_effectiveness != null ? `${risk.control_effectiveness}%` : null} />
+                        <GridField label="Control Eff."      value={risk.control_effectiveness != null ? `${risk.control_effectiveness}` : null} />
           </div>
 
           {/* Description */}

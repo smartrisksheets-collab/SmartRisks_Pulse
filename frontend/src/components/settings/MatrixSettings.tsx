@@ -8,6 +8,15 @@ import { MATRIX_DEFAULTS } from '../../types/matrix';
 
 // ── Module-level constants ──────────────────────────────────────────────────
 
+function detectPreset(data: MatrixConfigUpdate): string {
+  for (const [name, preset] of Object.entries(PRESETS)) {
+    if ((Object.keys(preset) as (keyof MatrixConfigUpdate)[]).every(k => data[k] === preset[k])) {
+      return name;
+    }
+  }
+  return 'custom';
+}
+
 const PRESETS: Record<string, MatrixConfigUpdate> = {
   smartrisk: {
     likelihood_scale:5, impact_scale:5, band_count:4,
@@ -76,6 +85,7 @@ export default function MatrixSettings() {
 
   if (query.data && !initialized) {
     setForm({ ...query.data });
+    setActivePreset(detectPreset(query.data));
     setInitialized(true);
   }
 
@@ -110,7 +120,7 @@ export default function MatrixSettings() {
   }
 
   function handleReset() {
-    if (query.data) { setForm({ ...query.data }); setActivePreset('custom'); }
+    if (query.data) { setForm({ ...query.data }); setActivePreset(detectPreset(query.data)); }
   }
 
   // Heatmap cells

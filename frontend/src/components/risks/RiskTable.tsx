@@ -172,7 +172,7 @@ export default function RiskTable({ risks, loading, onView, flashId, aiFlashIds,
                   <b>{r.residual != null ? Math.round(r.residual) : '—'}</b>
                   {mov && (
                     <span className={`sr-delta ${mov.cls}`} style={{ marginLeft: 4 }}>
-                      {mov.ico} {delta > 0 ? '+' : ''}{delta}
+                      {mov.ico} {delta > 0 ? '+' : ''}{Math.round(delta)}
                     </span>
                   )}
                   {r.freshness && (() => {

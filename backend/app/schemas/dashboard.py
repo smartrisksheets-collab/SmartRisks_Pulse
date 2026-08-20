@@ -107,3 +107,16 @@ class DashboardResponse(BaseModel):
     top_open_incidents: list[TopIncident]
     attention: list[str]
     snapshot_delta: SnapshotDelta
+
+
+class ActionItem(BaseModel):
+    sentence_num: int
+    source_label: str
+    title: str
+    done_when: str
+
+
+class ExecInsightResponse(BaseModel):
+    summary: str
+    action_items: list[ActionItem]
+    word_count: int

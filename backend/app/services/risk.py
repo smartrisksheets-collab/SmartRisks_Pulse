@@ -461,7 +461,7 @@ async def get_stats(
 
     # Control signal: avg control_effectiveness %, avg residual
     eff_vals = [float(r.control_effectiveness) for r in rows if r.control_effectiveness is not None]
-    avg_eff = round(sum(eff_vals) / len(eff_vals)) if eff_vals else 0
+    avg_eff = round((sum(eff_vals) / len(eff_vals)) * 20) if eff_vals else 0
 
     if avg_eff >= 70:
         signal_msg   = 'Controls improving — residual trending down'

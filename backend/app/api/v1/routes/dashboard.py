@@ -7,6 +7,8 @@ from app.core.dependencies import get_active_tenant, get_db
 from app.schemas.dashboard import DashboardResponse
 from app.services.dashboard import get_dashboard
 from app.services.snapshot import write_monthly_snapshot
+from app.services.ai_executive import generate_exec_insight
+from app.schemas.dashboard import ExecInsightResponse
 
 router = APIRouter(tags=["dashboard"])
 
@@ -53,3 +55,18 @@ async def run_snapshot(
         "error": None,
         "meta": {},
     }
+
+
+@router.get(
+    "/dashboard/exec-insights",
+    response_model=None,
+    summary="Generate AI executive insights summary and 30-day action plan",
+)
+async def exec_insights_endpoint(
+    days: int = Query(default=90, ge=1, le=365),
+    claims: dict = Depends(get_active_tenant),
+    db: AsyncSession = Depends(get_db),
+):
+    tenant_id = UUID(claims["active_tenant_id"])
+    result = await generate_exec_insight(db, tenant_id, days=days)
+    return {"data": result.model_dump(), "error": None, "meta": {}}

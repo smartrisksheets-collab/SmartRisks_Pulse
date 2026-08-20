@@ -102,5 +102,18 @@ export interface DashboardData {
   avg_resolution: IncidentResolution;
   activity_feed: ActivityEntry[];
   attention: string[];
-  snapshot_delta: SnapshotDelta;
+    snapshot_delta: SnapshotDelta;
+}
+
+export interface ActionItem {
+  sentence_num: number;
+  source_label: string;
+  title: string;
+  done_when: string;
+}
+
+export interface ExecInsight {
+  summary: string;
+  action_items: ActionItem[];
+  word_count: number;
 }
