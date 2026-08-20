@@ -143,7 +143,7 @@ async def _get_kpis(db: AsyncSession, tenant_id: UUID) -> KPISummary:
         high_risks=int(risk_row.high or 0),
         open_incidents=int(open_inc or 0),
         risk_severity_avg=round(float(risk_row.avg_residual or 0), 1),
-        control_effectiveness_avg=round(float(risk_row.avg_ctrl or 0), 1),
+        control_effectiveness_avg=round(float(risk_row.avg_ctrl or 0) * 20, 1),
     )
 
 

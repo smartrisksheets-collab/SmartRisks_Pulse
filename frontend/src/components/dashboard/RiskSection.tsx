@@ -129,17 +129,54 @@ function buildTrendInsight(points: TrendPoint[], index: number): string {
 // ── Action Plan Modal ─────────────────────────────────────────────────────────
 
 function ActionPlanModal({ open, onClose, insight }: { open: boolean; onClose: () => void; insight: ExecInsight }) {
+  const [assignedOwners, setAssignedOwners] = useState<Record<number, string>>({});
+
   if (!open) return null;
+
+  function setOwner(sentenceNum: number, value: string) {
+    setAssignedOwners(prev => ({ ...prev, [sentenceNum]: value }));
+  }
+
+  function exportPDF() {
+    const rows = insight.action_items.map(item => {
+      const owner = assignedOwners[item.sentence_num] ?? '';
+      return `
+        <div style="margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid #e5e7eb;">
+          <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#01b88e;margin-bottom:4px;">${item.source_label}</div>
+          <div style="font-size:14px;font-weight:700;color:#1F2854;margin-bottom:6px;">${item.title}</div>
+          <div style="font-size:12px;color:#047857;background:#e3f7f1;border-radius:6px;padding:6px 10px;display:inline-block;margin-bottom:6px;"><strong>Done when:</strong> ${item.done_when}</div>
+          ${owner ? `<div style="font-size:11px;color:#64748b;margin-top:4px;">Owner: <strong>${owner}</strong></div>` : ''}
+        </div>`;
+    }).join('');
+
+    const html = `<!DOCTYPE html><html><head><title>30-Day Action Plan</title>
+      <style>body{font-family:system-ui,sans-serif;padding:32px;max-width:720px;margin:0 auto;color:#1F2854;}</style>
+      </head><body>
+      <h2 style="margin:0 0 4px;font-size:20px;">30-Day Action Plan</h2>
+      <p style="font-size:12px;color:#64748b;margin:0 0 8px;">Built from this cycle's Executive Insights. Near-term response, not a maturity roadmap.</p>
+      <p style="font-size:13px;color:#334155;line-height:1.7;background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:12px 16px;margin-bottom:24px;">${insight.summary}</p>
+      ${rows}
+      <p style="font-size:10px;color:#94a3b8;margin-top:24px;">AI-assisted. Validate alongside professional judgment.</p>
+      </body></html>`;
+
+    const w = window.open('', '_blank');
+    if (!w) return;
+    w.document.write(html);
+    w.document.close();
+    w.focus();
+    w.print();
+  }
+
   return (
     <div className="dl-modal-back z-top" onClick={onClose}>
-      <div className="dl-modal lg" style={{ padding: 0, overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
+      <div className="dl-modal xl" onClick={e => e.stopPropagation()}>
         <div className="ap-modal-hd">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div>
               <p className="ap-modal-title">30-Day Action Plan</p>
               <p className="ap-modal-sub">Built directly from this cycle's Executive Insights — not a generic checklist.</p>
             </div>
-            <button className="dl-modal-x lg" style={{ color: '#fff', marginTop: 2 }} onClick={onClose}>✕</button>
+            <button className="dl-modal-x lg" onClick={onClose}>✕</button>
           </div>
           <span className="ap-horizon-tag">⚡ Near-term response, not a maturity roadmap</span>
         </div>
@@ -155,6 +192,18 @@ function ActionPlanModal({ open, onClose, insight }: { open: boolean; onClose: (
                   <div className="ap-action-source">{item.source_label}</div>
                   <div className="ap-action-title">{item.title}</div>
                   <div className="ap-action-done"><strong>Done when:</strong> {item.done_when}</div>
+                  {insight.owners.length > 0 && (
+                    <div className="ap-owner-row">
+                      <span>Owner:</span>
+                      <select
+                        value={assignedOwners[item.sentence_num] ?? ''}
+                        onChange={e => setOwner(item.sentence_num, e.target.value)}
+                      >
+                        <option value="">— Assign —</option>
+                        {insight.owners.map(o => <option key={o} value={o}>{o}</option>)}
+                      </select>
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
@@ -162,6 +211,7 @@ function ActionPlanModal({ open, onClose, insight }: { open: boolean; onClose: (
         </div>
         <div className="ap-modal-footer">
           <span className="ap-footer-note">Regenerates automatically each cycle as Executive Insights updates.</span>
+          <button className="btn btn-secondary btn-compact" onClick={exportPDF}>Export as PDF</button>
         </div>
       </div>
     </div>

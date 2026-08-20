@@ -116,4 +116,5 @@ export interface ExecInsight {
   summary: string;
   action_items: ActionItem[];
   word_count: number;
+  owners: string[];
 }

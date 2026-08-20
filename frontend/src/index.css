@@ -3085,6 +3085,7 @@ tr.row-flash { animation: rowFlash 2.2s ease; }
 .dl-modal.md  { width: min(540px, 93vw); border-radius: 18px; }
 .dl-modal.md  { width: min(540px, 93vw); max-height: 85vh; overflow-y: auto; border-radius: 18px; padding: 20px 22px 22px; }
 .dl-modal.lg  { width: min(700px, 94vw); max-height: 85vh; overflow-y: auto; border-radius: 18px; padding: 20px 22px 22px; }
+.dl-modal.xl  { width: min(860px, 96vw); max-height: 88vh; overflow-y: auto; border-radius: 18px; padding: 20px 24px 24px; }
 .dl-modal.xs  { width: min(460px, 93vw); max-height: 85vh; overflow-y: auto; border-radius: 18px; padding: 20px 22px 22px; }
 
 /* Risk narrative box */
@@ -3292,22 +3293,24 @@ tr.row-flash { animation: rowFlash 2.2s ease; }
 .rs-exec-footer { margin-top: 4px; padding-top: 10px; border-top: 1px dashed var(--line); font-size: 12px; color: var(--muted); }.rs-exec-footer { margin-top: 4px; padding-top: 10px; border-top: 1px dashed var(--line); font-size: 12px; color: #94a3b8; }
 
 /* ── Action Plan Modal ─────────────────────────────────────── */
-.ap-modal-hd     { background: #1F2854; color: #fff; padding: 20px 24px; border-radius: 16px 16px 0 0; }
-.ap-modal-title  { font-size: 17px; font-weight: 800; color: #fff; margin: 0 0 2px; }
-.ap-modal-sub    { font-size: 12px; color: rgba(255,255,255,.65); margin: 0; }
-.ap-horizon-tag  { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; background: rgba(1,184,142,.18); border: 1px solid rgba(1,184,142,.45); color: #7fe8cf; padding: 4px 12px; border-radius: 999px; margin-top: 10px; }
-.ap-basis-note   { font-size: 11.5px; color: var(--muted); background: var(--bg-secondary); border-radius: 8px; padding: 10px 12px; margin-bottom: 16px; line-height: 1.6; }
+.ap-modal-hd     { background: var(--card); padding: 20px 24px; border-bottom: 1px solid var(--line); }
+.ap-modal-title  { font-size: 17px; font-weight: 800; color: var(--text); margin: 0 0 2px; }
+.ap-modal-sub    { font-size: 12px; color: var(--muted); margin: 0; }
+.ap-horizon-tag  { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; background: rgba(1,184,142,.12); border: 1px solid rgba(1,184,142,.4); color: #01b88e; padding: 4px 12px; border-radius: 999px; margin-top: 10px; }
+.ap-basis-note   { font-size: 13px; color: var(--muted); background: var(--bg-secondary); border-radius: 8px; padding: 10px 12px; margin-bottom: 16px; line-height: 1.6; }
 .ap-action-list  { display: flex; flex-direction: column; }
 .ap-action-item  { display: flex; gap: 14px; padding: 16px 0; border-top: 1px solid var(--line); }
 .ap-action-item:first-child { border-top: none; }
 .ap-action-num   { width: 26px; height: 26px; border-radius: 50%; background: #1F2854; color: #fff; font-size: 12px; font-weight: 800; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 2px; }
 .ap-action-body  { flex: 1; }
-.ap-action-source { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: #01b88e; margin-bottom: 4px; }
-.ap-action-title { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 6px; line-height: 1.4; }
-.ap-action-done  { font-size: 11.5px; color: #047857; background: #e3f7f1; border-radius: 6px; padding: 6px 10px; display: inline-block; line-height: 1.5; }
+.ap-action-source { font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: #01b88e; margin-bottom: 4px; }
+.ap-action-title { font-size: 14.5px; font-weight: 700; color: var(--text); margin-bottom: 6px; line-height: 1.4; }
+.ap-action-done  { font-size: 13px; color: #047857; background: #e3f7f1; border-radius: 6px; padding: 6px 10px; display: inline-block; line-height: 1.5; }
 .ap-modal-footer { display: flex; justify-content: space-between; align-items: center; padding: 14px 24px; border-top: 1px solid var(--line); background: var(--bg-secondary); border-radius: 0 0 16px 16px; }
 .ap-footer-note  { font-size: 11px; color: var(--muted); }
 .ap-loading      { padding: 32px; text-align: center; color: var(--muted); font-size: 13px; }
+.ap-owner-row    { margin-top: 10px; display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.ap-owner-row select { border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; font-size: 12px; color: var(--text); background: var(--card); font-family: inherit; }
 .ap-plan-link    { font-size: 12.5px; font-weight: 700; color: #01b88e; background: none; border: none; cursor: pointer; padding: 0; display: inline-flex; align-items: center; gap: 4px; }
 .ap-plan-link:hover { color: #00967a; }
 .rs-exec-footer-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }

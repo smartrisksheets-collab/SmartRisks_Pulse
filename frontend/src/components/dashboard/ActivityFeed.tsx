@@ -270,9 +270,9 @@ function DetailModal({ item, open, onClose }: { item: ActivityEntry | null; open
               <div>
                 <div className="dl-section-lbl">Score Movement</div>
                 <div className="dl-score-row">
-                  <span className="dl-score-val">{o}</span>
+                  <span className="dl-score-val">{Math.round(o)}</span>
                   <span className="dl-score-arrow">→</span>
-                  <span className="dl-score-val" style={{ color: (n ?? 0) > (o ?? 0) ? '#ef4444' : '#18c29c' }}>{n}</span>
+                  <span className="dl-score-val" style={{ color: (n ?? 0) > (o ?? 0) ? '#ef4444' : '#18c29c' }}>{Math.round(n)}</span>
                   <span className="dl-score-badge" style={{
                     background: (n ?? 0) > (o ?? 0) ? '#fee2e2' : '#d1fae5',
                     color:      (n ?? 0) > (o ?? 0) ? '#991b1b' : '#065f46',

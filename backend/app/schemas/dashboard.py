@@ -120,3 +120,4 @@ class ExecInsightResponse(BaseModel):
     summary: str
     action_items: list[ActionItem]
     word_count: int
+    owners: list[str]

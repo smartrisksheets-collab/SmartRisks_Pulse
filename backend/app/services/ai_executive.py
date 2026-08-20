@@ -7,7 +7,10 @@ from collections import Counter
 from uuid import UUID
 
 from anthropic import AsyncAnthropic
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.risk import Risk
 
 from app.core.config import settings
 from app.schemas.dashboard import ActionItem, ExecInsightResponse
@@ -158,6 +161,13 @@ async def generate_exec_insight(
     data = await get_dashboard(db, tenant_id, days=days)
     inputs = _derive_inputs(data)
 
+    owners_rows = await db.execute(
+        select(Risk.owner)
+        .where(Risk.tenant_id == tenant_id, Risk.deleted_at.is_(None), Risk.owner.isnot(None))
+        .distinct()
+    )
+    owners = sorted([str(r) for r in owners_rows.scalars().all() if r])
+
     client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
     message = await client.messages.create(
         model='claude-haiku-4-5-20251001',
@@ -177,4 +187,5 @@ async def generate_exec_insight(
         summary=summary,
         action_items=action_items,
         word_count=_count_words(summary),
+        owners=owners,
     )

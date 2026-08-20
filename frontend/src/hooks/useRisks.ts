@@ -28,6 +28,7 @@ export function useRisks(params: ListRisksParams = {}) {
   function invalidate() {
     qc.invalidateQueries({ queryKey: [RISKS_KEY] });
     qc.invalidateQueries({ queryKey: ['dashboard'] });
+    qc.invalidateQueries({ queryKey: ['exec-insights'] });
   }
 
   // ── Mutations ───────────────────────────────────────────────────────────
