@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { ShieldCheck, Mail } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { apiPost } from '../services/api';
 import { validateEmail } from '../utils/validation';
@@ -43,14 +44,32 @@ export default function ForgotPassword() {
           />
           <span className="auth-brand-name">SmartRisk Pulse</span>
         </div>
-        <p className="auth-eyebrow">Account Recovery</p>
-        <h2>Reset your<br /><span style={{ color: '#01b88e' }}>password.</span></h2>
+        <p className="auth-eyebrow">Pulse Portal</p>
+        <h2>Forgot your<br /><span style={{ color: '#01b88e' }}>password?</span></h2>
         <p className="auth-left-sub">
-          Enter the email address on your account and we will send you a link to
-          reset your password. The link expires in 15 minutes.
+          No problem. We will send a secure reset link to your email — it is valid for 15 minutes.
         </p>
+
+        <div className="auth-features">
+          <div className="auth-feature">
+            <ShieldCheck size={17} className="auth-feature-icon" />
+            <div>
+              <div className="auth-feature-title">Secure by design</div>
+              <div className="auth-feature-sub">Reset links are single-use and expire automatically.</div>
+            </div>
+          </div>
+          <div className="auth-feature">
+            <Mail size={17} className="auth-feature-icon" />
+            <div>
+              <div className="auth-feature-title">Check your inbox</div>
+              <div className="auth-feature-sub">Including spam or promotions, just in case.</div>
+            </div>
+          </div>
+        </div>
+
         <div className="auth-left-footer">
-          &copy; {new Date().getFullYear()} SmartRisk Pulse. All rights reserved.
+          <div>NDPC/DCP/12625 registered &middot; Aligned to ISO 31000 &amp; COSO ERM principles</div>
+          <div>SmartRisk Sheets Technologies Limited &middot; RC 9170218</div>
         </div>
       </div>
 

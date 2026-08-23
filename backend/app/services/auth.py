@@ -242,7 +242,10 @@ async def forgot_password(db: AsyncSession, email: str, frontend_url: str) -> di
         token = create_reset_token(str(account.id), str(account.email))
         reset_link = f"{frontend_url}/reset-password?token={token}"
         try:
-            send_reset_email(to=str(account.email), reset_link=reset_link)
+            import asyncio
+            await asyncio.get_event_loop().run_in_executor(
+                None, send_reset_email, str(account.email), reset_link
+            )
         except Exception as exc:
             logger.error("forgot_password: email failed | %s", exc)
     # Always return success to avoid leaking whether email exists

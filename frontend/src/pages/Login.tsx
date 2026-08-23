@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useNavigate, Link } from 'react-router-dom';
 import { useGoogleLogin } from '@react-oauth/google';
+import { Clock, BarChart2, Activity } from 'lucide-react';
 import { apiPost } from '../services/api';
 import { useAuthStore } from '../store/authStore';
 import type { LoginResult } from '../types/auth';
@@ -122,41 +123,42 @@ export default function Login() {
           <span className="auth-brand-name">SmartRisk Pulse</span>
         </div>
 
-        <p className="auth-eyebrow">Risk Intelligence</p>
+        <p className="auth-eyebrow">Pulse Portal</p>
         <h2>
-          Track exposure. Brief the board.<br />
-          <span style={{ color: '#01b88e' }}>In real time.</span>
+          Welcome<br />
+          <span style={{ color: '#01b88e' }}>back.</span>
         </h2>
         <p className="auth-left-sub">
-          Your risk register working as live intelligence — health, exposure and
-          updates in one view, so you always know what changed before your next meeting.
+          Sign in to pick up right where your risk register left off.
         </p>
 
-        <div className="auth-info-cards">
-          <div className="auth-info-card">
-            <div className="auth-tick">
-              <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
-                <polyline points="2,6.5 5.5,10 11,3" stroke="white" strokeWidth="2"
-                  strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
+        <div className="auth-features">
+          <div className="auth-feature">
+            <Clock size={17} className="auth-feature-icon" />
+            <div>
+              <div className="auth-feature-title">Fresh, aging, stale</div>
+              <div className="auth-feature-sub">Know which risks have actually been reviewed, not just edited.</div>
             </div>
-            <h3>Live risk health</h3>
-            <p>Track your entire risk register with real-time scoring and movement indicators.</p>
           </div>
-          <div className="auth-info-card">
-            <div className="auth-tick">
-              <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
-                <polyline points="2,6.5 5.5,10 11,3" stroke="white" strokeWidth="2"
-                  strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
+          <div className="auth-feature">
+            <BarChart2 size={17} className="auth-feature-icon" />
+            <div>
+              <div className="auth-feature-title">Live board reporting</div>
+              <div className="auth-feature-sub">Generated from your current register, not last month's slide deck.</div>
             </div>
-            <h3>AI-powered briefs</h3>
-            <p>Automated daily and weekly risk briefs sent directly to your team.</p>
+          </div>
+          <div className="auth-feature">
+            <Activity size={17} className="auth-feature-icon" />
+            <div>
+              <div className="auth-feature-title">Continuous monitoring</div>
+              <div className="auth-feature-sub">Not a static spreadsheet snapshot frozen at last quarter's review.</div>
+            </div>
           </div>
         </div>
 
         <div className="auth-left-footer">
-          &copy; {new Date().getFullYear()} SmartRisk Pulse. All rights reserved.
+          <div>NDPC/DCP/12625 registered &middot; Aligned to ISO 31000 &amp; COSO ERM principles</div>
+          <div>SmartRisk Sheets Technologies Limited &middot; RC 9170218</div>
         </div>
       </div>
 
