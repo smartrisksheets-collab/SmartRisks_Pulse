@@ -99,7 +99,20 @@ export default function WorkspaceSettings({ settings }: Props) {
   async function handleSave() {
     setMsg("");
     update.mutate(form, {
-      onSuccess: () => setMsg("Settings saved."),
+      onSuccess: (data) => {
+        setMsg("Settings saved.");
+        setForm((f) => ({
+          ...f,
+          name:            data.name,
+          organization:    data.organization,
+          industry:        data.industry,
+          framework:       data.framework,
+          timezone:        data.timezone,
+          date_format:     data.date_format,
+          currency_symbol: data.currency_symbol,
+          logo_url:        data.logo_url ?? undefined,
+        }));
+      },
       onError: () => setMsg("Save failed. Please try again."),
     });
   }

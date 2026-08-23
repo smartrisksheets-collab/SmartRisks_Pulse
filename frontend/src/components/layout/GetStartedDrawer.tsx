@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-const TOTAL_STEPS = 8;
+const TOTAL_STEPS = 7;
 
 interface StepDef {
   id: number;
@@ -12,14 +12,33 @@ interface StepDef {
 }
 
 const STEPS: StepDef[] = [
-  { id: 1, title: 'Explore your Dashboard',          goLabel: 'Go to Dashboard →',      goTo: '/',          desc: 'Get familiar with your live risk exposure index, residual trends, top risk drivers, and operational intelligence feed.' },
-  { id: 2, title: 'Configure your risk dropdowns',   goLabel: 'Go to Risk Config →',    goTo: '/settings',  desc: 'Set the categories, owners, and treatment options that appear in your risk forms and filters.' },
-  { id: 3, title: 'Add your first risk',             goLabel: 'Go to Risk Register →',  goTo: '/risks',     desc: 'Log a risk in the Risk Register with a description, likelihood, impact, and treatment plan.' },
-  { id: 4, title: 'Import existing risks',           goLabel: 'Import Risks →',         goTo: '/risks',     desc: 'Already have risks in a spreadsheet? Import them in bulk via CSV or XLSX using the Import button on the Risk Register.' },
-  { id: 5, title: 'Generate AI Insights',            goLabel: 'Go to Risk Register →',  goTo: '/risks',     desc: 'Open any risk and click Generate AI Insights to get intelligent mitigation recommendations powered by AI.' },
-  { id: 6, title: 'Print your first Executive Report', goLabel: 'Go to Report Builder →', goTo: '/reports', desc: 'Generate a formatted PDF risk report ready for board or management review from the Report Builder.' },
-  { id: 7, title: 'Brand your workspace',            goLabel: 'Go to Workspace →',      goTo: '/settings',  desc: 'Upload your logo, set your workspace name, and customize the appearance across the app.' },
-  { id: 8, title: 'Build your team',                 goLabel: 'Go to Users →',          goTo: '/users',     desc: 'Invite colleagues and assign them roles — Admin, Manager, or Analyst — to collaborate on risk governance.' },
+  { id: 1, title: 'Explore your Dashboard',
+    desc: 'Get familiar with your live risk exposure index, residual trends, top risk drivers, and operational intelligence feed.',
+    goLabel: 'Go to Dashboard →', goTo: '/' },
+
+  { id: 2, title: 'Complete your risk dropdowns',
+    desc: 'Your onboarding seeded your categories and owners. Finish the config by adding treatment options, business units, and likelihood labels in Settings.',
+    goLabel: 'Go to Risk Config →', goTo: '/settings' },
+
+  { id: 3, title: 'Customise your risk matrix',
+    desc: 'The 5-band default matrix is ready to use. If your organisation uses a 3 or 4-band model, or custom labels, configure it now in Settings → Risk Matrix.',
+    goLabel: 'Go to Risk Matrix →', goTo: '/settings' },
+
+  { id: 4, title: 'Add your first risk',
+    desc: 'Log a risk in the Risk Register with a description, likelihood, impact, and treatment plan.',
+    goLabel: 'Go to Risk Register →', goTo: '/risks' },
+
+  { id: 5, title: 'Import existing risks',
+    desc: 'Already have risks in a spreadsheet? Import them in bulk via CSV or XLSX using the Import button on the Risk Register.',
+    goLabel: 'Import Risks →', goTo: '/risks' },
+
+  { id: 6, title: 'Generate AI Insights',
+    desc: 'Open any risk and click Generate AI Insights to get intelligent mitigation recommendations powered by AI.',
+    goLabel: 'Go to Risk Register →', goTo: '/risks' },
+
+  { id: 7, title: 'Print your first Executive Report',
+    desc: 'Generate a formatted PDF risk report ready for board or management review from the Report Builder.',
+    goLabel: 'Go to Report Builder →', goTo: '/reports' },
 ];
 
 interface StepRowProps {

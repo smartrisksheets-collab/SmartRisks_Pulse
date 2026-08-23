@@ -123,8 +123,29 @@ function RolesTab() {
   function handleSave() {
     setMsg("");
     update.mutate(form, {
-      onSuccess: () => setMsg("Role settings saved."),
-      onError:   () => setMsg("Save failed. Please try again."),
+      onSuccess: (data) => {
+        setMsg("Role settings saved.");
+        setForm((f) => ({ ...f,
+          roles_default_role: data.roles_default_role,
+          roles_access_mode:  data.roles_access_mode,
+          perm_owner_risks:   data.perm_owner_risks,
+          perm_mgr_risks:     data.perm_mgr_risks,
+          perm_analyst_risks: data.perm_analyst_risks,
+          perm_owner_inc:     data.perm_owner_inc,
+          perm_mgr_inc:       data.perm_mgr_inc,
+          perm_analyst_inc:   data.perm_analyst_inc,
+          perm_owner_ai:      data.perm_owner_ai,
+          perm_mgr_ai:        data.perm_mgr_ai,
+          perm_analyst_ai:    data.perm_analyst_ai,
+          perm_owner_print:   data.perm_owner_print,
+          perm_mgr_print:     data.perm_mgr_print,
+          perm_analyst_print: data.perm_analyst_print,
+          perm_owner_users:   data.perm_owner_users,
+          perm_mgr_users:     data.perm_mgr_users,
+          perm_analyst_users: data.perm_analyst_users,
+        }));
+      },
+      onError: () => setMsg("Save failed. Please try again."),
     });
   }
 
@@ -291,8 +312,16 @@ function AITab() {
         ai_policy_extra:       policyConfig.extra,
       },
       {
-        onSuccess: () => setMsg('AI settings saved.'),
-        onError:   () => setMsg('Save failed. Please try again.'),
+        onSuccess: (data) => {
+          setMsg('AI settings saved.');
+          setForm((f) => ({ ...f,
+            ai_enabled:    data.ai_enabled,
+            ai_model:      data.ai_model,
+            ai_confidence: data.ai_confidence,
+            ai_auto_run:   data.ai_auto_run,
+          }));
+        },
+        onError: () => setMsg('Save failed. Please try again.'),
       },
     );
   }
@@ -531,8 +560,21 @@ function BriefTab() {
   function handleSave() {
     setMsg("");
     update.mutate(form, {
-      onSuccess: () => setMsg("Brief settings saved."),
-      onError:   () => setMsg("Save failed. Please try again."),
+      onSuccess: (data) => {
+        setMsg("Brief settings saved.");
+        setForm((f) => ({ ...f,
+          brief_enabled:           data.brief_enabled,
+          brief_send_time:         data.brief_send_time,
+          brief_recipients:        data.brief_recipients,
+          brief_weekly_enabled:    data.brief_weekly_enabled,
+          brief_monthly_enabled:   data.brief_monthly_enabled,
+          brief_quarterly_enabled: data.brief_quarterly_enabled,
+          brief_stale_threshold:   data.brief_stale_threshold,
+          brief_testing_interval:  data.brief_testing_interval,
+          brief_outreach_cap:      data.brief_outreach_cap,
+        }));
+      },
+      onError: () => setMsg("Save failed. Please try again."),
     });
   }
 
@@ -831,7 +873,10 @@ export default function Settings() {
         {/* Tab panels — CSS-driven visibility preserves form state across tab switches */}
         <div className="settings-panels">
           <div className={`tab-panel${activeTab === "ws" ? " active" : ""}`}>
-            <WorkspaceSettings settings={query.data} />
+            <WorkspaceSettings
+              key={`${query.data.name}|${query.data.organization}|${query.data.industry}`}
+              settings={query.data}
+            />
           </div>
           <div className={`tab-panel${activeTab === "matrix" ? " active" : ""}`}>
             <MatrixSettings />

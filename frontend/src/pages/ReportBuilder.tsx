@@ -465,6 +465,20 @@ export default function ReportBuilder() {
         <div className="rb-header-title">Report Builder</div>
         <div className="rb-header-controls">
 
+          {/* New report */}
+          <button
+            className="btn btn-ghost btn-compact"
+            onClick={async () => {
+              const ok = await confirm(
+                'Start a new report?',
+                'This will clear your current canvas, settings, and preview data.',
+              );
+              if (ok) rb.reset();
+            }}
+          >
+            + New report
+          </button>
+
           {/* Date preset */}
           <select
             value={preset}

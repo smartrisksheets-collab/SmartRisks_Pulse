@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from 'react';
 import * as reportsApi from '../services/reports';
+import { useReportBuilderStore } from '../store/reportBuilderStore';
 import type {
   BlockKey,
   BlockDataMap,
@@ -35,12 +36,14 @@ interface UseReportsState {
 const DEFAULT_BLOCKS: BlockKey[] = ['executive-dashboard', 'top-risks'];
 
 export function useReports(toast: ToastFn) {
+  const stored = useReportBuilderStore.getState();
+
   const [state, setState] = useState<UseReportsState>({
-    activeBlocks: DEFAULT_BLOCKS,
-    blockData:    {},
-    aiData:       {},
-    settings:     { ...DEFAULTS },
-    step:         1,
+    activeBlocks: stored.activeBlocks,
+    blockData:    stored.blockData,
+    aiData:       stored.aiData,
+    settings:     { ...stored.settings },
+    step:         stored.step,
     previewing:   false,
     generatingAI: false,
     exporting:    false,
@@ -48,8 +51,31 @@ export function useReports(toast: ToastFn) {
     loadingTpls:  false,
   });
 
-  const set = (patch: Partial<UseReportsState>) =>
+  const set = (patch: Partial<UseReportsState>) => {
     setState((prev) => ({ ...prev, ...patch }));
+    if ('activeBlocks' in patch || 'settings' in patch || 'step' in patch ||
+        'blockData'    in patch || 'aiData'   in patch) {
+      useReportBuilderStore.getState().sync({
+        ...('activeBlocks' in patch ? { activeBlocks: patch.activeBlocks! } : {}),
+        ...('settings'     in patch ? { settings:     patch.settings! }     : {}),
+        ...('step'         in patch ? { step:         patch.step! }         : {}),
+        ...('blockData'    in patch ? { blockData:    patch.blockData! }    : {}),
+        ...('aiData'       in patch ? { aiData:       patch.aiData! }       : {}),
+      });
+    }
+  };
+
+  const reset = useCallback(() => {
+    useReportBuilderStore.getState().reset();
+    setState((prev) => ({
+      ...prev,
+      activeBlocks: DEFAULT_BLOCKS,
+      blockData:    {},
+      aiData:       {},
+      settings:     { ...DEFAULTS },
+      step:         1,
+    }));
+  }, []);
 
   // ── Date range ─────────────────────────────────────────────────────────────
 
@@ -308,5 +334,6 @@ export function useReports(toast: ToastFn) {
     deleteTemplate,
     setDefaultTemplate,
     getRange,
+    reset,
   };
 }

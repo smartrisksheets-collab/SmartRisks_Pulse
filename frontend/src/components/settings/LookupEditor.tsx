@@ -114,7 +114,16 @@ function LookupEditorContent({ lookups, patch, visibleKeys }: {
     });
     const result = await patch(payload);
     setSaving(false);
-    setMsg(result ? "Configuration saved." : "Save failed. Please try again.");
+    if (result) {
+      setLocal((prev) => {
+        const next = { ...prev };
+        LOOKUP_KEYS.forEach((k) => { next[k] = [...(result[k] ?? [])]; });
+        return next;
+      });
+      setMsg("Configuration saved.");
+    } else {
+      setMsg("Save failed. Please try again.");
+    }
   }
 
   return (
@@ -245,5 +254,12 @@ export default function LookupEditor() {
   if (loading) return <p className="muted small">Loading configuration…</p>;
   if (error) return <p style={{ color: "#ef4444", fontSize: 13 }}>{error}</p>;
   if (!lookups) return null;
-  return <LookupEditorContent lookups={lookups} patch={patch} visibleKeys={visibleKeys} />;
+  return (
+    <LookupEditorContent
+      key={lookups.updated_at ?? 'init'}
+      lookups={lookups}
+      patch={patch}
+      visibleKeys={visibleKeys}
+    />
+  );
 }
