@@ -412,10 +412,8 @@ export default function CreateWorkspace() {
   useEffect(() => {
     if (!loading) {
       if (intervalRef.current) clearInterval(intervalRef.current);
-      setLaunchStep(0);
       return;
     }
-    setLaunchStep(0);
     intervalRef.current = setInterval(() => {
       setLaunchStep(s => Math.min(s + 1, launchSteps.length - 1));
     }, 1500);
@@ -438,6 +436,7 @@ export default function CreateWorkspace() {
     if (loading) return;
     setError('');
     setLaunchSteps(buildLaunchSteps(data));
+    setLaunchStep(0);
     setLoading(true);
     try {
       const ws = await apiPost<{ id: string; name: string }>('/api/v1/workspaces', {
