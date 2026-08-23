@@ -141,22 +141,33 @@ export default function Topbar({ title = 'Dashboard' }: TopbarProps) {
           </button>
           {wsOpen && (
             <div className="topbar-dropdown">
-              <button
-                className="topbar-dropdown-item"
-                disabled={isTrial || workspaces.length <= 1}
-                title={isTrial ? 'Upgrade to switch workspaces' : workspaces.length <= 1 ? 'Only one workspace exists' : undefined}
-                onClick={() => { setWsOpen(false); navigate('/workspaces'); }}
+              <span
+                className="tooltip-wrap tooltip-wrap--inline"
+                data-tip={
+                  isTrial ? 'Trial plan. Upgrade.' :
+                  workspaces.length <= 1 ? 'Only one workspace exists.' : undefined
+                }
               >
-                Switch workspace
-              </button>
-              <button
-                className="topbar-dropdown-item"
-                disabled={isTrial}
-                title={isTrial ? 'Upgrade to add workspaces' : undefined}
-                onClick={() => { setWsOpen(false); navigate('/workspaces/create'); }}
+                <button
+                  className="topbar-dropdown-item"
+                  disabled={isTrial || workspaces.length <= 1}
+                  onClick={() => { setWsOpen(false); navigate('/workspaces'); }}
+                >
+                  Switch workspace
+                </button>
+              </span>
+              <span
+                className="tooltip-wrap tooltip-wrap--inline"
+                data-tip={isTrial ? 'Trial plan. Upgrade.' : undefined}
               >
-                + Add workspace
-              </button>
+                <button
+                  className="topbar-dropdown-item"
+                  disabled={isTrial}
+                  onClick={() => { setWsOpen(false); navigate('/workspaces/create'); }}
+                >
+                  + Add workspace
+                </button>
+              </span>
             </div>
           )}
         </div>

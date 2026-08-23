@@ -317,8 +317,8 @@ function AITab() {
           <div className="field">
             <label>Model</label>
             <select value={form.ai_model ?? 'claude-sonnet-4-6'} onChange={(e) => field('ai_model', e.target.value)}>
-              <option value="claude-sonnet-4-6">Claude Sonnet 4.6</option>
-              <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
+              <option value="claude-sonnet-4-6">Full Analysis — deeper insights, richer narratives</option>
+              <option value="claude-haiku-4-5-20251001">Quick Scan — faster responses, concise output</option>
             </select>
           </div>
         </div>

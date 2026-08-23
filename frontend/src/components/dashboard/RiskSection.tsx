@@ -44,12 +44,13 @@ function healthStatusCls(h: number): string {
   return 'up';
 }
 
-const LEVEL_COLORS: Record<string, string> = {
-  Critical: '#ef4444',
-  High:     '#f59e0b',
-  Medium:   '#3b82f6',
-  Low:      '#10b981',
-};
+function levelTextColor(level: string | null): string {
+  const l = (level ?? '').toLowerCase();
+  if (l === 'critical' || l === 'extreme') return '#b91c1c';
+  if (l === 'high')                        return '#dc2626';
+  if (l === 'medium')                      return '#b45309';
+  return '#059669';
+}
 
 // GAS donut palette: ['#1F2854','#01b88e','#94a3b8','#f59e0b','#ef4444']
 const CAT_COLORS = ['#1F2854', '#01b88e', '#94a3b8', '#f59e0b', '#ef4444'];
@@ -128,14 +129,14 @@ function buildTrendInsight(points: TrendPoint[], index: number): string {
 
 // ── Action Plan Modal ─────────────────────────────────────────────────────────
 
-function ActionPlanModal({ open, onClose, insight }: { open: boolean; onClose: () => void; insight: ExecInsight }) {
-  const [assignedOwners, setAssignedOwners] = useState<Record<number, string>>({});
-
+function ActionPlanModal({ open, onClose, insight, assignedOwners, onSetOwner }: {
+  open: boolean;
+  onClose: () => void;
+  insight: ExecInsight;
+  assignedOwners: Record<number, string>;
+  onSetOwner: (sentenceNum: number, value: string) => void;
+}) {
   if (!open) return null;
-
-  function setOwner(sentenceNum: number, value: string) {
-    setAssignedOwners(prev => ({ ...prev, [sentenceNum]: value }));
-  }
 
   function exportPDF() {
     const rows = insight.action_items.map(item => {
@@ -197,7 +198,7 @@ function ActionPlanModal({ open, onClose, insight }: { open: boolean; onClose: (
                       <span>Owner:</span>
                       <select
                         value={assignedOwners[item.sentence_num] ?? ''}
-                        onChange={e => setOwner(item.sentence_num, e.target.value)}
+                        onChange={e => onSetOwner(item.sentence_num, e.target.value)}
                       >
                         <option value="">— Assign —</option>
                         {insight.owners.map(o => <option key={o} value={o}>{o}</option>)}
@@ -222,12 +223,29 @@ function ActionPlanModal({ open, onClose, insight }: { open: boolean; onClose: (
 
 function ExecInsightCard({ totalRisks }: { totalRisks: number }) {
   const [planOpen, setPlanOpen] = useState(false);
+
   const { data, isLoading, isError } = useQuery({
     queryKey: ['exec-insights'],
     queryFn:  () => fetchExecInsight(),
     staleTime: 30 * 60 * 1000,
     enabled:   totalRisks > 0,
   });
+
+  const [ownersState, setOwnersState] = useState<{ summary: string; owners: Record<number, string> }>({
+    summary: '',
+    owners: {},
+  });
+
+  const assignedOwners = ownersState.summary === (data?.summary ?? '')
+    ? ownersState.owners
+    : {};
+
+  function setOwner(sentenceNum: number, value: string) {
+    setOwnersState(prev => ({
+      summary: data?.summary ?? '',
+      owners: { ...prev.owners, [sentenceNum]: value },
+    }));
+  }
 
   if (totalRisks === 0) {
     return <div className="rs-exec-empty">No risks recorded. Add risks to the register to generate insights.</div>;
@@ -247,7 +265,15 @@ function ExecInsightCard({ totalRisks }: { totalRisks: number }) {
           💬 What should we do about this? →
         </button>
       </div>
-      {planOpen && <ActionPlanModal open={planOpen} onClose={() => setPlanOpen(false)} insight={data} />}
+      {planOpen && (
+        <ActionPlanModal
+          open={planOpen}
+          onClose={() => setPlanOpen(false)}
+          insight={data}
+          assignedOwners={assignedOwners}
+          onSetOwner={setOwner}
+        />
+      )}
     </>
   );
 }
@@ -298,7 +324,7 @@ function PressureModal({
           <div className="dl-section-lbl navy" style={{ marginBottom: 10 }}>Top Pressure Drivers</div>
           <div className="dash-tbl-wrap">
             <table className="dash-tbl">
-              <thead><tr><th>ID</th><th>Description</th><th>Residual</th><th>Level</th></tr></thead>
+              <thead><tr><th>Risk ID</th><th>Description</th><th>Residual</th><th>Level</th></tr></thead>
               <tbody>
                 {topRisks.slice(0, 3).length > 0
                   ? topRisks.slice(0, 3).map(r => (
@@ -306,7 +332,7 @@ function PressureModal({
                         <td style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>{r.id}</td>
                         <td style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.description ?? ''}>{r.description ?? '—'}</td>
                         <td style={{ textAlign: 'center' }}>{r.residual != null ? Math.round(r.residual) : '—'}</td>
-                        <td style={{ textAlign: 'center', color: LEVEL_COLORS[r.level ?? ''] ?? '#94a3b8', fontWeight: 700 }}>{r.level ?? '—'}</td>
+                        <td style={{ textAlign: 'center', color: levelTextColor(r.level), fontWeight: 700 }}>{r.level ?? '—'}</td>
                       </tr>
                     ))
                   : <tr><td colSpan={4} className="dash-empty">No data</td></tr>
@@ -610,7 +636,7 @@ export default function RiskSection({ data }: Props) {
               <div className="dash-tbl-wrap">
                 <table className="dash-tbl">
                   <thead>
-                    <tr><th>ID</th><th>Description</th><th>Residual</th><th>Level</th></tr>
+                    <tr><th>Risk ID</th><th>Description</th><th>Residual</th><th>Level</th></tr>
                   </thead>
                   <tbody>
                     {top_risks.slice(0, 3).map(r => (
@@ -626,7 +652,7 @@ export default function RiskSection({ data }: Props) {
                           {r.residual != null ? Math.round(r.residual) : '—'}
                         </td>
                         <td style={{ textAlign: 'center' }}>
-                          <span style={{ fontSize: 10, fontWeight: 700, color: LEVEL_COLORS[r.level ?? ''] ?? '#94a3b8' }}>
+                          <span style={{ fontSize: 10, fontWeight: 700, color: levelTextColor(r.level) }}>
                             {r.level ?? '—'}
                           </span>
                         </td>

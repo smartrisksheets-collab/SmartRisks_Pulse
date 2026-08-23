@@ -82,11 +82,15 @@ _DEFAULTS: dict = {
 
 
 class AIConfig(TypedDict):
-    enabled: bool
-    model: str
-    confidence: str
-    policy: str
-    auto_run: bool
+    enabled:            bool
+    model:              str
+    confidence:         str
+    policy:             str
+    policy_industry:    str
+    policy_tone:        str
+    policy_sensitivity: str
+    policy_extra:       str
+    auto_run:           bool
 
 
 async def get_ai_config(db: AsyncSession, tenant_id: UUID) -> AIConfig:
@@ -95,11 +99,15 @@ async def get_ai_config(db: AsyncSession, tenant_id: UUID) -> AIConfig:
     tenant = result.scalar_one_or_none()
     ws: dict = dict(tenant.workspace_settings or {}) if tenant else {}  # type: ignore[arg-type]
     return {
-        "enabled":    str(ws.get("ai_enabled",    "on"))       == "on",
-        "model":      str(ws.get("ai_model",      "claude-sonnet-4-6")),
-        "confidence": str(ws.get("ai_confidence", "balanced")),
-        "policy":     str(ws.get("ai_policy",     "")),
-        "auto_run":   str(ws.get("ai_auto_run",   "no"))       == "yes",
+        "enabled":            str(ws.get("ai_enabled",             "on"))  == "on",
+        "model":              str(ws.get("ai_model",               "claude-sonnet-4-6")),
+        "confidence":         str(ws.get("ai_confidence",          "balanced")),
+        "policy":             str(ws.get("ai_policy",              "")),
+        "policy_industry":    str(ws.get("ai_policy_industry",    "")),
+        "policy_tone":        str(ws.get("ai_policy_tone",        "")),
+        "policy_sensitivity": str(ws.get("ai_policy_sensitivity", "")),
+        "policy_extra":       str(ws.get("ai_policy_extra",       "")),
+        "auto_run":           str(ws.get("ai_auto_run",           "no"))  == "yes",
     }
 
 
@@ -127,9 +135,9 @@ def _build_response(tenant: Tenant) -> SettingsResponse:
         name=str(tenant.name or "SmartRisk"),
         organization=_s("organization"),
         industry=str(tenant.industry or ""),
-        framework=_s("framework"),
-        timezone=_s("timezone"),
-        date_format=_s("date_format"),
+        framework=str(tenant.framework) if tenant.framework is not None else _s("framework"),
+        timezone=str(tenant.timezone) if tenant.timezone is not None else _s("timezone"),
+        date_format=str(tenant.date_format) if tenant.date_format is not None else _s("date_format"),
         currency_symbol=str(tenant.currency_symbol or "₦"),
         logo_url=str(tenant.logo_url) if tenant.logo_url else None, # type: ignore
         primary_color=_s("primary_color"),
@@ -247,6 +255,15 @@ async def update_settings(
 
     if "industry" in updates:
         tenant.industry = str(updates.pop("industry"))  # type: ignore[assignment]
+
+    if "framework" in updates:
+        tenant.framework = str(updates.pop("framework"))  # type: ignore[assignment]
+
+    if "timezone" in updates:
+        tenant.timezone = str(updates.pop("timezone"))  # type: ignore[assignment]
+
+    if "date_format" in updates:
+        tenant.date_format = str(updates.pop("date_format"))  # type: ignore[assignment]
 
     if "currency_symbol" in updates:
         tenant.currency_symbol = str(updates.pop("currency_symbol"))  # type: ignore[assignment]

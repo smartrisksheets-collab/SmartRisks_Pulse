@@ -414,7 +414,7 @@ export default function ReportBuilder() {
   }
 
   const step2Disabled = rb.step < 2 || rb.previewing;
-  const step3Disabled = rb.step < 3 || rb.generatingAI;
+  const step3Disabled = rb.step < 2 || rb.previewing;
 
   return (
     <div className="rb-layout">
@@ -520,14 +520,14 @@ export default function ReportBuilder() {
               >
                 {rb.generatingAI ? <><span className="spinner" />Generating…</> : 'Generate AI Narrative'}
               </button>
-              <span className="rb-step-tag">Required</span>
+              <span className="rb-step-tag">Optional</span>
             </div>
 
             <span className="rb-step-arrow">→</span>
 
             {/* Step 3 */}
             <div className="rb-step">
-              <span className={`rb-step-num ${rb.step === 3 ? 'active' : ''}`}>3</span>
+              <span className={`rb-step-num ${rb.step >= 2 ? 'active' : ''}`}>3</span>
               <button
                 className="btn btn-navy btn-compact"
                 onClick={handleEmailClick}

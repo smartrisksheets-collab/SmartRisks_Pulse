@@ -21,13 +21,17 @@ async def list_workspaces(
 ):
     account_id = UUID(claims["sub"])
     result = await db.execute(
-        select(Tenant)
+        select(Tenant, WorkspaceMember)
         .join(WorkspaceMember, WorkspaceMember.tenant_id == Tenant.id)
         .where(WorkspaceMember.account_id == account_id)
         .where(WorkspaceMember.status == "ACTIVE")
     )
-    tenants = result.scalars().all()
-    return {"data": [WorkspaceResponse.model_validate(t) for t in tenants], "error": None, "meta": {}}
+    rows = result.all()
+    data = [
+        {**WorkspaceResponse.model_validate(t).model_dump(), "role": str(m.role or "Analyst")}
+        for t, m in rows
+    ]
+    return {"data": data, "error": None, "meta": {}}
 
 
 @router.post("")
@@ -54,9 +58,19 @@ async def create_workspace(
     if owned_count >= limit:
         raise WorkspaceLimitError(f"Your plan allows a maximum of {limit} owned workspace(s)")
 
+    ws_settings: dict = {}
+    if payload.org_name:
+        ws_settings["organization"] = payload.org_name
+
     tenant = Tenant(
         name=payload.name,
         industry=payload.industry,
+        org_size=payload.org_size,
+        framework=payload.framework,
+        timezone=payload.timezone,
+        date_format=payload.date_format,
+        currency_symbol=payload.currency or "₦",
+        workspace_settings=ws_settings or None,
         created_by=account_id,
     )
     db.add(tenant)

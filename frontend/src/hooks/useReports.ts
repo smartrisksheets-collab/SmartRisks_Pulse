@@ -91,7 +91,7 @@ export function useReports(toast: ToastFn) {
         step:      2,
         previewing: false,
       });
-      toast('Preview ready — generate AI narrative to proceed', 'success');
+      toast('Preview ready — add AI narrative or export directly', 'success');
     } catch (err) {
       set({ previewing: false });
       toast(err instanceof Error ? err.message : 'Preview failed', 'error');

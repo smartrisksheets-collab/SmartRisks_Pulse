@@ -1,4 +1,5 @@
 import logging
+import httpx
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -218,7 +219,15 @@ async def refresh_access_token(db: AsyncSession, refresh_token: str) -> dict:
     )
     rows = result.all()
     if not rows:
-        raise InvalidTokenError("No active workspaces")
+        # Account exists but has no workspaces yet, user is mid-onboarding.
+        # Issue a fresh base token so they can complete workspace creation.
+        new_refresh = create_refresh_token(str(account_id), account.token_version)  # type: ignore[arg-type]
+        base_token = create_access_token({
+            "sub": str(account_id),
+            "email": str(account.email or ""),
+            "workspaces": [],
+        })
+        return {"access_token": base_token, "refresh_token": new_refresh}
 
     member, tenant = rows[0]
     token = _build_workspace_token(account, member, tenant)
@@ -298,3 +307,61 @@ async def register(db: AsyncSession, email: str, password: str, name: str) -> di
     })
     refresh = create_refresh_token(str(account.id), account.token_version)  # type: ignore[arg-type]
     return {"access_token": base_token, "refresh_token": refresh, "workspaces": []}
+
+
+async def google_auth(db: AsyncSession, access_token: str) -> dict:
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        info_resp = await client.get(
+            "https://www.googleapis.com/oauth2/v3/userinfo",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+    if info_resp.status_code != 200:
+        raise InvalidCredentialsError("Invalid Google token")
+
+    info = info_resp.json()
+    email = str(info.get("email", "")).lower()
+    if not email:
+        raise InvalidCredentialsError("Could not retrieve email from Google account")
+
+    name = str(info.get("name", "")) or email.split("@")[0]
+
+    account = await db.scalar(select(Account).where(Account.email == email))
+    if not account:
+        account = Account(email=email, name=name)
+        db.add(account)
+        await db.flush()
+
+    members = (await db.execute(
+        select(WorkspaceMember, Tenant)
+        .join(Tenant, Tenant.id == WorkspaceMember.tenant_id)
+        .where(WorkspaceMember.account_id == account.id)
+        .where(WorkspaceMember.status == "ACTIVE")
+    )).all()
+
+    if not members:
+        base_token = create_access_token({"sub": str(account.id), "email": account.email, "workspaces": []})
+        refresh = create_refresh_token(str(account.id), account.token_version)  # type: ignore[arg-type]
+        return {"access_token": base_token, "refresh_token": refresh}
+
+    workspaces = [
+        {"tenant_id": str(t.id), "name": t.name, "role": m.role, "plan": t.plan, "modules": t.modules}
+        for m, t in members
+    ]
+
+    if len(members) == 1:
+        member, tenant = members[0]
+        if tenant.pin_hash:
+            base_token = create_access_token({
+                "sub": str(account.id), "email": account.email,
+                "pending_tenant_id": str(tenant.id), "workspaces": workspaces,
+            })
+            refresh = create_refresh_token(str(account.id), account.token_version)  # type: ignore[arg-type]
+            return {"access_token": base_token, "refresh_token": refresh, "requires_pin": True, "workspaces": workspaces}
+
+        token = _build_workspace_token(account, member, tenant)
+        refresh = create_refresh_token(str(account.id), account.token_version)  # type: ignore[arg-type]
+        return {"access_token": token, "refresh_token": refresh, "workspaces": workspaces}
+
+    base_token = create_access_token({"sub": str(account.id), "email": account.email, "workspaces": workspaces})
+    refresh = create_refresh_token(str(account.id), account.token_version)  # type: ignore[arg-type]
+    return {"access_token": base_token, "refresh_token": refresh, "requires_workspace_select": True, "workspaces": workspaces}

@@ -6,7 +6,7 @@ from app.core.config import settings
 from app.schemas.auth import (
     LoginRequest, RegisterRequest, WorkspaceSelectRequest,
     PINVerifyRequest, AcceptInviteRequest,
-    ForgotPasswordRequest, ResetPasswordRequest,
+    ForgotPasswordRequest, ResetPasswordRequest, GoogleAuthRequest,
 )
 from app.services import auth as auth_service
 from app.services import invite as invite_service
@@ -136,4 +136,17 @@ async def reset_password(
     db: AsyncSession = Depends(get_db),
 ):
     result = await auth_service.reset_password(db, payload.token, payload.password)
+    return {"data": result, "error": None, "meta": {}}
+
+
+@router.post("/google")
+@limiter.limit("10/minute")
+async def google_auth(
+    request: Request,
+    payload: GoogleAuthRequest,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+):
+    result = await auth_service.google_auth(db, payload.access_token)
+    _set_refresh(response, result)
     return {"data": result, "error": None, "meta": {}}

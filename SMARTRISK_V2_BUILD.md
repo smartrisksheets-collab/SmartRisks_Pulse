@@ -3,7 +3,7 @@
 **Product:** SmartRisk Pulse v2
 **Stack:** FastAPI + React + Supabase + Render + Vercel
 **Setup document:** SMARTRISK_V2_SETUP.md
-**Last updated:** August 14, 2026
+**Last updated:** August 22, 2026
  
 ---
  
@@ -15,9 +15,9 @@ At the end of every session Claude outputs a fresh version of this file with all
  
 ---
  
-**Phase:** Phase 16 active. Major performance, hardening, and reliability pass complete. Remaining: manual browser QA (20 PDF blocks), responsive check at 4 breakpoints, GA4 integration (awaiting Measurement ID).
-**Status:** Session 17, August 17, 2026: Full hardening and performance pass. See session log below.
-**Next action:** Begin next session by reading SMARTRISK_V2_SETUP.md, SMARTRISK_V2_DECISIONS.md, then this file. First task: manual browser QA of all 20 PDF report blocks with a fully populated workspace. Second task: responsive check at 375px, 768px, 1024px, 1280px. Third task: GA4 integration once Measurement ID is provided.
+**Phase:** Phase 16 active. PDF report parity pass in progress. All block renderers updated. Matrix-aware donut implemented. Remaining: apply outstanding patches to services_report.py (matrix gaps audit completed, patches written but not yet applied — next session reads fresh file state from project before writing).
+**Status:** Session 18, August 22, 2026: Bug fixes, dashboard parity, and full PDF report parity pass. See session log below.
+**Next action:** Begin next session by reading SMARTRISK_V2_SETUP.md, SMARTRISK_V2_DECISIONS.md, then this file. First task: paste current live state of services_report.py and services_pdf_report.py for fresh read, then apply matrix gap patches (compute_risk_snapshot label lookup fix, level_index added to top-risks and top-emerging-risks output, _level_badge_cell index-based color path). Second task: apply outstanding PDF rendering patches (findings, recommendations, risk table level badge, conclusion). Third task: font swap pass once TTF files are confirmed available.
  
 ---
  
@@ -1590,6 +1590,288 @@ Outstanding Report Builder items for QA phase:
 
 **Invite flow known edge case:** If an invited user tries to self-register with the same email before clicking the invite link, `register()` finds their existing Account (created by `add_member`), finds `member_count > 0`, and raises DuplicateResourceError. They are told to sign in instead. Since they have no password yet, this is a dead end. Resolution: they must use the invite link. The edge case is rare and acceptable for the current build. Flag for Phase 16 UX review if reported.
 
+
+---
+
+## Session Log — Bug Fixes, Dashboard Parity, PDF Report Parity Pass (August 22, 2026)
+
+### Completed this session
+
+**routes_risks.py — duplicate POST /risks/ai route removed**
+- Removed the stale first handler that was passing AIInsightRequest into risk_service.bulk_import, which accessed .rows and threw AttributeError. Surviving handler calls ai_risk_service.generate_insights with correct permission and rate limiter wired.
+
+**dashboard signal arrows reintroduced**
+- DeltaBadge in dashboard_IncidentSection.tsx and dashboard_UnifiedSection.tsx updated to render ▲ +X% / ▼ X% format matching GAS _applyDeltaBadge. period prop added for native title tooltip on hover.
+- RiskSection delta arrows already in place and confirmed correct. No change needed.
+- Arrows suppressed correctly when has_data is false or value is null.
+
+**30-Day Action Plan owner persistence**
+- assignedOwners state lifted from ActionPlanModal (where it was destroyed on close) to ExecInsightCard where it survives modal open/close cycles.
+- Identity pattern: owners stored alongside the summary string they were assigned against. If data.summary changes (new AI generation), assignedOwners resolves to {} automatically during render with no useEffect, avoiding the cascading-renders lint violation.
+- setOwner stamps the current data.summary onto ownersState so the identity check passes on subsequent renders.
+
+**Dashboard visual parity — Level colors and table headers**
+- LEVEL_COLORS hardcoded map replaced with levelTextColor() function using case-insensitive matching and correct design system colors from index.css level classes.
+- dash-tbl th padding corrected from 6px 10px to 10px 14px, font-weight from 600 to 700, matching GAS .sr-table thead th.
+- dash-tbl td left/right padding corrected from 10px to 14px.
+- TOP RESIDUAL RISK DRIVERS table column header changed from ID to Risk ID in both pressure modal and main dashboard table.
+
+**PDF report parity pass — all risk module blocks**
+- Systematic section-by-section comparison of GAS Reportservice.gs HTML output against ReportLab services_pdf_report.py. Every disparity recorded and patched.
+- Cover page: corner accent, chip dot color, chip padding, meta key color and cell padding, meta border rules (LINEABOVE/LINEBELOW/LINEBEFORE replacing GRID), footer padding, brand font size, confidentiality text color.
+- Shared helpers: _kpi_val_paragraph value font corrected to 15pt markup, label color to #555555, cell padding to 8pt/10pt. _ai_callout padding corrected to 12pt/14pt. _S["body"] color corrected to #333333. _S["ai_text"] color to #333333, leading to 16pt.
+- exposure-index: health number 42pt → 35pt, badge background dynamically colored at 13% opacity, subtitle colors corrected to #94a3b8, exposure number 28pt → 23pt.
+- risk-snapshot, key-risk-changes, incident-stability: all use corrected _kpi_table. Minus sign on Risks Decreased corrected to U+2212.
+- executive-dashboard: no-data styled box, direction arrows on KPIs, posture label/value font corrected (8pt→10pt, 20pt→13pt), posture padding, GRID removed from posture row, bullets heading corrected (8pt MUTED → 10pt NAVY), bullet text 11pt #334155, dot right padding, separator color.
+- executive-summary: ai_callout padding fixed (cascades to all callout sites).
+- executive-commentary: section icons corrected (Impact △, Recommended Focus ✓), section padding 6→8pt, body color #334155, fallback text and style corrected.
+- key-risk-movements: full has-data branch implemented. _level_badge_cell helper added. Period note, section headings, escalations/reductions (with previous level text color and current badge), new risks/removed risks tables all rendered.
+- risk-ownership: numeric columns centered, left padding corrected to 6pt.
+- risk-distribution: ORDER reads band_labels from data payload. Column widths corrected 82/84mm → 94/76mm (55%/45% GAS split). LEVEL_COLORS replaced with _BAND_COLORS_BY_POS (position-based, label-agnostic).
+- top-risks, top-emerging-risks: level column uses _level_badge_cell, residual centered, trend arrows colored.
+- findings: section heading corrected, dot right padding added, row padding 2→4pt, separator color corrected.
+- recommendations plain path: two-column teal-numbered rows matching GAS .rec-row pattern.
+- conclusion: explicit leading 14pt.
+
+**Matrix-aware risk distribution**
+- MatrixConfig imported and added to ReportContext as optional field.
+- build_context fetches MatrixConfig for the tenant.
+- compute_risk_distribution reads matrix band labels from ctx.matrix_config and includes band_labels in output payload.
+- _render_risk_distribution reads band_labels from data with fallback.
+- _make_donut_drawing rewritten to use position-based colors (_BAND_COLORS_BY_POS) keyed by ORDER index, not label string. Fully label-agnostic.
+
+**Matrix gaps audit completed**
+- Full audit of both services_report.py and services_pdf_report.py for all hardcoded label references that should be matrix-config-aware. Six gaps in services_report.py (compute_risk_snapshot label lookups, missing level_index in top-risks/top-emerging-risks, narrative hardcoded labels), two gaps in pdf_report.py (_level_badge_cell and _level_color string matching). Patches written but not yet applied — deferred to next session with fresh file state.
+
+**Font swap flagged for dedicated pass**
+- GAS uses Arial (body) and Georgia (cover title). ReportLab uses Helvetica/Times-Bold as nearest equivalents. Decision: flag for a dedicated font swap pass once TTF files (Arial.ttf, Arial Bold.ttf, Arial Italic.ttf, Georgia.ttf, Georgia Bold.ttf) are confirmed available in the repo. Registration code and global font name swap are ready to write.
+
+### Next session begins with
+- Paste current live state of services_report.py and services_pdf_report.py for fresh read before writing any code.
+- Apply matrix gap patches: compute_risk_snapshot label lookup fix, level_index added to compute_top_risks/compute_top_emerging_risks, _level_badge_cell updated to accept level_index for position-based colors.
+- Apply remaining PDF rendering patches from session audit: findings, recommendations plain path, risk table level badge, conclusion leading — confirm which are already in live file before patching.
+- Font swap pass when TTF files are confirmed.
+
+---
+
+## Session Log — Frontend Visual Parity Pass + Executive Insights AI Rewrite (August 21, 2026)
+
+### Completed this session
+
+**Global typography fix**
+- Dropped blanket `font-weight: 600` on `body`, `button/input/select/textarea`, and `table/th/td` to `400`, matching GAS V1 which sets no global font-weight. All component-specific weights remain untouched.
+
+**Dashboard card hover animations**
+- Added `transition: box-shadow .22s ease, transform .22s ease` and `:hover { transform: translateY(-4px) }` to `.im-card` and `.sr-top-strip .sr-card`.
+- Added `:has()` suppression for `.im-card` containing `.af-feed-row` or `.ap-plan-link` to prevent flicker caused by the card lift shifting interactive children under the cursor.
+
+**Risk Health gauge**
+- Increased strokeWidth from 10 to 16 (then 24) and reduced r from 90 to 88 to maintain viewBox clearance, matching V1 visual weight.
+- Added mount sweep animation: `useState(0)` for `animatedFill`, `useEffect` sets real fill after 50ms so CSS transition plays on load.
+
+**Dashboard card cleanup**
+- Removed `im-accent-teal` from Risk Health card.
+- Removed `im-accent-navy` from Executive Insights card.
+- Removed Needs Attention card block entirely.
+
+**Operational Intelligence Feed**
+- Added `af-live-dot` sonar ping animation (`@keyframes livePing 1.8s ease-out infinite`) alongside Live badge.
+- Fixed View all count to `Math.min(items.length, 10)` matching the `slice(0, 10)` modal cap.
+
+**Activity Detail modal**
+- Rounded `old_value` and `new_value` in score movement display to whole numbers via `Math.round()`.
+
+**Welcome line**
+- Replaced ✨ emoji with Lucide `Sparkles` icon (14px, teal #01b88e).
+
+**Health status badge**
+- Added `neutral` class to `healthStatusCls` for Monitoring range (51-75). `.sr-delta.neutral { background: #f8fafc; color: #94a3b8; }` matching V1 base sr-delta.
+
+**Residual Risk Trend chart**
+- Lightened line stroke from `#1F2854` to `#94a3b8`.
+- Reduced dot sizes: regular r:3, activeDot r:5.
+
+**Modal system**
+- Added `dl-modal.lg` at `min(700px, 94vw)` and `dl-modal.xl` at `min(860px, 96vw)`.
+- Switched PressureModal and DistributionModal to `lg`. ActionPlanModal uses `xl`.
+
+**Risk Register fixes**
+- Removed `%` from control effectiveness in `RiskDetailModal`.
+- Wrapped score delta in `Math.round` in `RiskTable`.
+- Added `text-transform: uppercase` to `.sr-top-strip .sr-label`.
+- Increased `.sr-intel` `margin-top` from 6px to 14px.
+
+**Executive Insights styling**
+- Set narrative box background to `#f8fafc` matching V1 `--sr-gray-50`.
+- Set footer text color to `#94a3b8` matching V1 `--sr-muted`.
+
+**Control signal scale fix (backend, two locations)**
+- `services/risk.py`: `avg_eff` multiplied by 20 to convert 1-5 scale to 0-100%.
+- `services/dashboard.py`: `control_effectiveness_avg` also multiplied by 20. Both locations were computing raw 1-5 averages and displaying them as percentages.
+
+**MatrixSettings preset persistence fix**
+- Added `detectPreset(data)` helper comparing saved config against each preset's values.
+- Called on `query.data` init and `handleReset`. Previously always reset to `'smartrisk'` on remount.
+
+**Executive Insights AI rewrite (spec: executive-insights-dev-brief.pdf)**
+- New `app/services/ai_executive.py`: derives trend, top risk, exposure reductions (deduplicated by risk_id to mitigate OI feed duplicate-entry bug), high-pct, and distinct owners list from existing dashboard data. Calls `claude-haiku-4-5` with 50-word 4-sentence system prompt. Returns `ExecInsightResponse` with summary HTML, action items, word count, and owners list.
+- New `GET /api/v1/dashboard/exec-insights` endpoint in `routes/dashboard.py`.
+- `ActionItem` and `ExecInsightResponse` (with `owners: list[str]`) added to `schemas/dashboard.py`.
+- Frontend `ExecInsightCard` replaces static `RiskNarrative`. Uses TanStack Query with 30-min staleTime. Loading and error states handled.
+- `ActionPlanModal`: 4 action items mapped 1:1 to summary sentences, Done-when criteria, owner dropdown per item (values from risk register owners, not persisted), Export as PDF button (opens new window with formatted HTML and triggers print). White header matching other modals. `xl` size (860px).
+- "What should we do about this? →" teal link in exec insights footer triggers modal.
+- `['exec-insights']` added to `invalidate()` in `useRisks.ts` so any risk mutation triggers regeneration.
+- `fetchExecInsight()` added to `services/dashboard.ts`. `ActionItem`, `ExecInsight` (with `owners`) added to `types/dashboard.ts`.
+- Fixed missing `select` and `Risk` imports in `services/ai_executive.py`.
+- Fixed `ap-horizon-tag` color from `#7fe8cf` (invisible on white) to `#01b88e` (brand teal, readable on white header).
+
+### Next session begins with
+- Continue visual parity pass: move to Incidents page sidebar item.
+- Manual browser QA: gauge animation, exec insights load state, action plan modal at standard breakpoints, PDF export output.
+- Verify exec insights T1-T5 test cases from the brief against live output.
+- Investigate and resolve OI feed duplicate-entry bug flagged in the brief before sentence 3 is relied on in production.
+- GA4 integration (pending Measurement ID G-XXXXXXXXXX from Ceekay).
+
+---
+
+## Session — August 22, 2026 (continued)
+
+### Report engine: matrix-agnostic label fixes (services_report.py)
+
+**Gap #1 and #2 — compute_risk_snapshot**
+- Replaced `by_level.get("Medium", 0)` and `by_level.get("Low", 0)` with `level_index == 2` and `level_index == 1` counts respectively. Label-string lookup broke for any workspace using custom band names.
+- Narrative now reads `band_1_label` and `band_2_label` from `ctx.matrix_config` with fallback to "Low" / "Medium". Elevated group always described as "elevated" since it spans multiple bands.
+
+**Gap #3 — compute_top_risks**
+- Added `"level_index": r.level_index` to the returned risk dict. PDF badge renderer requires it for position-based color assignment.
+
+**Gap #4 — compute_top_emerging_risks**
+- Same as gap #3. `level_index` added to output dict.
+
+**Gap #5 — compute_risk_distribution**
+- Moved `mc = ctx.matrix_config` block above the narrative so `band_1_label` and `band_2_label` are available when the narrative string is built.
+- Narrative replaces "high-risk / medium-risk / low-risk" with "elevated / {band_2_label} / {band_1_label}".
+
+**Gap #6 — compute_executive_dashboard**
+- "Risks have escalated into the High or Critical band" replaced with "Risks have escalated into elevated risk bands". Label-agnostic.
+
+### Report engine: position-based PDF colors (services_pdf_report.py)
+
+**Gap #7 — _level_badge_cell**
+- Added `_BAND_BG_COLORS_BY_POS` list parallel to `_BAND_COLORS_BY_POS` providing background tints for each band position.
+- `_level_badge_cell` accepts optional `level_index: int | None = None`. When supplied, foreground and background colors assigned by position index. String-match fallback preserved for callers without an index.
+- `_render_risk_table` call site updated to pass `r.get("level_index")`.
+
+**Gap #8 — _level_color**
+- `_level_color` in `services_pdf_report.py` accepts optional `level_index: int | None = None`. When supplied, returns `_BAND_COLORS_BY_POS[level_index - 1]`. String-match fallback preserved.
+- `_mov_section` call site updated to pass `r.get("previous_level_index")`. Code path is currently unreachable (`has_data: False` always) but call site is correct for when risk history schema is extended.
+- `_render_major_incidents` call to `_level_color` unchanged. Incident severity has no matrix index; string matching is the correct behaviour for that caller.
+
+### AI settings: confidence and sub-policy fields wired through
+
+**services_settings.py**
+- `AIConfig` TypedDict extended with `policy_industry`, `policy_tone`, `policy_sensitivity`, `policy_extra` fields.
+- `get_ai_config` now fetches all four sub-policy fields from workspace JSONB with empty-string defaults.
+
+**services_ai_report.py**
+- `_TEMPERATURE = 0.5` removed. Replaced with `_CONFIDENCE_TEMPERATURE` dict: `conservative → 0.3`, `balanced → 0.5`, `assertive → 0.7`. Values match GAS confidence option labels.
+- `_call()` accepts `temperature: float = 0.5` and passes it to the Anthropic `messages.create` call.
+- `generate_report_narrative` resolves temperature via `_CONFIDENCE_TEMPERATURE.get(ai_cfg['confidence'], 0.5)`.
+- Combined policy string assembled from all non-empty policy fields in order: `policy`, `policy_industry` (prefixed "Industry context:"), `policy_tone` (prefixed "Tone:"), `policy_sensitivity` (prefixed "Sensitivity:"), `policy_extra`. Appended to system prompt as `\n\nWorkspace Policy:\n{combined_policy}`.
+- Confirmed `auto_run` is correctly consumed in `routes_risks.py` for risk creation AI. It is not a report pipeline concern. No change made.
+
+### Frontend: model dropdown labels (pages_Settings.tsx)
+- Model dropdown option labels replaced with use-case framing. Raw model strings remain as option values; backend unchanged.
+  - `claude-sonnet-4-6` → "Full Analysis — deeper insights, richer narratives"
+  - `claude-haiku-4-5-20251001` → "Quick Scan — faster responses, concise output"
+
+### Frontend: trial workspace tooltip (pages_WorkspacePicker.tsx, layout_Topbar.tsx, src_index.css)
+- Added `.tooltip-wrap` CSS utility to `src_index.css`. Uses `::after` pseudo-element reading `data-tip` attribute.
+- Added `.tooltip-wrap--inline` variant that renders the tip as a static block below the item (no absolute positioning) to avoid overflow and viewport edge issues inside the topbar dropdown.
+- `pages_WorkspacePicker.tsx`: `isTrial` derived from `workspaces.some(ws => ws.plan === 'TRIAL')`. "New workspace" button wrapped in `.tooltip-wrap` span with `disabled={isTrial}` and `data-tip` set when on trial.
+- `layout_Topbar.tsx`: Both "Switch workspace" and "+ Add workspace" buttons wrapped in `.tooltip-wrap tooltip-wrap--inline` spans. Native `title` attributes removed from buttons. Tooltip fires on the wrapper since `.topbar-dropdown-item:disabled` has `pointer-events: none`.
+- `overflow: hidden` removed from `.topbar-dropdown` (6px padding already prevents items touching container edges; `overflow: hidden` was redundant and clipped absolute-positioned children).
+- Floating tooltip approach (bottom/right positioning) trialled and abandoned. Inside the dropdown both directions hit either `overflow: hidden` clipping or viewport edges. Inline reveal is the correct solution for this context.
+
+### Next session begins with
+- FIRST TASK: Apply setWorkspaces fix in pages_CreateWorkspace.tsx after setToken call. Without this, the sidebar falls back to 'SmartRisk' as the workspace name after onboarding because the workspaces array in the auth store is never seeded by the wizard launch flow.
+- Continue visual parity pass: move to Incidents page sidebar item.
+- Manual browser QA: gauge animation, exec insights load state, action plan modal at standard breakpoints, PDF export output.
+- Verify exec insights T1-T5 test cases from the brief against live output.
+- Investigate and resolve OI feed duplicate-entry bug flagged in the brief before sentence 3 is relied on in production.
+- GA4 integration (pending Measurement ID G-XXXXXXXXXX from Ceekay).
+
+---
+
+## Phase 17 — Onboarding Wizard, Google OAuth, Wizard UX Fixes (August 23, 2026)
+
+### Migration 031: wizard fields on tenants table
+- New Alembic migration: `alembic/versions/031_add_wizard_fields_to_tenants.py`
+- Adds four nullable VARCHAR columns: org_size, framework, timezone, date_format.
+- Supabase SQL provided separately for production sync.
+- `models_tenant.py`: four new Column(String) ORM attributes added.
+
+### Backend: workspace creation accepts all wizard fields
+- `schemas_user.py`: CreateWorkspaceRequest extended with org_name, org_size, framework, timezone, date_format, currency (all optional for backwards compatibility).
+- `v1_routes_workspaces.py`: Tenant creation updated to persist all new fields. currency maps to currency_symbol column. org_name stored in workspace_settings JSONB (no migration needed).
+- `services_settings.py`: _build_response updated to read framework, timezone, date_format from new tenant columns with JSONB fallback for existing rows. update_settings updated to write these three fields to columns instead of JSONB.
+
+### Backend: Google OAuth endpoint
+- `schemas_auth.py`: GoogleAuthRequest schema added (access_token: str).
+- `core_config.py`: GOOGLE_CLIENT_ID: str = "" added to Settings.
+- `services_auth.py`: import httpx added. google_auth async function added. Verifies identity by calling Google userinfo endpoint via httpx (no google-auth package needed). Finds or creates account. Returns same JWT shape as login. Follows existing login branching logic for pin, multi-workspace, and no-workspace cases.
+- `routes_auth.py`: POST /google route added, rate-limited at 10/minute. GoogleAuthRequest imported.
+
+### Frontend: @react-oauth/google installed
+- `npm install @react-auth/google` required in frontend.
+- `src_App.tsx`: GoogleOAuthProvider wraps entire app when VITE_GOOGLE_CLIENT_ID is set. When env var is absent the provider is omitted and Google buttons do not render.
+- `pages_Login.tsx`: GoogleSignInButton component defined at module scope using useGoogleLogin (implicit flow). Renders conditionally on VITE_GOOGLE_CLIENT_ID. On success POSTs access_token to /api/v1/auth/google and follows same post-login navigation logic as email login.
+- `pages_Register.tsx`: Same GoogleSignInButton pattern. On Google success navigates to /workspaces/create (no workspaces yet) or /workspaces if requires_workspace_select.
+- auth-google-btn and auth-or-divider CSS classes added to src_index.css.
+
+### Frontend: 6-step onboarding wizard (pages_CreateWorkspace.tsx, full rebuild)
+Previous file was a single-form page (143 lines). Rebuilt as a 6-step wizard (~350 lines).
+- Step 1: Workspace name + org name + logo upload (optional).
+- Step 2: Industry tile grid (8 tiles) + org size pills (4 options). Required to advance.
+- Step 3: Framework, currency, timezone, date format (2x2 selects). Pre-filled with sensible defaults.
+- Step 4: Risk matrix preview (read-only default bands + heatmap). Custom toggle visible but disabled with tooltip.
+- Step 5: Risk categories. User adds up to 3 category names with owner text. Example chips auto-fill empty rows. On launch: fetches existing categories first, merges user choices, deduplicates, then PATCHes /api/v1/lookups. Append-not-replace approach preserves hardcoded defaults.
+- Step 6: Invite team. Email + role rows (Analyst default). Invites are fire-and-forget after launch; failures do not block navigation.
+- Launch sequence: POST workspaces, POST select-workspace, setToken, PATCH lookups (categories), upload logo + PATCH settings (if logo), send invites, navigate('/').
+- Wizard state held client-side, submitted atomically on Launch. No per-step persistence.
+- Progress bar: step/6 * 100%.
+- WIZARD_ROLES uses Owner as stored value, display label shows Admin.
+
+### Frontend: wizard CSS (wiz- namespace, src_index.css)
+- Full wiz- namespace added: wiz-shell, wiz-rail, wiz-brand, wiz-checklist, wiz-check-item states (done/current/todo), wiz-content, wiz-panel, wiz-progress, wiz-footer, wiz-btn variants, wiz-upload, wiz-tile-grid, wiz-tile, wiz-size-row, wiz-size-pill, wiz-two-col, wiz-callout, wiz-toggle, wiz-matrix-cols, wiz-band, wiz-heatmap, wiz-invite-row, wiz-col-labels, wiz-cat-row, wiz-cat-num, wiz-cat-add, wiz-example-row, wiz-example-chip, wiz-error.
+- Responsive breakpoint at 860px: rail hidden, single column layout.
+
+### Frontend: wizard constants (utils_constants.ts)
+- Added: WIZARD_INDUSTRIES (8 entries with icon keys), ORG_SIZES, FRAMEWORKS, CURRENCIES (label+value pairs), TIMEZONES, DATE_FORMATS, WIZARD_BAND_ROWS, WIZARD_HEATMAP (25-cell color array), WIZARD_ROLES, WIZARD_CATEGORY_EXAMPLES.
+
+### Frontend: report builder AI narrative made optional (pages_ReportBuilder.tsx, hooks_useReports.ts)
+- step3Disabled changed from rb.step < 3 to rb.step < 2. Export is available immediately after preview without requiring AI generation.
+- Step 3 badge condition changed from rb.step === 3 to rb.step >= 2.
+- Required tag on AI step changed to Optional.
+- Preview success toast updated: no longer says "generate AI narrative to proceed".
+
+### UI: left accent border removed from banners (src_index.css)
+- trial-warn--amber: border-left: 4px solid #f59e0b removed. Uniform 1px border retained.
+- trial-warn--red: border-left: 4px solid #ef4444 removed. Uniform 1px border retained.
+- unsaved-banner: border-left: 4px solid #f59e0b removed. Dark mode override for border-left-color also removed.
+
+### Known gap: setWorkspaces not called after wizard launch
+- After setToken(authResult.access_token), the sidebar resolves workspace name from s.workspaces.find(w => w.tenant_id === s.claims.active_tenant_id). The wizard never calls setWorkspaces, so the array is empty and the name falls back to 'SmartRisk'.
+- Fix identified but not applied this session. First task next session.
+
+### Google OAuth: Cloud Console setup decisions
+- External audience selected (not Internal). Internal restricts to single Google Workspace org; external with testing mode achieves same effect for team-only access during development. Test users list controls who can authenticate in testing mode.
+- Two client IDs: one for production (app.smartrisksheets.com), one for staging (staging.smartrisksheets.com fixed Vercel alias). Dynamic Vercel preview URLs not used because Google rejects wildcard origins.
+- Vercel env vars scoped per environment: VITE_GOOGLE_CLIENT_ID set to production value under Production, staging value under Preview. Same key name, different values, Vercel injects correct one at build time.
+- GOOGLE_CLIENT_ID on Render: production backend only. If a staging backend service is created later, add staging client ID there too.
+- VITE_ prefix exposes client ID to browser bundle. This is by design and safe: Google OAuth client IDs are public-facing identifiers, not secrets.
+
+---
 
 **Important reminders:**
 

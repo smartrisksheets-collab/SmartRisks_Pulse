@@ -15,16 +15,19 @@ const SLA_TARGET_DAYS = 5;
 function DeltaBadge({
   value,
   lowerIsBetter = false,
+  period,
 }: {
   value: number | null;
   lowerIsBetter?: boolean;
+  period?: string;
 }) {
   if (value === null || value === undefined) return null;
   const isPositive = value > 0;
   const isGood = lowerIsBetter ? !isPositive : isPositive;
   const cls = value === 0 ? 'flat' : isGood ? 'up' : 'down';
-  const sign = value > 0 ? '+' : '';
-  return <span className={`sr-delta ${cls}`}>{sign}{value}%</span>;
+  const arrow = value > 0 ? '▲ +' : value < 0 ? '▼ ' : '';
+  const tip = period ? `${value > 0 ? 'Up' : 'Down'} ${Math.abs(value)}% ${period}` : undefined;
+  return <span className={`sr-delta ${cls}`} title={tip}>{arrow}{Math.abs(value)}%</span>;
 }
 
 function formatCurrency(val: number): string {
@@ -66,6 +69,7 @@ export default function IncidentSection({ data }: Props) {
   } = data;
 
   const { health_score, label: healthLabel, sla_pct, critical_trend } = incident_health;
+  const period = snapshot_delta.has_data ? snapshot_delta.period_label : undefined;
   const { days: mttr, data_points } = avg_resolution;
   const healthColor =
     health_score >= 76 ? '#10b981'
@@ -89,7 +93,7 @@ export default function IncidentSection({ data }: Props) {
         <div className="im-card">
           <div className="im-card-head">
             <span className="im-label">INCIDENT HEALTH INDEX</span>
-            <DeltaBadge value={snapshot_delta.open_incidents} lowerIsBetter />
+            <DeltaBadge value={snapshot_delta.open_incidents} lowerIsBetter period={period} />
           </div>
           <div className="im-health-top">
             <div className="im-health-score" style={{ color: healthColor }}>{health_score}</div>
@@ -150,7 +154,7 @@ export default function IncidentSection({ data }: Props) {
         <div className="im-card">
           <div className="im-card-head">
             <span className="im-label">RESOLUTION PERFORMANCE</span>
-            <DeltaBadge value={snapshot_delta.avg_mttr} lowerIsBetter />
+            <DeltaBadge value={snapshot_delta.avg_mttr} lowerIsBetter period={period} />
           </div>
           <div className="im-resolve-val">{mttr != null ? `${mttr}d` : '—'}</div>
           <div className="im-resolve-cap">Mean time to resolve</div>

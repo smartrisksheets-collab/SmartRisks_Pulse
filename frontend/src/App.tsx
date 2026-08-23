@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { GoogleOAuthProvider } from '@react-oauth/google';
 import { useAuthStore } from './store/authStore';
 import type { Permissions } from './types/auth';
 import type { ModuleKey } from './types/api';
@@ -81,8 +82,10 @@ function RequireToken({ children }: { children: React.ReactNode }) {
 //   );
 // }
 
+const _gid = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
+
 export default function App() {
-  return (
+  const appContent = (
     <QueryClientProvider client={queryClient}>
       <ToastProvider>
       <BrowserRouter>
@@ -130,4 +133,8 @@ export default function App() {
       </ToastProvider>
     </QueryClientProvider>
   );
+
+  return _gid
+    ? <GoogleOAuthProvider clientId={_gid}>{appContent}</GoogleOAuthProvider>
+    : appContent;
 }

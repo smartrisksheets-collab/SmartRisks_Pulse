@@ -27,6 +27,7 @@ from app.models.risk import Risk
 from app.models.incident import Incident
 from app.models.snapshot import SnapshotMonthly
 from app.models.risk_history import RiskHistory
+from app.models.matrix_config import MatrixConfig
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -121,14 +122,15 @@ class IncidentRow:
 
 @dataclass
 class ReportContext:
-    tenant_id:   UUID
-    risks:       list[RiskRow]        # filtered by date range, category normalized
-    all_risks:   list[RiskRow]        # unfiltered
-    incidents:   list[IncidentRow]    # filtered by date range
-    all_incidents: list[IncidentRow]  # unfiltered
-    date_from:   date | None
-    date_to:     date
-    snapshots:   list[SnapshotMonthly] = field(default_factory=list)
+    tenant_id:     UUID
+    risks:         list[RiskRow]        # filtered by date range, category normalized
+    all_risks:     list[RiskRow]        # unfiltered
+    incidents:     list[IncidentRow]    # filtered by date range
+    all_incidents: list[IncidentRow]    # unfiltered
+    date_from:     date | None
+    date_to:       date
+    snapshots:     list[SnapshotMonthly]  = field(default_factory=list)
+    matrix_config: MatrixConfig | None   = field(default=None)
 
 
 # ── DB data fetch ──────────────────────────────────────────────────────────────
@@ -214,6 +216,11 @@ async def build_context(
     all_incidents = await _fetch_incidents(db, tenant_id)
     snapshots     = await _fetch_snapshots(db, tenant_id)
 
+    _mc_row = await db.execute(
+        select(MatrixConfig).where(MatrixConfig.tenant_id == tenant_id)
+    )
+    matrix_config = _mc_row.scalars().first()
+
     risks     = _apply_date_filter_risks(all_risks, date_from, date_to)
     incidents = _apply_date_filter_incidents(all_incidents, date_from, date_to)
 
@@ -226,6 +233,7 @@ async def build_context(
         date_from=date_from,
         date_to=date_to,
         snapshots=snapshots,
+        matrix_config=matrix_config,
     )
 
 
@@ -330,11 +338,15 @@ def compute_risk_snapshot(ctx: ReportContext) -> dict:
     top_cat_entry = sorted(cat_map.items(), key=lambda x: x[1], reverse=True)
     top_cat = top_cat_entry[0][0] if top_cat_entry else "multiple categories"
 
-    med = by_level.get("Medium", 0)
-    low = by_level.get("Low", 0)
+    med = sum(1 for r in risks if r.level_index == 2)
+    low = sum(1 for r in risks if r.level_index == 1)
+    _mc_snap = ctx.matrix_config
+    _low_lbl = str(_mc_snap.band_1_label or "Low") if _mc_snap else "Low"
+    _mid_lbl = str(_mc_snap.band_2_label or "Medium") if _mc_snap else "Medium"
     narrative = (
         f"A total of {len(risks)} risks are currently being tracked across the organization. "
-        f"This includes {high_count} high-risk, {med} medium-risk, and {low} low-risk items. "
+        f"This includes {high_count} elevated, {med} {_mid_lbl.lower()}-risk, "
+        f"and {low} {_low_lbl.lower()}-risk items. "
         f"The distribution reflects a {dominant} risk profile, with concentration in {top_cat}."
     )
     return {
@@ -540,14 +552,35 @@ def compute_risk_distribution(ctx: ReportContext) -> dict:
         "elevated"           if hi_pct > 25 else
         "balanced"
     )
+    mc = ctx.matrix_config
+    if mc:
+        count = int(mc.band_count or 4)  # type: ignore[arg-type]
+        band_labels = [
+            str(mc.band_1_label or "Low"),
+            str(mc.band_2_label or "Medium"),
+            str(mc.band_3_label or "High"),
+            str(mc.band_4_label or "Critical"),
+        ]
+        if count >= 5:
+            band_labels.append(str(mc.band_5_label or "Extreme"))
+        _low_lbl = band_labels[0]
+        _mid_lbl = band_labels[1]
+    else:
+        band_labels = ["Low", "Medium", "High", "Critical"]
+        _low_lbl, _mid_lbl = "Low", "Medium"
     narrative = (
-        f"The current risk distribution shows {hi_pct}% high-risk, {me_pct}% medium-risk, "
-        f"and {lo_pct}% low-risk items. This indicates a {profile} exposure profile."
+        f"The current risk distribution shows {hi_pct}% elevated, {me_pct}% {_mid_lbl.lower()}-risk, "
+        f"and {lo_pct}% {_low_lbl.lower()}-risk items. This indicates a {profile} exposure profile."
     )
     if hi_pct > 25:
-        narrative += " The proportion of high-risk items is elevated and increases overall exposure."
+        narrative += " The proportion of elevated-risk items is high and increases overall exposure."
 
-    return {"by_level": by_level, "by_category": by_category, "narrative": narrative}
+    return {
+        "by_level":    by_level,
+        "by_category": by_category,
+        "narrative":   narrative,
+        "band_labels": band_labels,
+    }
 
 
 def compute_incident_trend(ctx: ReportContext) -> dict:
@@ -583,14 +616,15 @@ def compute_top_risks(ctx: ReportContext) -> dict:
     return {
         "risks": [
             {
-                "id":        r.id,
-                "category":  r.category,
-                "desc":      r.desc[:120],
-                "owner":     r.owner,
-                "level":     r.level,
-                "residual":  round(r.residual),
-                "treatment": r.treatment,
-                "movement":  r.movement,
+                "id":          r.id,
+                "category":    r.category,
+                "desc":        r.desc[:120],
+                "owner":       r.owner,
+                "level":       r.level,
+                "level_index": r.level_index,
+                "residual":    round(r.residual),
+                "treatment":   r.treatment,
+                "movement":    r.movement,
                 "score_delta": r.score_delta,
             }
             for r in risks
@@ -609,13 +643,14 @@ def compute_top_emerging_risks(ctx: ReportContext) -> dict:
     return {
         "risks": [
             {
-                "id":        r.id,
-                "category":  r.category,
-                "desc":      r.desc[:120],
-                "level":     r.level,
-                "residual":  r.residual,
-                "logged":    r.logged_at.isoformat() if r.logged_at else None,
-                "movement":  r.movement,
+                "id":          r.id,
+                "category":    r.category,
+                "desc":        r.desc[:120],
+                "level":       r.level,
+                "level_index": r.level_index,
+                "residual":    r.residual,
+                "logged":      r.logged_at.isoformat() if r.logged_at else None,
+                "movement":    r.movement,
                 "score_delta": r.score_delta,
             }
             for r in risks
@@ -1029,7 +1064,7 @@ def compute_executive_dashboard(ctx: ReportContext) -> dict:
 
     if (krc.get("new_high_risks") or 0) > 0:
         bullets.append(
-            "Risks have escalated into the High or Critical band this period. Without prompt owner engagement "
+            "Risks have escalated into elevated risk bands this period. Without prompt owner engagement "
             "and control reinforcement, these exposures risk becoming board-level concerns."
         )
 

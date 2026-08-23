@@ -20,8 +20,13 @@ from app.services.settings import get_ai_config
 
 logger = logging.getLogger(__name__)
 
-_MAX_TOKENS  = 400
-_TEMPERATURE = 0.5
+_MAX_TOKENS = 400
+
+_CONFIDENCE_TEMPERATURE: dict[str, float] = {
+    "conservative": 0.3,
+    "balanced":     0.5,
+    "assertive":    0.7,
+}
 
 # Blocks that support AI narrative generation — matches GAS AI_KEYS list
 _AI_BLOCKS = {
@@ -46,12 +51,13 @@ _FORMATTING_RULES = "\n".join([
 ])
 
 
-async def _call(client: AsyncAnthropic, system: str, user: str, model: str) -> str:
+async def _call(client: AsyncAnthropic, system: str, user: str, model: str, temperature: float = 0.5) -> str:
     """Single Anthropic call. Returns text or a safe fallback on failure."""
     try:
         msg = await client.messages.create(
             model=model,
             max_tokens=_MAX_TOKENS,
+            temperature=temperature,
             system=system + "\n\n" + _FORMATTING_RULES,
             messages=[{"role": "user", "content": user}],
         )
@@ -273,8 +279,21 @@ async def generate_report_narrative(
     if not ai_cfg['enabled']:
         raise ValueError('AI is disabled for this workspace.')
 
-    model  = ai_cfg['model']
-    policy = ai_cfg['policy']
+    model       = ai_cfg['model']
+    temperature = _CONFIDENCE_TEMPERATURE.get(ai_cfg['confidence'], 0.5)
+
+    policy_parts: list[str] = []
+    if ai_cfg['policy']:
+        policy_parts.append(ai_cfg['policy'])
+    if ai_cfg['policy_industry']:
+        policy_parts.append(f"Industry context: {ai_cfg['policy_industry']}")
+    if ai_cfg['policy_tone']:
+        policy_parts.append(f"Tone: {ai_cfg['policy_tone']}")
+    if ai_cfg['policy_sensitivity']:
+        policy_parts.append(f"Sensitivity: {ai_cfg['policy_sensitivity']}")
+    if ai_cfg['policy_extra']:
+        policy_parts.append(ai_cfg['policy_extra'])
+    combined_policy = "\n".join(policy_parts)
 
     ai_blocks = [b for b in blocks if b in _AI_BLOCKS]
     if not ai_blocks:
@@ -290,9 +309,9 @@ async def generate_report_narrative(
         if prompt is None:
             return key, None
         system_p, user_p = prompt
-        if policy:
-            system_p = f'{system_p}\n\nWorkspace Policy:\n{policy}'
-        text = await _call(client, system_p, user_p, model)
+        if combined_policy:
+            system_p = f'{system_p}\n\nWorkspace Policy:\n{combined_policy}'
+        text = await _call(client, system_p, user_p, model, temperature)
         return key, text
 
     tasks = [_generate_one(k) for k in ai_blocks]

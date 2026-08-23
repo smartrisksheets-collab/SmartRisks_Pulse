@@ -10,7 +10,7 @@ import type { SettingsData, SettingsUpdate } from "../../types/settings";
 
 const INDUSTRIES = [
   "Finance","Healthcare","Technology","Government",
-  "Manufacturing","Retail","Education","Energy","Other",
+  "Manufacturing","Retail","Education","Energy","Oil & gas","Other",
 ];
 const FRAMEWORKS = ["ISO 31000","NIST CSF","COSO ERM","COBIT","ISO 27001","Custom"];
 const TIMEZONES = [

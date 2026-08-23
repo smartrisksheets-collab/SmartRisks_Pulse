@@ -30,7 +30,13 @@ class WorkspaceMemberResponse(BaseModel):
 
 class CreateWorkspaceRequest(BaseModel):
     name: str
+    org_name: str | None = None
     industry: str | None = None
+    org_size: str | None = None
+    framework: str | None = None
+    timezone: str | None = None
+    date_format: str | None = None
+    currency: str | None = None
 
 
 class WorkspaceResponse(BaseModel):

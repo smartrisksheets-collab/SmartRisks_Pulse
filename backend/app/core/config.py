@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: str = ""
     RESEND_API_KEY: str = ""
     RESEND_FROM_EMAIL: str = ""
+    GOOGLE_CLIENT_ID: str = ""
 
     # App
     APP_ENV: str = "development"

@@ -25,16 +25,19 @@ const CAT_COLORS = [
 function DeltaBadge({
   value,
   lowerIsBetter = false,
+  period,
 }: {
   value: number | null;
   lowerIsBetter?: boolean;
+  period?: string;
 }) {
   if (value === null || value === undefined) return null;
   const isPositive = value > 0;
   const isGood = lowerIsBetter ? !isPositive : isPositive;
   const cls = value === 0 ? 'flat' : isGood ? 'up' : 'down';
-  const sign = value > 0 ? '+' : '';
-  return <span className={`sr-delta ${cls}`}>{sign}{value}%</span>;
+  const arrow = value > 0 ? '▲ +' : value < 0 ? '▼ ' : '';
+  const tip = period ? `${value > 0 ? 'Up' : 'Down'} ${Math.abs(value)}% ${period}` : undefined;
+  return <span className={`sr-delta ${cls}`} title={tip}>{arrow}{Math.abs(value)}%</span>;
 }
 
 function formatCurrency(val: number): string {
@@ -58,6 +61,8 @@ export default function UnifiedSection({ data }: Props) {
     residual_trend,
     snapshot_delta,
   } = data;
+
+  const period = snapshot_delta.has_data ? snapshot_delta.period_label : undefined;
 
   // Enterprise health = risk health
   const exposure = Math.min(100, Math.round((kpis.risk_severity_avg / 25) * 100));
@@ -124,7 +129,7 @@ export default function UnifiedSection({ data }: Props) {
           <div className="im-card-head">
             <span className="im-label">ENTERPRISE RISK HEALTH</span>
             <div className="im-head-signals">
-              <DeltaBadge value={snapshot_delta.health_delta} lowerIsBetter={false} />
+              <DeltaBadge value={snapshot_delta.health_delta} lowerIsBetter={false} period={period} />
               <div className="im-confidence">
                 <span className="im-confidence-dot" />High Confidence
               </div>
@@ -178,7 +183,7 @@ export default function UnifiedSection({ data }: Props) {
         <div className="im-card">
           <div className="im-card-head">
             <span className="im-label">RISK PRESSURE</span>
-            <DeltaBadge value={snapshot_delta.high_risk_count} lowerIsBetter />
+            <DeltaBadge value={snapshot_delta.high_risk_count} lowerIsBetter period={period} />
           </div>
           <div className="im-pressure-bar">
             <div
@@ -210,7 +215,7 @@ export default function UnifiedSection({ data }: Props) {
         <div className="im-card">
           <div className="im-card-head">
             <span className="im-label">INCIDENT PERFORMANCE</span>
-            <DeltaBadge value={snapshot_delta.avg_mttr} lowerIsBetter />
+            <DeltaBadge value={snapshot_delta.avg_mttr} lowerIsBetter period={period} />
           </div>
           <div className="im-resolve-val">{mttr != null ? `${mttr}d` : '—'}</div>
           <div className="im-resolve-cap">Incident MTTR</div>

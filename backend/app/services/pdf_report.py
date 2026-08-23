@@ -61,7 +61,7 @@ _S = {
     ),
     "body": ParagraphStyle(
         "body", fontName="Helvetica", fontSize=9,
-        textColor=BLACK, leading=13,
+        textColor=colors.HexColor("#333333"), leading=13,
     ),
     "kpi_value": ParagraphStyle(
         "kpi_value", fontName="Helvetica-Bold", fontSize=20,
@@ -93,7 +93,7 @@ _S = {
     ),
     "ai_text": ParagraphStyle(
         "ai_text", fontName="Helvetica", fontSize=9,
-        textColor=BLACK, leading=14, spaceAfter=0,
+        textColor=colors.HexColor("#333333"), leading=16, spaceAfter=0,
     ),
     "footer": ParagraphStyle(
         "footer", fontName="Helvetica", fontSize=8,
@@ -159,7 +159,10 @@ def _make_canvas_cls(
 
 
 # ── Level color helper ─────────────────────────────────────────────────────────
-def _level_color(level: str) -> colors.HexColor:
+def _level_color(level: str, level_index: int | None = None) -> colors.HexColor:
+    if level_index is not None:
+        idx = min(level_index - 1, len(_BAND_COLORS_BY_POS) - 1)
+        return colors.HexColor(_BAND_COLORS_BY_POS[idx])
     l = (level or "").lower()
     if l in ("very high", "critical"):
         return colors.HexColor("#dc2626")
@@ -188,17 +191,25 @@ def _kpi_val_paragraph(k: dict) -> Paragraph:
     unit_str = str(k.get("unit", "") or "")
     clr_str  = k.get("color", "#1F2854") if isinstance(k.get("color"), str) else "#1F2854"
 
+    direction = k.get("direction")
+    arrow = ""
+    if direction == "up":
+        arrow = '<font color="#ef4444" size="9"> &#9650;</font>'
+    elif direction == "down":
+        arrow = '<font color="#10b981" size="9"> &#9660;</font>'
+
     if unit_str:
         markup = (
             f'<font name="Helvetica-Bold" size="16" color="{clr_str}">{val_str}</font>'
             f'<font name="Helvetica" size="8" color="#94a3b8">{unit_str}</font>'
+            + arrow
         )
         return Paragraph(markup, ParagraphStyle(
             "kvp", alignment=TA_LEFT, leading=20, spaceBefore=0, spaceAfter=0,
         ))
-    return Paragraph(val_str, ParagraphStyle(
-        "kv", fontName="Helvetica-Bold", fontSize=18,
-        textColor=colors.HexColor(clr_str), alignment=TA_LEFT,
+    markup = f'<font name="Helvetica-Bold" size="15" color="{clr_str}">{val_str}</font>' + arrow
+    return Paragraph(markup, ParagraphStyle(
+        "kv", alignment=TA_LEFT, leading=19, spaceBefore=0, spaceAfter=0,
     ))
 
 
@@ -211,8 +222,8 @@ def _kpi_table(kpis: list[dict], col_width: float = 50 * mm) -> Table:
             [
                 [_kpi_val_paragraph(k)],
                 [Paragraph(k.get("label", ""), ParagraphStyle(
-                    "kl", fontName="Helvetica", fontSize=9,
-                    textColor=MUTED, alignment=TA_LEFT,
+                    "kl", fontName="Helvetica", fontSize=8,
+                    textColor=colors.HexColor("#555555"), alignment=TA_LEFT,
                 ))],
                 *([
                     [Paragraph(
@@ -229,10 +240,10 @@ def _kpi_table(kpis: list[dict], col_width: float = 50 * mm) -> Table:
                 ("BACKGROUND",   (0, 0), (-1, -1), colors.HexColor("#fbfbfb")),
                 ("LINEBEFORE",   (0, 0), (0, -1), 3,
                     colors.HexColor(k.get("color", "#1F2854")) if isinstance(k.get("color"), str) else NAVY),
-                ("LEFTPADDING",  (0, 0), (-1, -1), 8),
+                ("LEFTPADDING",  (0, 0), (-1, -1), 10),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-                ("TOPPADDING",   (0, 0), (-1, -1), 6),
-                ("BOTTOMPADDING",(0, 0), (-1, -1), 6),
+                ("TOPPADDING",   (0, 0), (-1, -1), 8),
+                ("BOTTOMPADDING",(0, 0), (-1, -1), 8),
             ]),
         )
         for k in kpis
@@ -304,10 +315,10 @@ def _ai_callout(text: str) -> Table:
     tbl = Table([[inner]], colWidths=["100%"])
     tbl.setStyle(TableStyle([
         ("BACKGROUND",   (0, 0), (-1, -1), colors.HexColor("#f8faff")),
-        ("LEFTPADDING",  (0, 0), (-1, -1), 8),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-        ("TOPPADDING",   (0, 0), (-1, -1), 8),
-        ("BOTTOMPADDING",(0, 0), (-1, -1), 8),
+        ("LEFTPADDING",  (0, 0), (-1, -1), 14),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 14),
+        ("TOPPADDING",   (0, 0), (-1, -1), 12),
+        ("BOTTOMPADDING",(0, 0), (-1, -1), 12),
         ("LINEBEFORE",   (0, 0), (0, -1), 3, TEAL),
     ]))
     return tbl
@@ -343,7 +354,7 @@ def _render_exposure_index(data: dict, ai_text: str | None) -> list:
         ))]],
         colWidths=[60 * mm],
         style=TableStyle([
-            ("BACKGROUND",   (0, 0), (-1, -1), LIGHT),
+            ("BACKGROUND",   (0, 0), (-1, -1), colors.Color(hc.red, hc.green, hc.blue, alpha=0.13)),
             ("LEFTPADDING",  (0, 0), (-1, -1), 10),
             ("RIGHTPADDING", (0, 0), (-1, -1), 10),
             ("TOPPADDING",   (0, 0), (-1, -1), 2),
@@ -354,13 +365,13 @@ def _render_exposure_index(data: dict, ai_text: str | None) -> list:
         [
             [Paragraph("RISK HEALTH", _lbl_s)],
             [Paragraph(str(h), ParagraphStyle(
-                "eih", fontName="Helvetica-Bold", fontSize=42,
-                textColor=hc, alignment=TA_CENTER, leading=46,
+                "eih", fontName="Helvetica-Bold", fontSize=35,
+                textColor=hc, alignment=TA_CENTER, leading=40,
             ))],
             [badge],
             [Paragraph("/ 100 \u2014 higher is better", ParagraphStyle(
                 "eihs", fontName="Helvetica", fontSize=8,
-                textColor=MUTED, alignment=TA_CENTER, spaceBefore=3,
+                textColor=colors.HexColor("#94a3b8"), alignment=TA_CENTER, spaceBefore=3,
             ))],
         ],
         colWidths=[83 * mm],
@@ -378,12 +389,12 @@ def _render_exposure_index(data: dict, ai_text: str | None) -> list:
         [
             [Paragraph("EXPOSURE INDEX", _lbl_s)],
             [Paragraph(str(score), ParagraphStyle(
-                "eii", fontName="Helvetica-Bold", fontSize=28,
-                textColor=NAVY, alignment=TA_CENTER, leading=32, spaceAfter=4,
+                "eii", fontName="Helvetica-Bold", fontSize=23,
+                textColor=NAVY, alignment=TA_CENTER, leading=27, spaceAfter=4,
             ))],
             [Paragraph(f"/ 100 \u2014 <b>{label}</b>", ParagraphStyle(
                 "eiil", fontName="Helvetica", fontSize=9,
-                textColor=MUTED, alignment=TA_CENTER,
+                textColor=colors.HexColor("#94a3b8"), alignment=TA_CENTER,
             ))],
         ],
         colWidths=[77 * mm],
@@ -407,7 +418,7 @@ def _render_exposure_index(data: dict, ai_text: str | None) -> list:
         ("ALIGN",        (0, 0), (-1, -1), "CENTER"),
         ("LINEAFTER",    (0, 0), (0, -1),   0.5, colors.HexColor("#e2e8f0")),
         ("TOPPADDING",   (0, 0), (-1, -1), 10),
-        ("BOTTOMPADDING",(0, 0), (-1, -1), 10),
+        ("BOTTOMPADDING",(0, 0), (-1, -1), 6),
         ("LEFTPADDING",  (0, 0), (-1, -1), 0),
         ("RIGHTPADDING", (0, 0), (-1, -1), 0),
     ]))
@@ -431,7 +442,7 @@ def _render_risk_snapshot(data: dict, ai_text: str | None) -> list:
 def _render_key_risk_changes(data: dict, ai_text: str | None) -> list:
     kpis = [
         {"label": "Risks Increased", "value": f"+{data.get('increased', 0)}", "color": "#1F2854"},
-        {"label": "Risks Decreased", "value": f"-{data.get('decreased', 0)}", "color": "#1F2854"},
+        {"label": "Risks Decreased", "value": f"\u2212{data.get('decreased', 0)}", "color": "#1F2854"},
         {"label": "New High Risks",  "value": data.get("new_high_risks", 0),  "color": "#ef4444"},
     ]
     out = _block_header("Key Risk Changes")
@@ -466,9 +477,9 @@ def _render_ai_exec_summary(data: dict, ai_text: str | None) -> list:
 
 
 _COMMENTARY_SECTIONS = [
-    ("Observation",       NAVY,  "\u25cf"),   # ● black circle
-    ("Impact",            RED,   "\u25cf"),   # ● same circle, color differentiates
-    ("Recommended Focus", TEAL,  "\u25cf"),   # ● same circle, color differentiates
+    ("Observation",       NAVY,  "\u25cf"),   # ● matches GAS &#9679;
+    ("Impact",            RED,   "\u25b3"),   # △ matches GAS &#9651;
+    ("Recommended Focus", TEAL,  "\u2713"),   # ✓ matches GAS &#10003;
 ]
 
 
@@ -499,7 +510,13 @@ def _render_executive_commentary(data: dict, ai_text: str | None) -> list:
     out  = _block_header("Executive Commentary")
     text = ai_text or data.get("text") or ""
     if not text:
-        out.append(Paragraph("No commentary provided.", _S["narrative"]))
+        out.append(Paragraph(
+            "No commentary entered.",
+            ParagraphStyle(
+                "ec_empty", fontName="Helvetica-Oblique", fontSize=9,
+                textColor=colors.HexColor("#94a3b8"), leading=13,
+            ),
+        ))
         return out
 
     sections = _parse_commentary(text)
@@ -519,7 +536,10 @@ def _render_executive_commentary(data: dict, ai_text: str | None) -> list:
                 letterSpacing=0.6,
             ),
         )
-        body_para = Paragraph(body, _S["ai_text"])
+        body_para = Paragraph(body, ParagraphStyle(
+            "ec_body", fontName="Helvetica", fontSize=9,
+            textColor=colors.HexColor("#334155"), leading=16,
+        ))
         section_tbl = Table(
             [[label_para], [body_para]],
             colWidths=["100%"],
@@ -527,10 +547,10 @@ def _render_executive_commentary(data: dict, ai_text: str | None) -> list:
         section_tbl.setStyle(TableStyle([
             ("BACKGROUND",   (0, 0), (-1, -1), colors.HexColor("#f8faff")),
             ("LINEBEFORE",   (0, 0), (0, -1),  3, color),
-            ("LEFTPADDING",  (0, 0), (-1, -1), 10),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-            ("TOPPADDING",   (0, 0), (-1, -1), 6),
-            ("BOTTOMPADDING",(0, 0), (-1, -1), 6),
+            ("LEFTPADDING",  (0, 0), (-1, -1), 12),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 12),
+            ("TOPPADDING",   (0, 0), (-1, -1), 8),
+            ("BOTTOMPADDING",(0, 0), (-1, -1), 8),
         ]))
         out.append(section_tbl)
         out.append(Spacer(1, 3 * mm))
@@ -668,25 +688,43 @@ def _render_incident_trend(data: dict, ai_text: str | None) -> list:
     )
 
 
+# Position-based band colors: index 0 = lowest band, 4 = highest.
+# Label-agnostic — works with any matrix configuration.
+_BAND_COLORS_BY_POS: list[str] = [
+    "#10b981",  # band 1 — low
+    "#f59e0b",  # band 2 — medium
+    "#ef4444",  # band 3 — high
+    "#dc2626",  # band 4 — very high / critical
+    "#b91c1c",  # band 5 — extreme
+]
+_BAND_BG_COLORS_BY_POS: list[str] = [
+    "#ecfdf5",  # band 1 — low
+    "#fffbeb",  # band 2 — medium
+    "#fef2f2",  # band 3 — high
+    "#fee2e2",  # band 4 — very high / critical
+    "#ffd6d6",  # band 5 — extreme
+]
+
+
 def _make_donut_drawing(by_level: dict, order: list[str]) -> Any:
     """
     Donut chart Drawing for Risk Distribution.
     Translates GAS svgDonut_() from View_ReportBuilder.html.
+    Colors assigned by band position, not label name — matrix-agnostic.
     """
     from reportlab.graphics.shapes import (
         Drawing, Wedge, Circle,
         Rect as GRect, String as GStr,
     )
 
-    LEVEL_COLORS: dict[str, str] = {
-        'Low': '#10b981', 'Medium': '#f59e0b', 'High': '#ef4444',
-        'Very High': '#dc2626', 'Critical': '#dc2626',
-    }
-    slices = [
-        (k, int(by_level.get(k, 0)))
-        for k in order if (by_level.get(k, 0) or 0) > 0
-    ]
-    total = sum(v for _, v in slices) or 1
+    slices: list[tuple[str, int, str]] = []
+    for i, k in enumerate(order):
+        v = int(by_level.get(k, 0) or 0)
+        if v > 0:
+            clr_hex = _BAND_COLORS_BY_POS[min(i, len(_BAND_COLORS_BY_POS) - 1)]
+            slices.append((k, v, clr_hex))
+
+    total = sum(v for _, v, _ in slices) or 1
 
     DW, DH = 78 * mm, 55 * mm
     CX   = 25 * mm
@@ -697,11 +735,10 @@ def _make_donut_drawing(by_level: dict, order: list[str]) -> Any:
     d = Drawing(DW, DH)
 
     angle = 90.0          # start at 12 o'clock
-    for k, v in slices:
-        clr   = colors.HexColor(LEVEL_COLORS.get(k, '#94a3b8'))
+    for k, v, clr_hex in slices:
+        clr   = colors.HexColor(clr_hex)
         sweep = (v / total) * 360.0
         if len(slices) == 1:
-            # Full circle: split into two halves to avoid degenerate Wedge
             d.add(Wedge(CX, CY, R, 90, 270,
                          fillColor=clr, strokeColor=WHITE, strokeWidth=0.5))
             d.add(Wedge(CX, CY, R, 270, 90,
@@ -723,10 +760,10 @@ def _make_donut_drawing(by_level: dict, order: list[str]) -> Any:
                 fillColor=MUTED.hexval()))
 
     # Inline legend (right of donut, within the Drawing)
-    lx  = 50 * mm
+    lx    = 50 * mm
     row_h = 13
-    for i, (k, v) in enumerate(slices):
-        clr = colors.HexColor(LEVEL_COLORS.get(k, '#94a3b8'))
+    for i, (k, v, clr_hex) in enumerate(slices):
+        clr = colors.HexColor(clr_hex)
         pct = round((v / total) * 100)
         y   = DH - (i + 1) * row_h - 4
         d.add(GRect(lx, y, 7, 7, fillColor=clr, strokeColor=None))
@@ -743,7 +780,7 @@ def _render_risk_distribution(data: dict, ai_text: str | None) -> list:
 
     by_level    = data.get("by_level", {})
     by_category = data.get("by_category", {})
-    ORDER = ["Low", "Medium", "High", "Very High", "Critical"]
+    ORDER = data.get("band_labels") or ["Low", "Medium", "High", "Critical"]
 
     # ── Left: donut chart ─────────────────────────────────────────────────────
     donut = _make_donut_drawing(by_level, ORDER)
@@ -772,7 +809,7 @@ def _render_risk_distribution(data: dict, ai_text: str | None) -> list:
 
     combined = Table(
         [[donut, cat_tbl]],
-        colWidths=[82 * mm, 84 * mm],
+        colWidths=[94 * mm, 76 * mm],
     )
     combined.setStyle(TableStyle([
         ("VALIGN",       (0, 0), (-1, -1), "MIDDLE"),
@@ -791,20 +828,31 @@ def _render_risk_table(label: str, risks: list[dict], intro: str | None,
         out.append(Paragraph(intro, _S["narrative"]))
         out.append(Spacer(1, 2 * mm))
 
+    _TREND_MARKUP = {
+        "increasing": '<font color="#ef4444"><b>▲</b></font>',
+        "volatile":   '<font color="#ef4444"><b>▲</b></font>',
+        "improving":  '<font color="#10b981"><b>▼</b></font>',
+    }
+    _trend_s = ParagraphStyle(
+        "trnd", fontName="Helvetica-Bold", fontSize=8,
+        textColor=colors.HexColor("#94a3b8"), alignment=TA_CENTER,
+    )
+    _res_s = ParagraphStyle(
+        "res", fontName="Helvetica", fontSize=8,
+        textColor=colors.HexColor("#333333"), alignment=TA_CENTER,
+    )
+
     headers = ["ID", "Description", "Level", "Residual", "Trend"]
     rows = [headers] + [
         [
             Paragraph(str(r.get("id", "")), _S["body"]),
             Paragraph((r.get("desc") or "")[:100], _S["body"]),
-            Paragraph(r.get("level", ""), ParagraphStyle(
-                "lv", fontName="Helvetica-Bold", fontSize=8,
-                textColor=_level_color(r.get("level", "")),
-            )),
-            Paragraph(str(r.get("residual", "")), _S["body"]),
+            _level_badge_cell(r.get("level", ""), r.get("level_index")),
+            Paragraph(str(r.get("residual", "")), _res_s),
             Paragraph(
-                {"increasing": "▲", "volatile": "▲", "improving": "▼"}.get(
-                    (r.get("movement") or "").lower(), "→"
-                ), _S["body"]
+                _TREND_MARKUP.get((r.get("movement") or "").lower(),
+                                  '<font color="#94a3b8">→</font>'),
+                _trend_s,
             ),
         ]
         for r in risks
@@ -821,7 +869,7 @@ def _render_risk_table(label: str, risks: list[dict], intro: str | None,
         ("TOPPADDING",   (0, 0), (-1, -1), 4),
         ("BOTTOMPADDING",(0, 0), (-1, -1), 4),
         ("LEFTPADDING",  (0, 0), (-1, -1), 4),
-        ("VALIGN",       (0, 0), (-1, -1), "TOP"),
+        ("VALIGN",       (0, 0), (-1, -1), "MIDDLE"),
     ]))
     out.append(tbl)
     if ai_text:
@@ -884,8 +932,8 @@ def _render_findings(data: dict, _ai: str | None) -> list:
         if not items:
             return
         out.append(Paragraph(heading, ParagraphStyle(
-            "sh", fontName="Helvetica-Bold", fontSize=8,
-            textColor=dot_color, spaceAfter=3, spaceBefore=6,
+            "sh", fontName="Helvetica-Bold", fontSize=9,
+            textColor=dot_color, spaceAfter=4, spaceBefore=8,
         )))
         for f in items:
             row = Table(
@@ -897,10 +945,10 @@ def _render_findings(data: dict, _ai: str | None) -> list:
             row.setStyle(TableStyle([
                 ("VALIGN",       (0, 0), (-1, -1), "TOP"),
                 ("LEFTPADDING",  (0, 0), (-1, -1), 0),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-                ("TOPPADDING",   (0, 0), (-1, -1), 2),
-                ("BOTTOMPADDING",(0, 0), (-1, -1), 2),
-                ("LINEBELOW",    (0, 0), (-1, -1), 0.25, BORDER),
+                ("RIGHTPADDING", (0, 0), (0,  -1), 6),
+                ("TOPPADDING",   (0, 0), (-1, -1), 4),
+                ("BOTTOMPADDING",(0, 0), (-1, -1), 4),
+                ("LINEBELOW",    (0, 0), (-1, -1), 0.25, colors.HexColor("#f1f5f9")),
             ]))
             out.append(row)
 
@@ -979,8 +1027,23 @@ def _render_recommendations(data: dict, ai_text: str | None) -> list:
 
     for i, rec in enumerate(data.get("recommendations", []), 1):
         if isinstance(rec, str):
-            out.append(Paragraph(f"{i}. {rec}", _S["body"]))
-            out.append(Spacer(1, 2 * mm))
+            row = Table(
+                [[Paragraph(f"{i}.", ParagraphStyle(
+                    "recnum", fontName="Helvetica-Bold", fontSize=9,
+                    textColor=TEAL,
+                 )),
+                  Paragraph(rec, _S["body"])]],
+                colWidths=[6 * mm, None],
+            )
+            row.setStyle(TableStyle([
+                ("VALIGN",       (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING",  (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (0,  -1), 6),
+                ("TOPPADDING",   (0, 0), (-1, -1), 4),
+                ("BOTTOMPADDING",(0, 0), (-1, -1), 4),
+                ("LINEBELOW",    (0, 0), (-1, -1), 0.25, colors.HexColor("#f1f5f9")),
+            ]))
+            out.append(row)
         else:
             _render_rec_card(out, i, rec)
 
@@ -1068,7 +1131,10 @@ def _render_conclusion(data: dict, ai_text: str | None) -> list:
     out  = _block_header("Conclusion")
     text = ai_text or data.get("text") or ""
     if text:
-        out.append(Paragraph(text, _S["body"]))
+        out.append(Paragraph(text, ParagraphStyle(
+            "conc", fontName="Helvetica", fontSize=9,
+            textColor=colors.HexColor("#333333"), leading=14,
+        )))
     return out
 
 
@@ -1091,15 +1157,18 @@ def _render_risk_ownership(data: dict, ai_text: str | None) -> list:
     ]
     tbl = Table(rows, colWidths=[45 * mm, 22 * mm, 18 * mm, 26 * mm, 45 * mm], repeatRows=1)
     tbl.setStyle(TableStyle([
-        ("BACKGROUND",   (0, 0), (-1, 0), NAVY),
-        ("TEXTCOLOR",    (0, 0), (-1, 0), WHITE),
-        ("FONTNAME",     (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE",     (0, 0), (-1, -1), 8),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [WHITE, LIGHT]),
-        ("GRID",         (0, 0), (-1, -1), 0.25, BORDER),
-        ("TOPPADDING",   (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING",(0, 0), (-1, -1), 4),
-        ("LEFTPADDING",  (0, 0), (-1, -1), 4),
+        ("BACKGROUND",    (0, 0), (-1, 0), NAVY),
+        ("TEXTCOLOR",     (0, 0), (-1, 0), WHITE),
+        ("FONTNAME",      (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE",      (0, 0), (-1, -1), 8),
+        ("ROWBACKGROUNDS",(0, 1), (-1, -1), [WHITE, LIGHT]),
+        ("GRID",          (0, 0), (-1, -1), 0.25, BORDER),
+        ("TOPPADDING",    (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 6),
+        # GAS: High Risks, Total, Avg Residual are text-align:center
+        ("ALIGN",         (1, 0), (3, -1), "CENTER"),
+        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
     ]))
     out.append(tbl)
     conc = data.get("concentration", 0)
@@ -1163,10 +1232,29 @@ def _render_incident_analytics(data: dict, ai_text: str | None) -> list:
 def _render_executive_dashboard(data: dict, ai_text: str | None) -> list:
     if data.get("no_data"):
         out = _block_header("Executive Dashboard")
-        out.append(Paragraph(
-            (data.get("bullets") or ["No data available for selected range."])[0],
-            _S["narrative"],
-        ))
+        msg = (data.get("bullets") or ["No risk data for the selected date range."])[0]
+        no_data_box = Table(
+            [
+                [Paragraph("No Data Available", ParagraphStyle(
+                    "ndh", fontName="Helvetica-Bold", fontSize=10,
+                    textColor=colors.HexColor("#94a3b8"), alignment=TA_CENTER, spaceAfter=4,
+                ))],
+                [Paragraph(msg, ParagraphStyle(
+                    "ndb", fontName="Helvetica", fontSize=9,
+                    textColor=colors.HexColor("#94a3b8"), alignment=TA_CENTER, leading=14,
+                ))],
+            ],
+            colWidths=["100%"],
+        )
+        no_data_box.setStyle(TableStyle([
+            ("BOX",          (0, 0), (-1, -1), 0.5, BORDER),
+            ("LINEABOVE",    (0, 0), (-1, 0),  0,   BORDER),
+            ("TOPPADDING",   (0, 0), (-1, -1), 14),
+            ("BOTTOMPADDING",(0, 0), (-1, -1), 14),
+            ("LEFTPADDING",  (0, 0), (-1, -1), 16),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 16),
+        ]))
+        out.append(no_data_box)
         return out
 
     out = _block_header("Executive Dashboard")
@@ -1184,39 +1272,49 @@ def _render_executive_dashboard(data: dict, ai_text: str | None) -> list:
             RED   if posture.get("trend") == "Worsening" else
             AMBER
         )
+        _plbl = ParagraphStyle(
+            "plbl", fontName="Helvetica-Bold", fontSize=10,
+            textColor=MUTED, alignment=TA_CENTER, spaceAfter=3,
+        )
+        _pval = ParagraphStyle(
+            "pval", fontName="Helvetica-Bold", fontSize=13,
+            textColor=NAVY, alignment=TA_CENTER,
+        )
         posture_row = Table(
             [
                 [
-                    Paragraph("STATUS",     _S["kpi_label"]),
-                    Paragraph("TREND",      _S["kpi_label"]),
-                    Paragraph("CONFIDENCE", _S["kpi_label"]),
+                    Paragraph("STATUS",     _plbl),
+                    Paragraph("TREND",      _plbl),
+                    Paragraph("CONFIDENCE", _plbl),
                 ],
                 [
-                    Paragraph(posture.get("status", ""), _S["kpi_value"]),
+                    Paragraph(posture.get("status", ""), _pval),
                     Paragraph(posture.get("trend", ""), ParagraphStyle(
-                        "tr", fontName="Helvetica-Bold", fontSize=20,
+                        "ptrend", fontName="Helvetica-Bold", fontSize=13,
                         textColor=p_color, alignment=TA_CENTER,
                     )),
-                    Paragraph(posture.get("confidence", ""), _S["kpi_value"]),
+                    Paragraph(posture.get("confidence", ""), _pval),
                 ],
             ],
             colWidths=[55 * mm, 55 * mm, 55 * mm],
         )
         posture_row.setStyle(TableStyle([
             ("BACKGROUND",   (0, 0), (-1, -1), colors.HexColor("#f8faff")),
-            ("GRID",         (0, 0), (-1, -1), 0.25, BORDER),
             ("ALIGN",        (0, 0), (-1, -1), "CENTER"),
             ("VALIGN",       (0, 0), (-1, -1), "MIDDLE"),
             ("TOPPADDING",   (0, 0), (-1, -1), 8),
             ("BOTTOMPADDING",(0, 0), (-1, -1), 8),
-            ("LEFTPADDING",  (0, 0), (-1, -1), 4),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+            ("LEFTPADDING",  (0, 0), (-1, -1), 12),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 12),
         ]))
         out.append(posture_row)
         out.append(Spacer(1, 3 * mm))
 
     heading = (data.get("heading_text") or "What Leadership Needs To Know").upper()
-    out.append(Paragraph(heading, _S["section_head"]))
+    out.append(Paragraph(heading, ParagraphStyle(
+        "edhead", fontName="Helvetica-Bold", fontSize=10,
+        textColor=NAVY, spaceAfter=6, spaceBefore=4,
+    )))
 
     bullets_src = []
     if ai_text:
@@ -1224,30 +1322,160 @@ def _render_executive_dashboard(data: dict, ai_text: str | None) -> list:
     else:
         bullets_src = data.get("bullets") or []
 
+    _btxt = ParagraphStyle(
+        "edbul", fontName="Helvetica", fontSize=11,
+        textColor=colors.HexColor("#334155"), leading=15,
+    )
     for b in bullets_src:
         row = Table(
             [[Paragraph("●", ParagraphStyle("dot2", fontName="Helvetica-Bold",
-                                             fontSize=8, textColor=TEAL)),
-              Paragraph(b, _S["body"])]],
+                                             fontSize=9, textColor=TEAL)),
+              Paragraph(b, _btxt)]],
             colWidths=[6 * mm, None],
         )
         row.setStyle(TableStyle([
             ("VALIGN",       (0, 0), (-1, -1), "TOP"),
-            ("TOPPADDING",   (0, 0), (-1, -1), 2),
-            ("BOTTOMPADDING",(0, 0), (-1, -1), 2),
-            ("LINEBELOW",    (0, 0), (-1, -1), 0.25, BORDER),
+            ("TOPPADDING",   (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING",(0, 0), (-1, -1), 3),
+            ("RIGHTPADDING", (0, 0), (0,  -1), 6),
+            ("LINEBELOW",    (0, 0), (-1, -1), 0.25, colors.HexColor("#f1f5f9")),
         ]))
         out.append(row)
 
     return out
 
 
+def _level_badge_cell(level: str, level_index: int | None = None) -> Table:
+    """Pill badge matching GAS levelBadge_gs_() — used in risk tables and key risk movements.
+    When level_index is supplied, colors are assigned by band position (label-agnostic).
+    Falls back to string matching when level_index is not available."""
+    if level_index is not None:
+        idx = min(level_index - 1, len(_BAND_COLORS_BY_POS) - 1)
+        c  = colors.HexColor(_BAND_COLORS_BY_POS[idx])
+        bg = colors.HexColor(_BAND_BG_COLORS_BY_POS[idx])
+    else:
+        l = (level or "").strip().lower()
+        if l in ("critical", "very high"):
+            c, bg = colors.HexColor("#dc2626"), colors.HexColor("#fee2e2")
+        elif l == "high":
+            c, bg = colors.HexColor("#ef4444"), colors.HexColor("#fef2f2")
+        elif l == "medium":
+            c, bg = colors.HexColor("#d97706"), colors.HexColor("#fffbeb")
+        else:
+            c, bg = colors.HexColor("#10b981"), colors.HexColor("#ecfdf5")
+    badge = Table(
+        [[Paragraph(level or "", ParagraphStyle(
+            "lbg", fontName="Helvetica-Bold", fontSize=8,
+            textColor=c, alignment=TA_CENTER,
+        ))]],
+        colWidths=[22 * mm],
+    )
+    badge.setStyle(TableStyle([
+        ("BACKGROUND",   (0, 0), (-1, -1), bg),
+        ("TOPPADDING",   (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING",(0, 0), (-1, -1), 2),
+        ("LEFTPADDING",  (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+    ]))
+    return badge
+
+
 def _render_key_risk_movements(data: dict, _ai: str | None) -> list:
     out = _block_header("Key Risk Movements")
+
     if not data.get("has_data"):
-        out.append(Paragraph(data.get("narrative", ""), _S["narrative"]))
+        out.append(Paragraph(
+            data.get("narrative", ""),
+            ParagraphStyle(
+                "krmna", fontName="Helvetica-Oblique", fontSize=9,
+                textColor=colors.HexColor("#94a3b8"), leading=13,
+            ),
+        ))
         return out
-    # has_data is always False in current build (see services/report.py comment)
+
+    # Period note: prevMonthLabel → currMonthLabel
+    prev_lbl = data.get("prev_month_label", "")
+    curr_lbl = data.get("curr_month_label", "")
+    if prev_lbl and curr_lbl:
+        out.append(Paragraph(
+            f"{prev_lbl} \u2192 {curr_lbl}",
+            ParagraphStyle(
+                "krmpd", fontName="Helvetica", fontSize=9,
+                textColor=colors.HexColor("#94a3b8"), spaceAfter=8,
+            ),
+        ))
+
+    _tbl_style = TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, 0), NAVY),
+        ("TEXTCOLOR",     (0, 0), (-1, 0), WHITE),
+        ("FONTNAME",      (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE",      (0, 0), (-1, -1), 8),
+        ("ROWBACKGROUNDS",(0, 1), (-1, -1), [WHITE, LIGHT]),
+        ("GRID",          (0, 0), (-1, -1), 0.25, BORDER),
+        ("TOPPADDING",    (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 4),
+        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+    ])
+
+    _HEAD_S = ParagraphStyle(
+        "krmsec", fontName="Helvetica-Bold", fontSize=9,
+        spaceAfter=4, spaceBefore=10,
+    )
+
+    def _mov_section(
+        title: str, arr: list, show_prev: bool, dot_color: colors.HexColor,
+    ) -> None:
+        if not arr:
+            return
+        out.append(Paragraph(
+            f"{title.upper()} ({len(arr)})",
+            ParagraphStyle(
+                "krmsec_c", fontName="Helvetica-Bold", fontSize=9,
+                textColor=dot_color, spaceAfter=4, spaceBefore=10,
+            ),
+        ))
+        if show_prev:
+            headers = ["ID", "Description", "Previous", "Current"]
+            col_w   = [20 * mm, 70 * mm, 24 * mm, 24 * mm]
+            rows = [headers] + [
+                [
+                    Paragraph(str(r.get("risk_id", "")), _S["body"]),
+                    Paragraph((r.get("description") or "")[:100], _S["body"]),
+                    Paragraph(r.get("previous_level", ""), ParagraphStyle(
+                        "krmprev", fontName="Helvetica-Bold", fontSize=8,
+                        textColor=_level_color(
+                            r.get("previous_level", ""),
+                            r.get("previous_level_index"),
+                        ),
+                    )),
+                    _level_badge_cell(r.get("level", "")),
+                ]
+                for r in arr
+            ]
+        else:
+            headers = ["ID", "Description", "Level"]
+            col_w   = [20 * mm, 94 * mm, 24 * mm]
+            rows = [headers] + [
+                [
+                    Paragraph(str(r.get("risk_id", "")), _S["body"]),
+                    Paragraph((r.get("description") or "")[:100], _S["body"]),
+                    _level_badge_cell(r.get("level", "")),
+                ]
+                for r in arr
+            ]
+        tbl = Table(rows, colWidths=col_w, repeatRows=1)
+        tbl.setStyle(_tbl_style)
+        out.append(tbl)
+
+    _mov_section("Escalations",   data.get("escalations",   []), True,  RED)
+    _mov_section("Reductions",    data.get("reductions",    []), True,  GREEN)
+    _mov_section("New Risks",     data.get("new_risks",     []), False, AMBER)
+    _mov_section("Removed Risks", data.get("removed_risks", []), False, MUTED)
+
+    if data.get("narrative"):
+        out.extend(_narrative(data.get("narrative")))
+
     return out
 
 
@@ -1313,6 +1541,13 @@ def _make_doc(
     margin = 20 * mm
     header_label = org_name or title
 
+    def _on_cover_page(canvas, doc):
+        canvas.saveState()
+        accent = 52 * mm
+        canvas.setFillColor(colors.Color(31 / 255, 40 / 255, 84 / 255, alpha=0.07))
+        canvas.rect(page[0] - accent, page[1] - accent, accent, accent, fill=1, stroke=0)
+        canvas.restoreState()
+
     def _on_page(canvas, doc):
         canvas.saveState()
         # Header bar — org name left, report type right
@@ -1343,7 +1578,7 @@ def _make_doc(
         id="content",
     )
     doc.addPageTemplates([
-        PageTemplate(id="cover",   frames=[frame]),
+        PageTemplate(id="cover",   frames=[frame], onPage=_on_cover_page),
         PageTemplate(id="content", frames=[frame], onPage=_on_page),
     ])
     return doc
@@ -1409,7 +1644,7 @@ def build_pdf(
 
         # ── Metadata 2x2 grid ─────────────────────────────────────────────────
         _mk = ParagraphStyle("ck", fontName="Helvetica-Bold", fontSize=7,
-                             textColor=MUTED, spaceBefore=0, spaceAfter=2,
+                             textColor=colors.HexColor("#8a98b0"), spaceBefore=0, spaceAfter=2,
                              wordWrap="LTR")
         _mv = ParagraphStyle("cv", fontName="Helvetica-Bold", fontSize=10,
                              textColor=NAVY, spaceBefore=0, spaceAfter=0)
@@ -1419,8 +1654,8 @@ def build_pdf(
                 [[Paragraph(k.upper(), _mk)], [Paragraph(v or "\u2014", _mv)]],
                 colWidths=["100%"],
                 style=TableStyle([
-                    ("TOPPADDING",    (0, 0), (-1, -1), 8),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+                    ("TOPPADDING",    (0, 0), (-1, -1), 11),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 11),
                     ("LEFTPADDING",   (0, 0), (-1, -1), 0),
                     ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
                 ]),
@@ -1440,16 +1675,23 @@ def build_pdf(
             colWidths=["50%", "50%"],
         )
         meta_tbl.setStyle(TableStyle([
-            ("GRID",         (0, 0), (-1, -1), 0.5, BORDER),
+            # GAS: border-top on meta section, border-bottom on each row, border-left on right col only
+            ("LINEABOVE",    (0, 0), (-1,  0),  0.5, BORDER),
+            ("LINEBELOW",    (0, 0), (-1, -1),  0.5, BORDER),
+            ("LINEBEFORE",   (1, 0), (1,  -1),  0.5, BORDER),
             ("VALIGN",       (0, 0), (-1, -1), "TOP"),
-            ("LEFTPADDING",  (0, 0), (-1, -1), 10),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+            # Left col: left:0, right:14
+            ("LEFTPADDING",  (0, 0), (0,  -1), 0),
+            ("RIGHTPADDING", (0, 0), (0,  -1), 14),
+            # Right col: left:14, right:0
+            ("LEFTPADDING",  (1, 0), (1,  -1), 14),
+            ("RIGHTPADDING", (1, 0), (1,  -1), 0),
         ]))
 
         # ── Confidentiality chip (bordered pill, top-right) ───────────────────
         chip_para = Table(
             [[Paragraph(
-                f'<font color="#01b88e">&#9679;</font>  {classif_label.upper()}',
+                f'<font color="#1F2854">&#9679;</font>  {classif_label.upper()}',
                 ParagraphStyle(
                     "chip", fontName="Helvetica-Bold", fontSize=7,
                     textColor=NAVY, wordWrap="LTR", alignment=TA_RIGHT,
@@ -1459,16 +1701,16 @@ def build_pdf(
         )
         chip_para.setStyle(TableStyle([
             ("BOX",          (0, 0), (-1, -1), 0.75, BORDER),
-            ("LEFTPADDING",  (0, 0), (-1, -1), 8),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-            ("TOPPADDING",   (0, 0), (-1, -1), 4),
-            ("BOTTOMPADDING",(0, 0), (-1, -1), 4),
+            ("LEFTPADDING",  (0, 0), (-1, -1), 12),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 12),
+            ("TOPPADDING",   (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING",(0, 0), (-1, -1), 5),
         ]))
 
         # ── Navy footer bar on cover ──────────────────────────────────────────
         cover_foot = Table(
             [[Paragraph(f'<font color="#ffffff"><b>{brand_label}</b></font>', ParagraphStyle(
-                "cfl", fontName="Helvetica-Bold", fontSize=8, textColor=WHITE)),
+                "cfl", fontName="Helvetica-Bold", fontSize=7, textColor=WHITE)),
               Paragraph(f'<font color="rgba(255,255,255,.7)">{ref_val}</font>', ParagraphStyle(
                 "cfr", fontName="Helvetica", fontSize=7, textColor=colors.HexColor("#94a3b8"),
                 alignment=TA_RIGHT))]],
@@ -1476,10 +1718,10 @@ def build_pdf(
         )
         cover_foot.setStyle(TableStyle([
             ("BACKGROUND",   (0, 0), (-1, -1), NAVY),
-            ("LEFTPADDING",  (0, 0), (-1, -1), 12),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 12),
-            ("TOPPADDING",   (0, 0), (-1, -1), 8),
-            ("BOTTOMPADDING",(0, 0), (-1, -1), 8),
+            ("LEFTPADDING",  (0, 0), (-1, -1), 16),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 16),
+            ("TOPPADDING",   (0, 0), (-1, -1), 10),
+            ("BOTTOMPADDING",(0, 0), (-1, -1), 10),
             ("VALIGN",       (0, 0), (-1, -1), "MIDDLE"),
         ]))
 
@@ -1536,7 +1778,7 @@ def build_pdf(
                     "without authorisation.",
                     ParagraphStyle(
                         "cdis", fontName="Helvetica", fontSize=7,
-                        textColor=MUTED, leading=11, spaceAfter=12,
+                        textColor=colors.HexColor("#8a98b0"), leading=11, spaceAfter=12,
                     ),
                 )],
 

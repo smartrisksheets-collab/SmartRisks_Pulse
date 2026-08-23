@@ -57,18 +57,6 @@ async def generate_ai_insights(
     request: Request,
     payload: AIInsightRequest,
     db: AsyncSession = Depends(get_db),
-    claims: dict     = Depends(require_permission("manage_risks")),
-    _:       dict    = Depends(require_module("risk")),
-):
-    tenant_id = UUID(claims["active_tenant_id"])
-    result = await risk_service.bulk_import(db, tenant_id, payload, claims["email"])
-    return {"data": result, "error": None, "meta": {}}
-
-
-@router.post("/ai")
-async def generate_ai_insights(
-    payload: AIInsightRequest,
-    db: AsyncSession = Depends(get_db),
     claims: dict     = Depends(require_permission("generate_ai")),
     _:       dict    = Depends(require_module("risk")),
 ):

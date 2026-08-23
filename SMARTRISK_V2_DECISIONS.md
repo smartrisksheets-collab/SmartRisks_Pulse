@@ -871,8 +871,148 @@ Raised by: No visual feedback on which rows were updated after AI generation, un
 Chosen: New aiFlashIds: Set<string> state in RiskRegister. After fetchRisks completes in handleGenerateAI, aiFlashIds is set to new Set(r.updated_ids) then cleared with setTimeout after 2400ms, matching the add/edit flash duration. RiskTable gains aiFlashIds?: Set<string> prop (optional for backwards compatibility). Row className ORs flashId === r.id and aiFlashIds?.has(r.id) against the same row-flash class. Flash only fires when r.updated_ids.length > 0.
 Why: The updated_ids array is already in AIInsightResult. Reusing the existing row-flash CSS class means no new animation or CSS is needed. Optional prop keeps the component backwards-compatible.
 
+**Decision: global font-weight base correction (August 21, 2026)**
+Raised by: V2 UI appeared thicker and heavier than V1 across all text, table cells, and inputs.
+Root cause: `body`, `button/input/select/textarea`, and `table/th/td` all had `font-weight: 600` globally in index.css. GAS V1 sets no global font-weight, defaulting to browser 400.
+Chosen: Drop all three selectors to `font-weight: 400`. All component-specific weights (700 on .btn, 900 on thead th, 800 on .card-title) remain and continue to override upward.
+Why: The blanket 600 base was the single cause of the heavy appearance. No component changes needed.
+
+**Decision: im-card hover lift with :has() flicker suppression (August 21, 2026)**
+Raised by: Adding translateY(-4px) lift to im-card:hover caused flickering on cards with interactive children. The card lifts 4px, the cursor exits the child element hit area, hover deactivates, card drops, cursor re-enters, loop repeats.
+Chosen: `.im-card:has(.af-feed-row):hover, .im-card:has(.ap-plan-link):hover { transform: none; box-shadow: var(--shadow); }`. Cards with interactive clickable content do not lift. All other im-cards keep the full hover animation.
+Why: :has() is self-maintaining, requires no JSX class changes, and is supported in all modern browsers as of 2023.
+
+**Decision: gauge mount sweep animation (August 21, 2026)**
+Raised by: Risk Distribution bar chart has Recharts built-in entry animation. Risk Health gauge had no equivalent.
+Chosen: `useState(0)` for animatedFill, `useEffect` with 50ms setTimeout sets animatedFill to real fillLen. Existing CSS transition on strokeDasharray plays the sweep. Extended to 0.8s ease-out.
+Why: 50ms delay is required to allow the browser to paint the initial empty arc before the transition fires. Without it the browser batches the update with the initial render and the animation does not play.
+
+**Decision: health status neutral class for Monitoring badge (August 21, 2026)**
+Raised by: Monitoring badge (51-75 range) returned empty string from healthStatusCls so .sr-delta rendered with no background or color, appearing as plain dark text.
+Chosen: healthStatusCls returns 'neutral' for 51-75. `.sr-delta.neutral { background: #f8fafc; color: #94a3b8; }` matching V1 base .sr-delta gray pill style.
+Why: Named class is cleaner than relying on base class fallback. Matches V1 exactly.
+
+**Decision: control signal scale conversion, two locations (August 21, 2026)**
+Raised by: Control Strength always displayed as single-digit value and never reached the 50 or 70 thresholds.
+Root cause: control_effectiveness column stores 1-5 integers. Both services_risk.py (stat card) and services_dashboard.py (dashboard KPI) passed raw values directly as percentages.
+Chosen: Multiply by 20 in both locations. `avg_eff = round((sum(eff_vals) / len(eff_vals)) * 20)` in services_risk.py. `round(float(risk_row.avg_ctrl or 0) * 20, 1)` in services_dashboard.py.
+Why: 5 * 20 = 100 is the correct ceiling. 1 * 20 = 20 is the correct floor. No cap needed.
+
+**Decision: MatrixSettings preset highlight persistence (August 21, 2026)**
+Raised by: Switching to ISSCL preset and saving works but navigating away and returning resets the highlight to SmartRisk default.
+Root cause: activePreset initialises to 'smartrisk' as hardcoded useState default. On remount local state resets regardless of saved config. Init block populated form but never updated activePreset.
+Chosen: detectPreset(data) iterates PRESETS entries and returns the matching preset name if every key matches, otherwise 'custom'. Called on query.data init and on handleReset.
+Why: Comparing saved values against preset values is the only reliable source of truth.
+
+**Decision: Executive Insights AI rewrite architecture (August 21, 2026)**
+Raised by: Engineering brief (executive-insights-dev-brief.pdf). Current static RiskNarrative produced unsupported claims with no data backing. Brief specifies 4-sentence, 50-word, fact-only summary.
+Chosen: New GET /api/v1/dashboard/exec-insights endpoint. Backend derives all input fields from existing dashboard data via get_dashboard(), no new DB queries except for distinct owners list. Calls claude-haiku-4-5 with exact system prompt from brief. Returns JSON with summary HTML, action items, word count, and owners list. Frontend uses TanStack Query with 30-min staleTime.
+Exposure reduction deduplication: activity feed entries deduplicated by risk_id before counting to mitigate OI feed duplicate-entry bug.
+['exec-insights'] added to useRisks invalidate() so any risk mutation triggers regeneration.
+Action plan modal: xl size (860px), owner dropdown per item (local state only, not persisted), Export as PDF via window.open + print(), white header matching other modals, ap-horizon-tag color corrected from #7fe8cf to #01b88e for white background visibility.
+Why: Single AI call returning JSON covers summary and action plan in one round trip. Haiku is sufficient for structured factual output. 30-min staleTime balances freshness with cost. Lazy load keeps main dashboard latency unaffected.
+
+**Decision: duplicate POST /risks/ai route causing AIInsightRequest AttributeError (August 22, 2026)**
+Raised by: AttributeError: 'AIInsightRequest' object has no attribute 'rows' on the AI insight endpoint.
+Root cause: Two handlers were registered for POST /risks/ai. FastAPI matched the first, which passed AIInsightRequest into risk_service.bulk_import(). That function immediately accessed payload.rows, which does not exist on AIInsightRequest.
+Chosen: Removed the first (stale) handler entirely. The second handler calls ai_risk_service.generate_insights with the correct permission (generate_ai) and rate limiter. request: Request param retained for slowapi.
+Why: The first handler was a stale copy left during a refactor. Removing it restores correct routing with no behaviour change to the surviving handler.
+
+**Decision: dashboard DeltaBadge signal arrows reintroduced (August 22, 2026)**
+Raised by: Signal arrows (▲/▼) missing from DeltaBadge in IncidentSection and UnifiedSection. RiskSection health delta already had arrows inline.
+Chosen: DeltaBadge updated in both files to render ▲ +X% / ▼ X% using Math.abs to prevent double sign on negatives. Optional period prop added for native title tooltip on hover, matching GAS sr-dtip data-tipText pattern. period derived from snapshot_delta.has_data and snapshot_delta.period_label at component level.
+Why: DeltaBadge is a local helper in each file. The change is isolated and does not affect any other component.
+
+**Decision: 30-Day Action Plan owner persistence via identity pattern (August 22, 2026)**
+Raised by: Assigned owners reset to blank every time the modal was closed and reopened because state lived inside ActionPlanModal which unmounts on close.
+Chosen: assignedOwners state lifted to ExecInsightCard where it survives the modal lifecycle. State stored as { summary: string, owners: Record<number, string> } rather than a plain Record. During render, assignedOwners resolves to saved owners only if ownersState.summary matches data.summary. On mismatch (new AI cycle) it resolves to {} automatically. setOwner stamps the current data.summary at assignment time so the match persists.
+Why: useEffect(() => reset, [data]) was the naive alternative but React flags it as a cascading-renders anti-pattern. The identity pattern achieves the same reset behaviour during render with no extra effect and no extra cycle.
+
+**Decision: PDF report parity pass approach — systematic GAS HTML to ReportLab translation (August 22, 2026)**
+Raised by: PDF output from services_pdf_report.py diverged from GAS Reportservice.gs across cover page, all block renderers, font sizes, padding, colors, and level badge styles.
+Chosen: Section-by-section comparison of raw GAS HTML output (including CSS class definitions) against ReportLab code. Each disparity recorded in a table before any patch is written. Changes applied as surgical find/replace per section. Shared helpers (_kpi_table, _ai_callout, _S["body"], _level_badge_cell) fixed once and cascade to all call sites.
+Notable decisions within the pass:
+- _S["body"] color corrected from #0f172a to #333333 matching GAS global td/p color rule.
+- _kpi_val_paragraph value font corrected from 18pt to 15pt (GAS 20px × 0.75).
+- _ai_callout padding corrected from 8pt to 12pt/14pt matching GAS .ai-callout { padding: 12px 14px }.
+- executive-dashboard posture row: GRID removed, value font 20pt → 13pt, padding 4px → 12px.
+- _level_badge_cell added as a shared helper matching GAS levelBadge_gs_() pill badge spec exactly.
+- key-risk-movements has-data branch fully implemented (was a stub returning empty).
+- Commentary section icons corrected: Impact ▲ (△ U+25B3), Recommended Focus ✓ (U+2713).
+Why: Systematic comparison before coding prevents compounding errors. Shared helper fixes are preferable to per-site fixes because they cascade correctly and are maintained in one place.
+
+**Decision: matrix-aware risk distribution donut (August 22, 2026)**
+Raised by: Risk distribution donut hardcoded ORDER = ["Low", "Medium", "High", "Very High"] and LEVEL_COLORS keyed by label string. Any workspace with custom matrix labels (e.g., "Moderate") gets an empty donut and wrong colors.
+Chosen: Three-layer fix. (1) MatrixConfig fetched in build_context and stored on ReportContext. (2) compute_risk_distribution reads band labels from ctx.matrix_config and includes them as band_labels in the payload. (3) _make_donut_drawing replaced LEVEL_COLORS string-keyed dict with _BAND_COLORS_BY_POS list (green → amber → red → dark red → very dark red by position). Slices built as (label, count, color_hex) tuples keyed by ORDER index. ORDER read from data.get("band_labels") with fallback.
+Why: Level colors must be positional (band 1 = green regardless of label) not nominal (label == "Low" = green). Any string-keyed approach breaks for custom labels. Position-based assignment is the only correct approach for a label-agnostic system.
+
 **Decision: print CSV scope resolution and page_size cap alignment (August 14, 2026)**
 Raised by: CSV export from Print modal only exported the current page (PAGE_SIZE = 5 risks) instead of the full register. Two root causes: scope 'filtered' used the in-memory risks array (current page only); scope 'all' API call used page_size 9999 which exceeded the backend le=200 constraint and returned 422, causing silent fallback to the current page.
 Chosen: Backend routes/risks.py page_size cap raised from le=200 to le=1000, matching the workspace risk limit enforced by the quota system. Frontend page_size changed from 9999 to 1000 in both handlePrint and handleGenerateAI. Both 'all' and 'filtered' scopes in handlePrint now call listRisks with page_size 1000, spreading current filter params for 'filtered' and passing no filters for 'all'. The in-memory risks array is never used as a CSV source. If the API call fails, a toast error fires and the function returns early instead of silently falling back to partial data.
 Why: 1000 is the correct semantic ceiling because the quota system enforces a hard limit of 1000 risks per workspace. No workspace can have more than 1000 risks, so page_size 1000 guarantees a complete result in one call.
+
+**Decision: label-agnostic report compute functions (August 22, 2026)**
+Raised by: Audit of services_report.py revealed six locations where band label strings ("Medium", "Low", "High or Critical") were hardcoded. Any workspace using custom matrix labels (e.g., "Moderate", "Extreme") received incorrect counts (zero) or misleading narrative text.
+Chosen: Four-part fix. (1) compute_risk_snapshot counts by level_index (== 1 for low, == 2 for mid) instead of by_level string lookup. Band label names read from ctx.matrix_config.band_1_label and band_2_label for narrative. (2) compute_top_risks and compute_top_emerging_risks now include level_index in the returned risk dict for PDF consumption. (3) compute_risk_distribution narrative reads band labels from matrix_config before string assembly; mc block moved above narrative to make labels available. (4) compute_executive_dashboard bullet rephrased to "elevated risk bands" — label-agnostic by design since the elevated group can span multiple bands.
+Why: Any approach that matches level names as strings is fragile against workspace customisation. level_index is the authoritative positional signal; band label strings are display-only. All logic that branches on level must use the index, never the string.
+
+**Decision: position-based PDF level colors (August 22, 2026)**
+Raised by: _level_badge_cell and _level_color in services_pdf_report.py used string matching ("critical", "very high", "high", "medium"). Custom labels such as "Extreme" or "Moderate" fell through to the green (low) fallback, producing incorrect badge colors in generated PDFs.
+Chosen: Both functions accept an optional level_index: int | None = None parameter. When supplied, color is read from _BAND_COLORS_BY_POS[level_index - 1] (a position-keyed list, not a label-keyed dict). Added parallel _BAND_BG_COLORS_BY_POS for badge background tints. String-match fallback retained for callers where level_index is unavailable (incident severity in _render_major_incidents has no matrix index and correctly stays string-matched). _mov_section call site passes r.get("previous_level_index") ready for when risk history schema stores it; code path is currently unreachable (has_data: False always).
+Why: Same principle as the compute layer — positional assignment is the only correct approach for a label-agnostic system. String matching is a display convenience, not a reliable branch condition.
+
+**Decision: AI confidence setting wired to Anthropic temperature (August 22, 2026)**
+Raised by: ai_confidence workspace setting (values: conservative, balanced, assertive) was fetched by get_ai_config and returned as the confidence key, but services_ai_report.py used a hardcoded _TEMPERATURE = 0.5 on every call. The workspace setting had no effect.
+Chosen: _TEMPERATURE removed. _CONFIDENCE_TEMPERATURE dict maps conservative → 0.3, balanced → 0.5, assertive → 0.7. _call() accepts temperature: float = 0.5 and passes it to the Anthropic messages.create call. generate_report_narrative resolves temperature via _CONFIDENCE_TEMPERATURE.get(ai_cfg['confidence'], 0.5).
+Why: The three-value range (0.3, 0.5, 0.7) maps directly to the intent of the GAS option labels without producing erratic output at extremes. The default 0.5 fallback ensures safe behaviour if an unknown value appears in the JSONB.
+
+**Decision: AI sub-policy fields wired through to report prompts (August 22, 2026)**
+Raised by: ai_policy_industry, ai_policy_tone, ai_policy_sensitivity, ai_policy_extra are stored in workspace JSONB and surfaced in the settings UI but get_ai_config only returned ai_policy. The four sub-policy fields were never available to services_ai_report.py.
+Chosen: AIConfig TypedDict extended with policy_industry, policy_tone, policy_sensitivity, policy_extra. get_ai_config fetches all four with empty-string defaults. generate_report_narrative assembles a combined policy string from all non-empty fields in order, with labelled prefixes for industry/tone/sensitivity ("Industry context:", "Tone:", "Sensitivity:"). Combined policy appended to system prompt as before. auto_run confirmed correctly consumed in routes_risks.py for risk creation; not a report pipeline concern, no change made.
+Why: All four fields exist in the schema and settings UI for a reason. Omitting them from the prompt assembly silently discards workspace customisation that the user has explicitly configured.
+
+**Decision: trial workspace tooltip approach — inline reveal instead of floating bubble (August 22, 2026)**
+Raised by: Trial users needed feedback explaining why "Switch workspace" and "+ Add workspace" are disabled. Native title attribute does not fire on pointer-events: none buttons. Floating CSS ::after tooltip clipped by overflow: hidden on .topbar-dropdown and pushed off viewport at the right edge.
+Chosen: Two-variant CSS approach. Base .tooltip-wrap uses bottom-positioned ::after for open contexts (workspace picker page, where there is vertical space). .tooltip-wrap--inline overrides ::after to position: static, rendering the tip text as an inline block directly below the disabled item inside the dropdown. overflow: hidden removed from .topbar-dropdown (6px padding makes it redundant; no visual side effect). Both variants use data-tip attribute on the wrapper span so the disabled button's pointer-events: none does not block hover detection.
+Alternatives rejected: right-positioned floating tooltip went off screen (dropdown is at right edge). Left-positioned floating tooltip overlapped page content and appeared partially obscured. Native title attribute invisible on disabled elements.
+Why: Inline reveal is reliable regardless of container overflow or viewport position. It matches the visual weight of a dropdown hint rather than a tooltip bubble, which is appropriate for a constrained dropdown context.
+
+**Decision: Google OAuth implicit flow with userinfo verification, no google-auth package (August 23, 2026)**
+Raised by: Google login required for both register and login pages. Backend needs to verify the Google token and find or create an account.
+Chosen: Frontend uses @react-oauth/google useGoogleLogin with flow: 'implicit'. Callback provides access_token. Frontend POSTs access_token to /api/v1/auth/google. Backend calls Google userinfo endpoint (https://www.googleapis.com/oauth2/v3/userinfo) via httpx to verify token and retrieve email and name. No google-auth package added to requirements.
+Alternatives rejected: ID token flow (GoogleLogin component) requires google-auth package for JWT verification. Auth code flow requires GOOGLE_CLIENT_ID secret on backend, adds complexity. httpx is already in requirements; using it for userinfo avoids any new dependency.
+Why: httpx is already present. Userinfo endpoint verification is simpler than JWT signature verification and requires no new package. Implicit flow with a custom-styled button matches the product design without forcing Google's native button rendering.
+Drawback recorded: Google Cloud Console OAuth client must have authorised JavaScript origins explicitly listed. Wildcard domains are not accepted. Dynamic Vercel preview URLs cannot be pre-authorised; staging uses a fixed Vercel alias (staging.smartrisksheets.com) instead.
+
+**Decision: onboarding wizard as a single 6-step component with atomic submission (August 23, 2026)**
+Raised by: The existing pages_CreateWorkspace.tsx was a single-page form (workspace name + industry dropdown only). Reference HTML designs showed a 6-step wizard with rail navigation, progress bar, and industry tiles.
+Chosen: Single React component with internal step state (1-6). All wizard data held in a WizardData object in useState. Submitted atomically on Launch: POST /api/v1/workspaces, POST /api/v1/auth/select-workspace, PATCH /api/v1/lookups (categories, non-blocking), POST /api/v1/settings/logo + PATCH /api/v1/settings (logo, non-blocking), POST /api/v1/users per invite (fire-and-forget).
+Alternatives rejected: Per-step persistence via separate API calls per step creates orphaned tenant records on drop-off and requires a token dance (workspace must exist to get tenant-scoped token, but token is needed for PATCH calls on subsequent steps). Multi-route wizard (separate URL per step) adds route configuration and URL-based state management with no user benefit for a linear 6-step flow completed in one sitting.
+Why: Atomic submission is the correct approach when all data is collected in one sitting and there is no multi-day or resume use case. Failure is clean: single error, no partial records.
+
+**Decision: wizard fields added as tenant columns, org_name stored in JSONB (August 23, 2026)**
+Raised by: Wizard collects org_size, framework, timezone, date_format, org_name, currency. These needed to persist at workspace creation time.
+Chosen: Migration 031 adds org_size, framework, timezone, date_format as proper VARCHAR columns on tenants. currency maps to the existing currency_symbol column. org_name goes into workspace_settings JSONB (no migration needed; that column already exists). Rationale for org_name in JSONB: it is display-only context, not a field that drives any backend logic. Framework, timezone, date_format are proper columns because they drive report formatting and settings queries.
+Why: framework, timezone, date_format were already being stored in workspace_settings JSONB by the settings service. Promoting them to columns makes them queryable and removes dependence on JSONB parsing for fields with well-defined types. services_settings.py updated to read from columns with JSONB fallback for existing rows.
+
+**Decision: risk categories wizard step appends to defaults, not replaces (August 23, 2026)**
+Raised by: services_lookup.py seeds every new workspace with hardcoded category defaults (Strategic, Operational, Financial, Compliance, Reputational, Technical) via _merge_defaults. A PATCH from the wizard with only the user's chosen categories would silently replace all defaults with only those entries. A user who skips the step keeps the defaults; a user who engages loses them.
+Chosen: Wizard launch handler fetches existing categories first (GET /api/v1/lookups), merges user choices using Set deduplication, then PATCHes the merged list. Skip leaves defaults untouched. User additions extend the defaults without overwriting them.
+Alternatives rejected: Replacing entirely (Option B) produces a worse outcome for engaged users than for users who skip. Awareness-only with no persistence (Option C) makes the step feel pointless.
+Why: Append preserves value in both paths: skip is safe, engagement is additive. The defaults are good starting points (they mirror the GAS LOOKUP_DEFAULTS). User additions are supplementary.
+
+**Decision: report builder AI narrative step changed from Required to Optional (August 23, 2026)**
+Raised by: step3Disabled was gated on rb.step < 3, meaning export (Download PDF, Send by Email) was blocked until AI narrative was generated. AI generation is a non-trivial operation and not all users need it for every export.
+Chosen: step3Disabled changed to rb.step < 2. Export is available immediately after preview (step 2). AI narrative can still be generated at any point before export but is no longer a gate. Tag changed from Required to Optional. Preview toast updated to reflect the new flow.
+Why: Blocking export on AI generation adds friction for users who want a clean PDF without narrative commentary, or who want to export quickly for an urgent meeting. The AI step remains visible and accessible; making it optional does not remove it.
+
+**Decision: left accent border removed from trial warning and unsaved changes banners (August 23, 2026)**
+Raised by: Both banners had border-left: 4px solid applied alongside a 1px uniform border, creating an asymmetric visual extrusion on the left edge that conflicted with the card-style design language of the rest of the app.
+Chosen: border-left removed from trial-warn--amber, trial-warn--red, and unsaved-banner. Uniform 1px border retained on all sides. Dark mode override for border-left-color on unsaved-banner also removed.
+Alternatives considered: Top accent strip (border-top: 3px solid), icon-led no-border variant, compact pill. User decision to proceed with simple uniform border pending final design pass on the banner family.
+Why: Uniform border is the least disruptive change and consistent with other card components in the app. The tinted background already provides sufficient visual signal for the warning state without a directional accent.
+Raised by: Trial users needed feedback explaining why "Switch workspace" and "+ Add workspace" are disabled. Native title attribute does not fire on pointer-events: none buttons. Floating CSS ::after tooltip clipped by overflow: hidden on .topbar-dropdown and pushed off viewport at the right edge.
+Chosen: Two-variant CSS approach. Base .tooltip-wrap uses bottom-positioned ::after for open contexts (workspace picker page, where there is vertical space). .tooltip-wrap--inline overrides ::after to position: static, rendering the tip text as an inline block directly below the disabled item inside the dropdown. overflow: hidden removed from .topbar-dropdown (6px padding makes it redundant; no visual side effect). Both variants use data-tip attribute on the wrapper span so the disabled button's pointer-events: none does not block hover detection.
+Alternatives rejected: right-positioned floating tooltip went off screen (dropdown is at right edge). Left-positioned floating tooltip overlapped page content and appeared partially obscured. Native title attribute invisible on disabled elements.
+Why: Inline reveal is reliable regardless of container overflow or viewport position. It matches the visual weight of a dropdown hint rather than a tooltip bubble, which is appropriate for a constrained dropdown context.
 Why: Math.round(x * 100) / 100 eliminates 15-digit floating point noise at 2 decimal places. The fmt helper avoids trailing zeros (2.00 becomes 2). Both old and new scores formatted for consistency.

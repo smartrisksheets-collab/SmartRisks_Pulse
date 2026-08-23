@@ -1,15 +1,37 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { apiPost } from '../services/api';
+import { apiGet, apiPost } from '../services/api';
 import { useAuthStore } from '../store/authStore';
 import type { WorkspaceInfo } from '../types/auth';
+import type { ModuleKey, PlanStage, UserRole } from '../types/api';
 
 export default function WorkspacePicker() {
   const navigate = useNavigate();
-  const { workspaces, setToken } = useAuthStore();
+  const { workspaces, setToken, setWorkspaces } = useAuthStore();
   const [selected, setSelected] = useState<string | null>(null);
   const [loading, setLoading]   = useState(false);
+  const [fetching, setFetching] = useState(true);
   const [error, setError]       = useState('');
+
+  useEffect(() => {
+    apiGet<{ id: string; name: string; plan: string; modules: string[]; role: string }[]>(
+      '/api/v1/workspaces'
+    )
+      .then((list) => {
+        const mapped: WorkspaceInfo[] = list.map((w) => ({
+          tenant_id: w.id,
+          name:      w.name,
+          role:      (w.role ?? 'Analyst') as UserRole,
+          plan:      (w.plan ?? 'TRIAL')   as PlanStage,
+          modules:   (w.modules ?? [])     as ModuleKey[],
+        }));
+        setWorkspaces(mapped);
+      })
+      .catch(() => { /* show what is in store if fetch fails */ })
+      .finally(() => setFetching(false));
+  }, [setWorkspaces]);
+
+  const isTrial = workspaces.some(ws => ws.plan === 'TRIAL');
 
   async function handleOpen() {
     if (!selected) return;
@@ -49,7 +71,13 @@ export default function WorkspacePicker() {
         {error && <div className="auth-error">{error}</div>}
 
         <div className="workspace-grid">
-          {workspaces.map((ws: WorkspaceInfo) => (
+          {fetching
+            ? <p className="picker-sub">Loading your workspaces…</p>
+            : workspaces.length === 0
+              ? <p className="picker-sub">No workspaces found. Create one below.</p>
+              : null
+          }
+          {!fetching && workspaces.map((ws: WorkspaceInfo) => (
             <button
               key={ws.tenant_id}
               className={`workspace-card${selected === ws.tenant_id ? ' selected' : ''}`}
@@ -65,9 +93,18 @@ export default function WorkspacePicker() {
         </div>
 
         <div className="picker-actions">
-          <button className="btn btn-ghost" onClick={() => navigate('/workspaces/create')}>
-            + New workspace
-          </button>
+          <span
+            className="tooltip-wrap"
+            data-tip={isTrial ? 'You are on a trial plan. Upgrade to add more workspaces.' : undefined}
+          >
+            <button
+              className="btn btn-ghost"
+              onClick={() => navigate('/workspaces/create')}
+              disabled={isTrial}
+            >
+              + New workspace
+            </button>
+          </span>
           <button className="btn btn-navy" onClick={handleOpen} disabled={!selected || loading}>
             {loading && <span className="spinner" />}
             {loading ? 'Opening...' : 'Open workspace'}
