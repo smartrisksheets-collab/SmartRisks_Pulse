@@ -1,7 +1,8 @@
 // src/components/risks/RiskTable.tsx
 
-import { useState } from 'react';
+// import { useState } from 'react';
 import type { Risk } from '../../types/risk';
+import type { AppetiteThreshold } from '../../types/settings';
 
 interface Props {
   risks:        Risk[];
@@ -12,57 +13,43 @@ interface Props {
   selectedIds:  Set<string>;
   onToggle:     (id: string) => void;
   onToggleAll:  () => void;
+  appetites?:   AppetiteThreshold[];
 }
 
-// Index-based badge class: 4=vhigh, 3=high, 2=med, 1=low
+// Index-based badge class
 function levelBadgeClass(index: number | null): string {
   const map: Record<number, string> = { 5: 'extreme', 4: 'vhigh', 3: 'high', 2: 'med', 1: 'low' };
   return map[index ?? 1] ?? 'low';
 }
 
-// Movement delta
-const MOV_CFG: Record<string, { ico: string; cls: string }> = {
-  Increasing: { ico: '↑', cls: 'warn' },
-  Improving:  { ico: '↓', cls: 'up'   },
-  Volatile:   { ico: '⚠', cls: 'down' },
+// Appetite status: compares residual against category threshold
+function appetiteStatus(
+  residual: number | null,
+  threshold: number | null
+): 'within' | 'near' | 'exceeds' | 'unset' {
+  if (residual == null || threshold == null) return 'unset';
+  if (residual > threshold)        return 'exceeds';
+  if (residual > threshold * 0.75) return 'near';
+  return 'within';
+}
+
+// Days since a risk was logged with no linked decision
+function decisionDays(loggedAt: string | null | undefined): number {
+  if (!loggedAt) return 0;
+  return Math.floor((Date.now() - new Date(loggedAt).getTime()) / 86_400_000);
+}
+
+const APT_PILL_CLS: Record<string, string> = {
+  within:  'apt-pill apt-pill-within',
+  near:    'apt-pill apt-pill-near',
+  exceeds: 'apt-pill apt-pill-exceeds',
 };
 
-function freshnessColor(f: string | null): string {
-  if (f === 'Stale') return '#ef4444';
-  if (f === 'Aging') return '#f59e0b';
-  return '#10b981';
-}
-
-// Parse AI insight string into parts
-function parseAI(ai: string | null): { text: string; conf: string; stat: string } | null {
-  if (!ai?.trim()) return null;
-  const lines   = ai.split('\n');
-  const text    = lines[0] ?? '';
-  const confLine = lines.find(l => l.startsWith('Confidence:')) ?? '';
-  const statLine = lines.find(l => l.startsWith('Status:'))     ?? '';
-  return {
-    text,
-    conf: confLine.replace('Confidence:', '').trim(),
-    stat: statLine.replace('Status:', '').trim(),
-  };
-}
-
-const CONF_COLORS: Record<string, string> = { High: '#22c55e', Medium: '#f97316', Low: '#94a3b8' };
-const STAT_COLORS: Record<string, string> = { Escalate: '#ef4444', Monitor: '#f97316', Review: '#eab308', Stable: '#22c55e' };
-
-const FRESH_META: Record<string, { title: string; sub: string }> = {
-  Fresh: { title: 'FRESH',  sub: 'Risk reviewed recently — up to date'     },
-  Aging: { title: 'AGING',  sub: 'Risk review approaching — check soon'    },
-  Stale: { title: 'STALE',  sub: 'Risk overdue for review — action needed' },
+const APT_LABELS: Record<string, string> = {
+  within: 'Within', near: 'Near', exceeds: 'Exceeds',
 };
 
-function daysSince(dateStr: string | null | undefined): number {
-  if (!dateStr) return 0;
-  return Math.floor((Date.now() - new Date(dateStr).getTime()) / 86_400_000);
-}
-
-export default function RiskTable({ risks, loading, onView, flashId, aiFlashIds, selectedIds, onToggle, onToggleAll }: Props) {
-  const [freshTip, setFreshTip] = useState<{ id: string; x: number; y: number } | null>(null);
+export default function RiskTable({ risks, loading, onView, flashId, aiFlashIds, selectedIds, onToggle, onToggleAll, appetites }: Props) {
   if (loading && !risks.length) {
     return (
       <div className="table-wrap">
@@ -95,21 +82,18 @@ export default function RiskTable({ risks, loading, onView, flashId, aiFlashIds,
               />
             </th>
             <th style={{ width: 90 }}>Risk ID</th>
-            <th style={{ width: 100 }}>Date Logged</th>
             <th>Description</th>
-            <th style={{ width: 120 }}>Owner</th>
+            <th style={{ width: 130 }}>Owner</th>
+            <th style={{ width: 140 }}>Business Impact</th>
             <th style={{ width: 70, textAlign: 'center' }}>Severity</th>
             <th style={{ width: 90 }}>Level</th>
-            <th style={{ width: 90 }}>Treatment</th>
-            <th style={{ width: 90, textAlign: 'center' }}>Residual</th>
-            <th style={{ width: 200 }}>AI Insights</th>
+            <th style={{ width: 120 }}>Financial Exposure</th>
+            <th style={{ width: 100, background: 'rgba(1,184,142,.06)' }}>Appetite</th>
+            <th style={{ width: 120 }}>Decision Required</th>
           </tr>
         </thead>
         <tbody id="riskBody">
           {risks.map(r => {
-            const mov  = MOV_CFG[r.movement ?? ''];
-            const ai   = parseAI(r.ai_insight);
-            const delta = r.score_delta ?? 0;
 
             return (
               <tr
@@ -141,20 +125,18 @@ export default function RiskTable({ risks, loading, onView, flashId, aiFlashIds,
                   </span>
                 </td>
 
-                {/* Date Logged */}
-                <td className="date-col" style={{ fontSize: 12 }}>
-                  {r.logged_at ?? '—'}
-                </td>
-
-                {/* Description + owner hint */}
-                <td style={{ maxWidth: 260 }}>
-                  <span style={{ fontWeight: 600, fontSize: 13, display: 'block' }}>
-                    {r.description ?? '—'}
-                  </span>
+                {/* Description */}
+                <td style={{ maxWidth: 220 }}>
+                  <span style={{ fontWeight: 600, fontSize: 13 }}>{r.description ?? '—'}</span>
                 </td>
 
                 {/* Owner */}
-                <td style={{ fontSize: 12 }}>{r.owner ?? '—'}</td>
+                <td style={{ fontSize: 12, color: 'var(--muted)' }}>{r.owner ?? '—'}</td>
+
+                {/* Business Impact */}
+                <td style={{ fontSize: 12 }}>
+                  {r.primary_impact ?? <span className="not-est">Not entered</span>}
+                </td>
 
                 {/* Severity */}
                 <td style={{ textAlign: 'center', fontWeight: 700 }}>{r.severity ?? '—'}</td>
@@ -164,93 +146,37 @@ export default function RiskTable({ risks, loading, onView, flashId, aiFlashIds,
                   <span className={`badge ${levelBadgeClass(r.level_index)}`}>{r.level ?? '—'}</span>
                 </td>
 
-                {/* Treatment */}
-                <td style={{ fontSize: 12 }}>{r.treatment ?? '—'}</td>
+                {/* Financial Exposure */}
+                <td style={{ fontSize: 12 }}>
+                  {r.financial_exposure ?? <span className="not-est">Not estimated</span>}
+                </td>
 
-                {/* Residual + movement delta + freshness */}
-                <td style={{ textAlign: 'center' }} onClick={e => e.stopPropagation()}>
-                  <b>{r.residual != null ? Math.round(r.residual) : '—'}</b>
-                  {mov && (
-                    <span className={`sr-delta ${mov.cls}`} style={{ marginLeft: 4 }}>
-                      {mov.ico} {delta > 0 ? '+' : ''}{Math.round(delta)}
-                    </span>
-                  )}
-                  {r.freshness && (() => {
-                    const fc    = freshnessColor(r.freshness);
-                    const meta  = FRESH_META[r.freshness];
-                    const days  = daysSince(r.last_reviewed_at);
-                    const tipId = r.id + '-fresh';
-                    return (
-                      <>
-                        <br />
-                        <span
-                          className="fresh-wrap"
-                          onMouseEnter={e => {
-                            const r = e.currentTarget.getBoundingClientRect();
-                            setFreshTip({ id: tipId, x: r.left, y: r.bottom + 6 });
-                          }}
-                          onMouseLeave={() => setFreshTip(null)}
-                        >
-                          <span
-                            className="fresh-badge"
-                            style={{ color: fc, textDecoration: 'underline', textDecorationStyle: 'dashed', textDecorationColor: fc }}
-                          >
-                            {r.freshness}
-                          </span>
-                          {freshTip?.id === tipId && meta && (
-                            <div
-                              className={`fresh-tip ${r.freshness?.toLowerCase() ?? ''}`}
-                              style={{ top: freshTip.y, left: freshTip.x }}
-                            >
-                              <div className="fresh-tip-title" style={{ color: fc }}>{meta.title}</div>
-                              <div className="fresh-tip-sub">{meta.sub}</div>
-                              <div className="fresh-tip-row">
-                                <span className="fresh-tip-lbl">Last reviewed</span>
-                                <span className="fresh-tip-val">{r.last_reviewed_at ? r.last_reviewed_at.slice(0, 10) : '—'}</span>
-                              </div>
-                              <div className="fresh-tip-row">
-                                <span className="fresh-tip-lbl">Days since</span>
-                                <span className={`fresh-tip-val${days === 0 ? ' accent' : ''}`}>{days} {days === 1 ? 'day' : 'days'} ago</span>
-                              </div>
-                              <div className="fresh-tip-row">
-                                <span className="fresh-tip-lbl">Owner</span>
-                                <span className="fresh-tip-val">{r.owner ?? '—'}</span>
-                              </div>
-                            </div>
-                          )}
-                        </span>
-                      </>
+                {/* Appetite */}
+                <td style={{ background: 'rgba(1,184,142,.04)' }}>
+                  {(() => {
+                    const rec    = (appetites ?? []).find(
+                      a => a.category.trim().toLowerCase() === (r.category ?? '').trim().toLowerCase()
                     );
+                    const status = appetiteStatus(r.residual, rec?.threshold ?? null);
+                    if (status === 'unset') return <span className="apt-pill apt-pill-unset">No threshold</span>;
+                    return <span className={APT_PILL_CLS[status]}>{APT_LABELS[status]}</span>;
                   })()}
                 </td>
 
-                {/* AI Insights */}
-                <td style={{ maxWidth: 200 }} onClick={e => e.stopPropagation()}>
-                  {ai ? (
-                    <>
-                      <span style={{
-                        fontSize: 11,
-                        display: '-webkit-box',
-                        WebkitLineClamp: 2,
-                        WebkitBoxOrient: 'vertical',
-                        overflow: 'hidden',
-                      } as React.CSSProperties}>
-                        {ai.text}
-                      </span>
-                      {ai.conf && (
-                        <span style={{ fontSize: 10, color: CONF_COLORS[ai.conf] ?? '#94a3b8', display: 'block' }}>
-                          Confidence: {ai.conf}
-                        </span>
-                      )}
-                      {ai.stat && (
-                        <span style={{ fontSize: 10, color: STAT_COLORS[ai.stat] ?? '#94a3b8', display: 'block' }}>
-                          Status: {ai.stat}
-                        </span>
-                      )}
-                    </>
-                  ) : (
-                    <span style={{ color: '#d1d5db', fontSize: 11 }}>—</span>
-                  )}
+                {/* Decision Required */}
+                <td>
+                  {r.linked_decision
+                    ? <span className="dec-linked">Linked</span>
+                    : (
+                      <div className="dec-warn">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#b9762a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                          <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                        </svg>
+                        <span className="dec-days">{decisionDays(r.logged_at)}d</span>
+                      </div>
+                    )
+                  }
                 </td>
               </tr>
             );

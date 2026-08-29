@@ -32,7 +32,12 @@ export default function EditRiskModal({ open, risk, onClose, onSubmit }: Props) 
     comments:             risk.comments ?? '',
     owner_email:          risk.owner_email ?? '',
     target_date:          risk.target_date ?? '',
-    mitigation_status:    risk.mitigation_status ?? 'Open',
+    mitigation_status:        risk.mitigation_status        ?? 'Open',
+    root_cause:               risk.root_cause               ?? '',
+    financial_exposure:       risk.financial_exposure        ?? '',
+    linked_decision:          risk.linked_decision           ?? '',
+    control_last_tested:      risk.control_last_tested       ?? '',
+    control_assertion_source: risk.control_assertion_source  ?? 'Self-assessed',
   };
 
   async function handleSubmit(values: RiskCreate) {
@@ -51,7 +56,7 @@ export default function EditRiskModal({ open, risk, onClose, onSubmit }: Props) 
 
   return (
     <div className="modal-backdrop show" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal">
+      <div className="modal modal-tall">
         <div className="modal-hd">
           <h3 className="modal-title">Edit Risk <span style={{ color: '#01b88e' }}>{risk.id}</span></h3>
           <button className="x" onClick={onClose}>✕</button>

@@ -185,6 +185,8 @@ async def email_report(
             subject=payload.subject or "SmartRisk Report",
             title=title,
             block_data=payload.block_data,
+            ai_data=payload.ai_data,
+            org_name=_org,
             pdf_bytes=pdf_bytes,
             file_name=filename,
         )

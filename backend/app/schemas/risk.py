@@ -3,7 +3,7 @@
 from __future__ import annotations
 from datetime import date, datetime
 from uuid import UUID
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, computed_field
 
 
 class RiskCreate(BaseModel):
@@ -24,8 +24,12 @@ class RiskCreate(BaseModel):
     mitigation_status: str | None        = 'Open'
     logged_at: date | None               = None
     control_last_tested: date | None     = None
-    control_test_result: str | None      = None
-    source: str | None                   = None
+    control_test_result:      str | None = None
+    control_assertion_source: str | None = None
+    root_cause:               str | None = None
+    financial_exposure:       str | None = None
+    linked_decision:          str | None = None
+    source:                   str | None = None
 
     @field_validator('category', 'description', 'owner', 'treatment', mode='before')
     @classmethod
@@ -55,7 +59,7 @@ class RiskUpdate(BaseModel):
     impact_score: int | None             = Field(default=None, ge=1, le=5)
     primary_impact: str | None           = None
     controls: str | None                 = None
-    control_effectiveness: int | None    = Field(default=None, ge=0, le=100)
+    control_effectiveness: int | None    = Field(default=None, ge=0, le=5)
     mitigation_plan: str | None          = None
     comments: str | None                 = None
     ai_insight: str | None               = None
@@ -64,7 +68,11 @@ class RiskUpdate(BaseModel):
     mitigation_status: str | None        = None
     logged_at: date | None               = None
     control_last_tested: date | None     = None
-    control_test_result: str | None      = None
+    control_test_result:      str | None = None
+    control_assertion_source: str | None = None
+    root_cause:               str | None = None
+    financial_exposure:       str | None = None
+    linked_decision:          str | None = None
 
     @field_validator('mitigation_status', mode='before')
     @classmethod
@@ -106,13 +114,29 @@ class RiskResponse(BaseModel):
     target_date: date | None
     mitigation_status: str | None
     last_reviewed_at: datetime | None
-    control_last_tested: date | None
-    control_test_result: str | None
-    source: str = 'internal'
-    created_at: datetime
-    updated_at: datetime
+    control_last_tested:      date | None
+    control_test_result:      str | None
+    control_assertion_source: str | None
+    root_cause:               str | None
+    financial_exposure:       str | None
+    linked_decision:          str | None
+    source:                   str = 'internal'
+    created_at:               datetime
+    updated_at:               datetime
 
     model_config = {'from_attributes': True}
+
+    @computed_field
+    @property
+    def control_freshness(self) -> str:
+        if self.control_last_tested is None:
+            return 'Unevidenced'
+        days = (date.today() - self.control_last_tested).days
+        if days < 15:
+            return 'Fresh'
+        if days < 30:
+            return 'Aging'
+        return 'Stale'
 
 
 class RiskQuotaInfo(BaseModel):
@@ -147,7 +171,7 @@ class BulkImportRow(BaseModel):
     impact_score: int     = Field(..., ge=1, le=5)
     primary_impact: str | None        = None
     controls: str | None              = None
-    control_effectiveness: int | None = Field(default=None, ge=0, le=100)
+    control_effectiveness: int | None = Field(default=None, ge=0, le=5)
     mitigation_plan: str | None       = None
     comments: str | None              = None
     logged_at: date | None            = None

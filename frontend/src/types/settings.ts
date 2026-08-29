@@ -81,6 +81,23 @@ export type SettingsUpdate = Partial<
   Omit<SettingsData, "plan" | "plan_expires_at" | "modules" | "max_risks" | "max_users" | "has_pin">
 >;
 
+export interface AppetiteThreshold {
+  id: string;
+  tenant_id: string;
+  category: string;
+  threshold: number;
+  rationale: string | null;
+  set_by: string | null;
+  set_at: string | null;
+  updated_at: string | null;
+}
+
+export interface AppetiteThresholdUpsert {
+  category: string;
+  threshold: number;
+  rationale?: string;
+}
+
 export interface NotificationPref {
   brief_frequency: string;
   opted_out: boolean;

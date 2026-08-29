@@ -22,6 +22,7 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.platypus import (
     BaseDocTemplate,
+    Flowable,
     Frame,
     HRFlowable,
     NextPageTemplate,
@@ -119,6 +120,7 @@ def _make_canvas_cls(
     org_name: str,
     footer_text: str,
     show_page_numbers: bool,
+    has_cover: bool = False,
 ) -> type:
     """Returns a Canvas subclass that draws 'Page X of N' after two-pass render."""
     _margin = 20 * mm
@@ -141,6 +143,8 @@ def _make_canvas_cls(
             super().save()
 
         def _draw_footer(self, total: int) -> None:
+            if has_cover and self._pageNumber == 1:  # type: ignore[attr-defined]
+                return
             self.saveState()
             self.setFillColor(MUTED)
             self.setFont("Helvetica", 7)
@@ -185,7 +189,7 @@ def _block_header(label: str) -> list:
 def _kpi_val_paragraph(k: dict) -> Paragraph:
     """
     Renders KPI value with unit in smaller muted font.
-    '71' (16pt teal) + '/100' (8pt muted) — prevents overflow on narrow cells.
+    '71' (14pt teal) + '/100' (7pt muted) — prevents overflow on narrow cells.
     """
     val_str  = str(k.get("value", ""))
     unit_str = str(k.get("unit", "") or "")
@@ -200,61 +204,81 @@ def _kpi_val_paragraph(k: dict) -> Paragraph:
 
     if unit_str:
         markup = (
-            f'<font name="Helvetica-Bold" size="16" color="{clr_str}">{val_str}</font>'
-            f'<font name="Helvetica" size="8" color="#94a3b8">{unit_str}</font>'
+            f'<font name="Helvetica-Bold" size="15" color="{clr_str}">{val_str}</font>'
+            f'<font name="Helvetica" size="9" color="#94a3b8">{unit_str}</font>'
             + arrow
         )
         return Paragraph(markup, ParagraphStyle(
-            "kvp", alignment=TA_LEFT, leading=20, spaceBefore=0, spaceAfter=0,
+            "kvp", alignment=TA_LEFT, leading=18, spaceBefore=0, spaceAfter=0,
         ))
     markup = f'<font name="Helvetica-Bold" size="15" color="{clr_str}">{val_str}</font>' + arrow
     return Paragraph(markup, ParagraphStyle(
-        "kv", alignment=TA_LEFT, leading=19, spaceBefore=0, spaceAfter=0,
+        "kv", alignment=TA_LEFT, leading=18, spaceBefore=0, spaceAfter=0,
     ))
 
 
 def _kpi_table(kpis: list[dict], col_width: float = 50 * mm) -> Table:
-    """Renders a row of KPI boxes. Each kpi: {label, value, color?}
-    Matches GAS style: left-border only, #fbfbfb background, left-aligned."""
+    """One continuous KPI strip matching GAS visual treatment.
+
+    Flat table structure (no nested tables per KPI) eliminates double-padding
+    overhead and inter-cell gaps. LINEBEFORE applied to the first column only —
+    matches GAS where the strip has a single left-edge accent, not a colored
+    divider before every metric.
+    """
+    if not kpis:
+        return Table([[Paragraph("", _S["body"])]], colWidths=[col_width])
+
     n = len(kpis)
-    data = [[
-        Table(
-            [
-                [_kpi_val_paragraph(k)],
-                [Paragraph(k.get("label", ""), ParagraphStyle(
-                    "kl", fontName="Helvetica", fontSize=8,
-                    textColor=colors.HexColor("#555555"), alignment=TA_LEFT,
-                ))],
-                *([
-                    [Paragraph(
-                        f"prev: {k['prev']}",
-                        ParagraphStyle("kprev", fontName="Helvetica", fontSize=7,
-                                       textColor=colors.HexColor("#94a3b8"), alignment=TA_LEFT),
-                    )]
-                ] if k.get("prev") is not None else []),
-            ],
-            colWidths=[col_width - 4 * mm],
-            style=TableStyle([
-                ("ALIGN",        (0, 0), (-1, -1), "LEFT"),
-                ("VALIGN",       (0, 0), (-1, -1), "MIDDLE"),
-                ("BACKGROUND",   (0, 0), (-1, -1), colors.HexColor("#fbfbfb")),
-                ("LINEBEFORE",   (0, 0), (0, -1), 3,
-                    colors.HexColor(k.get("color", "#1F2854")) if isinstance(k.get("color"), str) else NAVY),
-                ("LEFTPADDING",  (0, 0), (-1, -1), 10),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-                ("TOPPADDING",   (0, 0), (-1, -1), 8),
-                ("BOTTOMPADDING",(0, 0), (-1, -1), 8),
-            ]),
-        )
-        for k in kpis
-    ]]
-    tbl = Table(data, colWidths=[col_width] * n)
-    tbl.setStyle(TableStyle([
-        ("ALIGN",        (0, 0), (-1, -1), "LEFT"),
-        ("VALIGN",       (0, 0), (-1, -1), "TOP"),
-        ("LEFTPADDING",  (0, 0), (-1, -1), 0),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-    ]))
+    has_prev = any(k.get("prev") is not None for k in kpis)
+
+    _lbl_s = ParagraphStyle(
+        "kl", fontName="Helvetica", fontSize=8,
+        textColor=colors.HexColor("#555555"), alignment=TA_LEFT,
+    )
+    _prv_s = ParagraphStyle(
+        "kprev", fontName="Helvetica", fontSize=7,
+        textColor=colors.HexColor("#94a3b8"), alignment=TA_LEFT,
+    )
+
+    val_row   = [_kpi_val_paragraph(k) for k in kpis]
+    label_row = [Paragraph(k.get("label", ""), _lbl_s) for k in kpis]
+
+    rows: list = [val_row, label_row]
+    if has_prev:
+        prev_row = [
+            Paragraph(f"prev: {k['prev']}", _prv_s) if k.get("prev") is not None
+            else Paragraph("", _prv_s)
+            for k in kpis
+        ]
+        rows.append(prev_row)
+
+    n_rows = len(rows)
+    tbl = Table(rows, colWidths=[col_width] * n)
+
+    first_color = (
+        colors.HexColor(kpis[0]["color"])
+        if isinstance(kpis[0].get("color"), str)
+        else NAVY
+    )
+
+    style_cmds: list = [
+        ("BACKGROUND",    (0, 0), (-1, -1),           colors.HexColor("#fbfbfb")),
+        ("ALIGN",         (0, 0), (-1, -1),            "LEFT"),
+        ("VALIGN",        (0, 0), (-1, -1),            "TOP"),
+        ("LEFTPADDING",   (0, 0), (-1, -1),            8),
+        ("RIGHTPADDING",  (0, 0), (-1, -1),            4),
+        # Default compact padding for all cells
+        ("TOPPADDING",    (0, 0), (-1, -1),            2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1),            2),
+        # Value row (row 0): generous top so strip has breathing room above value
+        ("TOPPADDING",    (0, 0), (-1, 0),             7),
+        # Last row: generous bottom closes the strip
+        ("BOTTOMPADDING", (0, n_rows - 1), (-1, n_rows - 1), 6),
+        # Single left accent — first column only, no inter-cell colored borders
+        ("LINEBEFORE",    (0, 0), (0, -1),             3, first_color),
+    ]
+
+    tbl.setStyle(TableStyle(style_cmds))
     return tbl
 
 
@@ -1260,10 +1284,10 @@ def _render_executive_dashboard(data: dict, ai_text: str | None) -> list:
     out = _block_header("Executive Dashboard")
     kpis = data.get("kpis", [])
     if kpis:
-        col_w   = (170 * mm) / max(len(kpis), 1)
+        col_w   = (180 * mm) / max(len(kpis), 1)
         kpi_tbl = _kpi_table(kpis, col_width=col_w)
         out.append(kpi_tbl)
-        out.append(Spacer(1, 3 * mm))
+        out.append(Spacer(1, 2 * mm))
 
     posture = data.get("posture", {})
     if posture:
@@ -1272,12 +1296,13 @@ def _render_executive_dashboard(data: dict, ai_text: str | None) -> list:
             RED   if posture.get("trend") == "Worsening" else
             AMBER
         )
+        _col_w3 = (180 * mm) / 3
         _plbl = ParagraphStyle(
-            "plbl", fontName="Helvetica-Bold", fontSize=10,
+            "plbl", fontName="Helvetica-Bold", fontSize=8,
             textColor=MUTED, alignment=TA_CENTER, spaceAfter=3,
         )
         _pval = ParagraphStyle(
-            "pval", fontName="Helvetica-Bold", fontSize=13,
+            "pval", fontName="Helvetica-Bold", fontSize=10,
             textColor=NAVY, alignment=TA_CENTER,
         )
         posture_row = Table(
@@ -1290,29 +1315,29 @@ def _render_executive_dashboard(data: dict, ai_text: str | None) -> list:
                 [
                     Paragraph(posture.get("status", ""), _pval),
                     Paragraph(posture.get("trend", ""), ParagraphStyle(
-                        "ptrend", fontName="Helvetica-Bold", fontSize=13,
+                        "ptrend", fontName="Helvetica-Bold", fontSize=10,
                         textColor=p_color, alignment=TA_CENTER,
                     )),
                     Paragraph(posture.get("confidence", ""), _pval),
                 ],
             ],
-            colWidths=[55 * mm, 55 * mm, 55 * mm],
+            colWidths=[_col_w3, _col_w3, _col_w3],
         )
         posture_row.setStyle(TableStyle([
             ("BACKGROUND",   (0, 0), (-1, -1), colors.HexColor("#f8faff")),
             ("ALIGN",        (0, 0), (-1, -1), "CENTER"),
             ("VALIGN",       (0, 0), (-1, -1), "MIDDLE"),
-            ("TOPPADDING",   (0, 0), (-1, -1), 8),
-            ("BOTTOMPADDING",(0, 0), (-1, -1), 8),
-            ("LEFTPADDING",  (0, 0), (-1, -1), 12),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 12),
+            ("TOPPADDING",   (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING",(0, 0), (-1, -1), 5),
+            ("LEFTPADDING",  (0, 0), (-1, -1), 8),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
         ]))
         out.append(posture_row)
-        out.append(Spacer(1, 3 * mm))
+        out.append(Spacer(1, 2 * mm))
 
     heading = (data.get("heading_text") or "What Leadership Needs To Know").upper()
     out.append(Paragraph(heading, ParagraphStyle(
-        "edhead", fontName="Helvetica-Bold", fontSize=10,
+        "edhead", fontName="Helvetica-Bold", fontSize=8,
         textColor=NAVY, spaceAfter=6, spaceBefore=4,
     )))
 
@@ -1323,8 +1348,8 @@ def _render_executive_dashboard(data: dict, ai_text: str | None) -> list:
         bullets_src = data.get("bullets") or []
 
     _btxt = ParagraphStyle(
-        "edbul", fontName="Helvetica", fontSize=11,
-        textColor=colors.HexColor("#334155"), leading=15,
+        "edbul", fontName="Helvetica", fontSize=9,
+        textColor=colors.HexColor("#334155"), leading=12,
     )
     for b in bullets_src:
         row = Table(
@@ -1527,6 +1552,39 @@ _LABELS: dict[str, str] = {
 }
 
 
+# ── Confidentiality pill chip ──────────────────────────────────────────────────
+
+class _PillChip(Flowable):
+    """Rounded pill chip drawn via canvas.roundRect().
+    Reproduces the GAS border-radius pill treatment.
+    Cannot be achieved with a ReportLab Table (no border-radius support)."""
+
+    def __init__(self, text: str, width: float = 80.0, height: float = 14.0) -> None:
+        super().__init__()
+        self._text  = text.upper()
+        self.width  = width   # points
+        self.height = height  # points
+
+    def wrap(self, avail_w: float, avail_h: float) -> tuple[float, float]:
+        return self.width, self.height
+
+    def draw(self) -> None:
+        c = self.canv
+        r = self.height / 2          # full pill radius = half height
+        c.saveState()
+        c.setStrokeColor(BORDER)
+        c.setLineWidth(0.75)
+        c.setFillColor(WHITE)
+        c.roundRect(0, 0, self.width, self.height, r, fill=1, stroke=1)
+        dot_x = r + 4.0
+        dot_y = self.height / 2
+        c.setFillColor(NAVY)
+        c.circle(dot_x, dot_y, 2.0, fill=1, stroke=0)
+        c.setFont("Helvetica-Bold", 7)
+        c.drawString(dot_x + 6.0, (self.height - 7.0) / 2, self._text)
+        c.restoreState()
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # PAGE TEMPLATES
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1538,7 +1596,7 @@ def _make_doc(
     is_landscape: bool,
 ) -> BaseDocTemplate:
     page   = landscape(A4) if is_landscape else A4
-    margin = 20 * mm
+    margin = 15 * mm          # GAS portrait uses 15mm left/right margins → 180mm content width
     header_label = org_name or title
 
     def _on_cover_page(canvas, doc):
@@ -1609,11 +1667,13 @@ def build_pdf(
     show_page_numbers = settings_p.get("page_numbering", "Show") != "Hide"
     display_name      = org_name or title
     doc = _make_doc(buf, title, display_name, is_landscape)
+    has_cover  = settings_p.get("cover_page", "Yes") != "No"
     canvas_cls = _make_canvas_cls(
         landscape(A4) if is_landscape else A4,
         display_name,
         footer_text,
         show_page_numbers,
+        has_cover,
     )
     story: list = []
 
@@ -1688,24 +1748,8 @@ def build_pdf(
             ("RIGHTPADDING", (1, 0), (1,  -1), 0),
         ]))
 
-        # ── Confidentiality chip (bordered pill, top-right) ───────────────────
-        chip_para = Table(
-            [[Paragraph(
-                f'<font color="#1F2854">&#9679;</font>  {classif_label.upper()}',
-                ParagraphStyle(
-                    "chip", fontName="Helvetica-Bold", fontSize=7,
-                    textColor=NAVY, wordWrap="LTR", alignment=TA_RIGHT,
-                ),
-            )]],
-            colWidths=["100%"],
-        )
-        chip_para.setStyle(TableStyle([
-            ("BOX",          (0, 0), (-1, -1), 0.75, BORDER),
-            ("LEFTPADDING",  (0, 0), (-1, -1), 12),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 12),
-            ("TOPPADDING",   (0, 0), (-1, -1), 5),
-            ("BOTTOMPADDING",(0, 0), (-1, -1), 5),
-        ]))
+        # ── Confidentiality chip (rounded pill via _PillChip) ─────────────────
+        chip_para = _PillChip(classif_label, width=80.0, height=14.0)
 
         # ── Navy footer bar on cover ──────────────────────────────────────────
         cover_foot = Table(
@@ -1724,6 +1768,17 @@ def build_pdf(
             ("BOTTOMPADDING",(0, 0), (-1, -1), 10),
             ("VALIGN",       (0, 0), (-1, -1), "MIDDLE"),
         ]))
+
+        # ── Cover vertical gap: push metadata toward page lower third.
+        # Frame height = page height - topMargin - bottomMargin.
+        # Estimated heights: top content (brand+48mm+eyebrow+title+period+rule) ≈ 90mm.
+        # Bottom content (meta+spacer+disclaimer+footer) ≈ 57mm.
+        # Remaining space is given to the gap so meta lands ~75% down the page.
+        _ph          = (210 if is_landscape else 297) * mm
+        _frame_h     = _ph - 18 * mm - 14 * mm
+        _top_est     = 90 * mm
+        _bot_est     = 78 * mm
+        _meta_gap    = max(10 * mm, _frame_h - _top_est - _bot_est)
 
         # ── Cover body with navy left border ──────────────────────────────────
         cover_body = Table(
@@ -1764,7 +1819,7 @@ def build_pdf(
                 # Navy rule
                 [HRFlowable(width=52 * mm, thickness=3, color=NAVY, spaceAfter=14)],
 
-                [Spacer(1, 6 * mm)],
+                [Spacer(1, _meta_gap)],
 
                 # Metadata grid
                 [meta_tbl],
@@ -1798,10 +1853,10 @@ def build_pdf(
 
         story.append(NextPageTemplate("cover"))
         story.append(cover_body)
+        story.append(NextPageTemplate("content"))
         story.append(PageBreak())
 
     # ── Block pages ────────────────────────────────────────────────────────────
-    story.append(NextPageTemplate("content"))
 
     for key in blocks:
         data = block_data.get(key)

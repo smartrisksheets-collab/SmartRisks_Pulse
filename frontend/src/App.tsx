@@ -32,6 +32,9 @@ const AuditLog         = lazy(() => import('./pages/AuditLog'));
 const Users            = lazy(() => import('./pages/Users'));
 const ExternalRisk     = lazy(() => import('./pages/ExternalRisk'));
 const ExternalIncident = lazy(() => import('./pages/ExternalIncident'));
+const ExternalSubmit   = lazy(() => import('./pages/ExternalSubmit'));
+const TriageQueue      = lazy(() => import('./pages/TriageQueue'));
+const TokenManager     = lazy(() => import('./pages/TokenManager'));
 
 function PageLoader() {
   return (
@@ -96,6 +99,7 @@ export default function App() {
           <Route path="/reset-password"       element={<ResetPassword />} />
           <Route path="/external/risk"     element={<Suspense fallback={<PageLoader />}><ExternalRisk /></Suspense>} />
           <Route path="/external/incident" element={<Suspense fallback={<PageLoader />}><ExternalIncident /></Suspense>} />
+          <Route path="/submit/:token"     element={<Suspense fallback={<PageLoader />}><ExternalSubmit /></Suspense>} />
           <Route path="/accept-invite"        element={<AcceptInvite />} />
 
           <Route path="/expired"    element={<PlanExpired />} />
@@ -120,6 +124,8 @@ export default function App() {
                     <Route path="/audit"     element={<RequirePermission permission="manage_settings"><AuditLog /></RequirePermission>} />
                     <Route path="/users"     element={<RequirePermission permission="manage_users"><Users /></RequirePermission>} />
                     <Route path="/settings"   element={<RequirePermission permission="manage_settings"><Settings /></RequirePermission>} />
+                    <Route path="/risks/triage"            element={<RequireModule module="risk"><RequirePermission permission="manage_risks"><TriageQueue /></RequirePermission></RequireModule>} />
+                    <Route path="/risks/submission-links"  element={<RequireModule module="risk"><RequirePermission permission="manage_risks"><TokenManager /></RequirePermission></RequireModule>} />
                     <Route path="/frameworks" element={<Frameworks />} />
                     <Route path="/help"       element={<Help />} />
                     <Route path="*"           element={<NotFound />} />

@@ -32,6 +32,8 @@ from app.api.v1.routes.matrix import router as matrix_router
 from app.api.v1.routes.audit import router as audit_router
 from app.api.v1.routes.presence import router as presence_router
 from app.api.v1.routes.feedback import router as feedback_router
+from app.api.v1.routes.appetite import router as appetite_router
+from app.api.v1.routes.submissions import router as submissions_router
 from app.scheduler.jobs import (
     job_daily_snapshot,
     job_monthly_snapshot,
@@ -75,7 +77,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(TenantMiddleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.FRONTEND_URL],
+    allow_origins=settings.allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -131,6 +133,8 @@ app.include_router(audit_router,           prefix="/api/v1")
 app.include_router(presence_router,        prefix="/api/v1")
 app.include_router(matrix_router,          prefix="/api/v1")
 app.include_router(feedback_router,        prefix="/api/v1")
+app.include_router(appetite_router,        prefix="/api/v1")
+app.include_router(submissions_router,     prefix="/api/v1")
 
 @app.get("/api/health")
 async def health():

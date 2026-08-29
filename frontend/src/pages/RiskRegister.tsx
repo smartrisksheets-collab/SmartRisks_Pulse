@@ -7,8 +7,9 @@ import { useRisks }        from '../hooks/useRisks';
 import { useLookups } from '../hooks/useLookups';
 import { useCanDo }        from '../utils/permissions';
 import { getStats, listRisks, type StatsParams, type ListRisksParams } from '../services/risks';
-import { useMatrix } from '../hooks/useMatrix';
-import { usePendingCount } from '../hooks/useExternalSubmissions';
+import { useMatrix }   from '../hooks/useMatrix';
+import { useAppetite } from '../hooks/useAppetite';
+import { useTriagePendingCount } from '../hooks/useSubmissions';
 import { useToast } from '../hooks/useToast';
 import StatCards           from '../components/risks/StatCards';
 import RiskTable           from '../components/risks/RiskTable';
@@ -19,10 +20,7 @@ import ImportModal         from '../components/risks/ImportModal';
 import AIModal                  from '../components/risks/AIModal';
 import DeleteModal              from '../components/risks/DeleteModal';
 import PrintModal               from '../components/risks/PrintModal';
-import ExternalLinkModal        from '../components/risks/ExternalLinkModal';
-import PendingSubmissionsModal  from '../components/risks/PendingSubmissionsModal';
 import RecycleBinModal          from '../components/recycle/RecycleBinModal';
-import { useAuth }              from '../hooks/useAuth';
 import type { Risk, RiskCreate, AIInsightRequest, AIInsightResult } from '../types/risk';
 
 const PAGE_SIZE = 5;
@@ -31,13 +29,14 @@ export default function RiskRegister() {
   const canManage = useCanDo('manage_risks');
   const canAI     = useCanDo('generate_ai');
   const canPrint  = useCanDo('print_reports');
-  const { claims } = useAuth();
   const navigate = useNavigate();
   const toast    = useToast();
   const qc       = useQueryClient();
-  const { query: matrixQuery } = useMatrix();
-  const { data: pendingData } = usePendingCount();
-  const pendingCount = pendingData?.count ?? 0;
+  const { query: matrixQuery }    = useMatrix();
+  const { query: appetiteQuery }  = useAppetite();
+  const appetites = appetiteQuery.data ?? [];
+  const { data: triageCountData } = useTriagePendingCount();
+  const triagePending = triageCountData?.count ?? 0;
 
   // Filters
   const [riskId, setRiskId]         = useState('');
@@ -48,8 +47,16 @@ export default function RiskRegister() {
   const [treatment, setTreatment]   = useState('');
   const [search, setSearch]         = useState('');
   const [page, setPage]             = useState(1);
-  const [flashId, setFlashId]       = useState<string | null>(null);
-  const [aiFlashIds, setAiFlashIds] = useState<Set<string>>(new Set());
+  const [flashId, setFlashId]           = useState<string | null>(null);
+  const [aiFlashIds, setAiFlashIds]     = useState<Set<string>>(new Set());
+  const [filterUndecided, setFilterUndecided] = useState(false);
+
+  const { data: undecidedData } = useQuery({
+    queryKey: ['risks', 'undecided-count'],
+    queryFn:  () => listRisks({ undecided: true, page_size: 1 }),
+    staleTime: 2 * 60 * 1000,
+  });
+  const undecidedCount = undecidedData?.meta.total ?? 0;
 
   // Debounced search + riskId
   const [debouncedSearch, setDebouncedSearch]   = useState('');
@@ -65,6 +72,7 @@ export default function RiskRegister() {
     treatment: treatment       || undefined,
     owner:     owner           || undefined,
     category:  category        || undefined,
+    undecided: filterUndecided || undefined,
   };
     const { risks, quota, total, loading, create, update, remove, importRisks, generateAI } = useRisks(riskParams);
 
@@ -79,8 +87,6 @@ export default function RiskRegister() {
   const [deleteTarget, setDeleteTarget] = useState<Risk | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [showPrint, setShowPrint]           = useState(false);
-  const [showExternalLink, setShowExtLink]  = useState(false);
-  const [showPending, setShowPending]       = useState(false);
   const [selected, setSelected]     = useState<Risk | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
@@ -135,6 +141,7 @@ export default function RiskRegister() {
   function clearFilters() {
     setRiskId(''); setCategory(''); setOwner('');
     setLevel(''); setTreatment(''); setSearch('');
+    setFilterUndecided(false);
     setPage(1);
   }
 
@@ -159,6 +166,12 @@ export default function RiskRegister() {
   }
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
+
+  async function handleLinkDecision(decision: string) {
+    if (!selected) return;
+    await update(selected.id, { linked_decision: decision });
+    setShowDetail(false);
+  }
 
   async function handleGenerateAI(opts: {
     uiTarget: 'new' | 'filtered' | 'selected';
@@ -272,19 +285,19 @@ export default function RiskRegister() {
           <div className="action-group">
             <button className="btn btn-secondary btn-compact" onClick={clearFilters}>Clear Filters</button>
 
-            {/* External link icon */}
-            <button className="btn-icon" title="External Submission Link" onClick={() => setShowExtLink(true)}>
+            {/* External link icon — opens Token Manager */}
+            <button className="btn-icon" title="Submission Links" onClick={() => navigate('/risks/submission-links')}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/>
               </svg>
             </button>
 
-            {/* Bell / pending submissions */}
-            <button className="btn-icon" title="Pending Submissions" style={{ position: 'relative' }} onClick={() => setShowPending(true)}>
+            {/* Bell — opens Triage Queue */}
+            <button className="btn-icon" title="Triage Queue" style={{ position: 'relative' }} onClick={() => navigate('/risks/triage')}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/>
               </svg>
-              {pendingCount > 0 && <span className="notif-count">{pendingCount}</span>}
+              {triagePending > 0 && <span className="notif-count">{triagePending}</span>}
             </button>
 
             {/* Print */}
@@ -365,20 +378,28 @@ export default function RiskRegister() {
               }
             </select>
           </div>
-          <div className="field">
-            <label>Treatment</label>
-            <select value={treatment} onChange={e => { setTreatment(e.target.value); setPage(1); }}>
-              <option value="">All</option>
-              {(lookups?.treatment ?? ['Mitigate','Transfer','Accept','Avoid']).map(t => (
-                <option key={t} value={t}>{t}</option>
-              ))}
-            </select>
-          </div>
           <div className="field" style={{ minWidth: 220 }}>
             <label>Quick Search</label>
             <input value={search} onChange={e => setSearch(e.target.value)}
               placeholder="Search description, impact, controls…" />
           </div>
+          {undecidedCount > 0 && (
+            <div className="field">
+            <label>&nbsp;</label>
+            <button
+              type="button"
+              className={`btn btn-undecided btn-compact${filterUndecided ? ' active' : ''}`}
+              onClick={() => { setFilterUndecided(f => !f); setPage(1); }}
+              title={filterUndecided ? 'Clear undecided filter' : 'Show only risks with no linked decision'}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+              </svg>
+              {undecidedCount} undecided
+            </button>
+            </div>
+          )}
         </div>
 
         {/* Table */}
@@ -391,6 +412,7 @@ export default function RiskRegister() {
           selectedIds={selectedIds}
           onToggle={handleToggle}
           onToggleAll={handleToggleAll}
+          appetites={appetites}
         />
 
         {/* Recycle bin link below table */}
@@ -439,11 +461,13 @@ export default function RiskRegister() {
         }}
       />
       <RiskDetailModal
+        key={selected?.id ?? 'none'}
         open={showDetail}
         risk={selected}
         onClose={() => setShowDetail(false)}
         onEdit={() => openEdit(selected!)}
         onDelete={() => { setShowDetail(false); if (selected) openDelete(selected); }}
+        onLinkDecision={handleLinkDecision}
       />
       <ImportModal
         open={showImport}
@@ -480,15 +504,6 @@ export default function RiskRegister() {
         open={showPrint}
         onClose={() => setShowPrint(false)}
         onGenerate={handlePrint}
-      />
-      <ExternalLinkModal
-        open={showExternalLink}
-        onClose={() => setShowExtLink(false)}
-        tenantId={claims?.active_tenant_id ?? ''}
-      />
-      <PendingSubmissionsModal
-        open={showPending}
-        onClose={() => setShowPending(false)}
       />
     </div>
   );

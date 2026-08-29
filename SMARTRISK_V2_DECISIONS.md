@@ -1007,6 +1007,115 @@ Chosen: step3Disabled changed to rb.step < 2. Export is available immediately af
 Why: Blocking export on AI generation adds friction for users who want a clean PDF without narrative commentary, or who want to export quickly for an urgent meeting. The AI step remains visible and accessible; making it optional does not remove it.
 
 **Decision: left accent border removed from trial warning and unsaved changes banners (August 23, 2026)**
+[existing content unchanged]
+
+**Decision: org_name JSONB key corrected from "org_name" to "organization" (August 28, 2026)**
+Raised by: Wizard stored org_name under JSONB key "org_name" but services_settings.py _build_response reads _s("organization"). Key mismatch meant organization name was written to DB and silently lost, never appearing in Settings.
+Chosen: routes_workspaces.py changed ws_settings["org_name"] to ws_settings["organization"]. No migration needed; workspace_settings is a JSONB column.
+Why: Single character of key disagreement. Fix is surgical and non-breaking. No data migration needed for existing rows because JSONB reads fall back to empty string default for missing keys.
+
+**Decision: TIMEZONES and FRAMEWORKS in wizard constants aligned to Settings dropdown values (August 28, 2026)**
+Raised by: Wizard TIMEZONES used human-readable codes ("WAT (UTC+1)") while settings_WorkspaceSettings.tsx uses IANA identifiers ("Africa/Lagos") as option values. Wizard FRAMEWORKS had "NIST RMF" while Settings has "NIST CSF". Saved values never matched any Settings dropdown option, causing blank or wrong selections after onboarding.
+Chosen: utils_constants.ts TIMEZONES replaced with IANA identifiers matching Settings exactly. FRAMEWORKS updated to match Settings option set (added NIST CSF, COBIT, ISO 27001; removed NIST RMF). INITIAL_DATA.timezone default changed from "WAT (UTC+1)" to "Africa/Lagos". Settings WorkspaceSettings INDUSTRIES list updated to include "Oil & gas" to match wizard tile key.
+Why: A single source of truth for option values is mandatory. Wizard-saved values must resolve to valid select options in Settings or the form appears corrupted on first visit.
+
+**Decision: WorkspacePicker fetches workspace list from API on mount (August 28, 2026)**
+Raised by: WorkspacePicker read exclusively from authStore.workspaces (in-memory). After forced logout or token expiry during wizard, the store was empty even though DB had valid workspace_members rows. User saw empty picker with no way to access their workspace.
+Chosen: WorkspacePicker useEffect fetches GET /api/v1/workspaces on mount, maps response to WorkspaceInfo[], calls setWorkspaces. Store data shown as fallback if fetch fails. routes_workspaces list endpoint updated to include member role in each workspace entry (required for WorkspaceInfo type).
+Alternatives rejected: Reading only from store (current broken behavior). Relying on login to always populate the store (fails after forced re-login flow).
+Why: The picker must reflect actual DB state at render time. API fetch on mount is the only reliable way to guarantee this.
+
+**Decision: setWorkspaces called after wizard launch; queryClient cleared before navigation (August 28, 2026)**
+Raised by: handleLaunch created the workspace and called setToken but never called setWorkspaces. Sidebar reads authStore.workspaces.find() which returned undefined for the new workspace, falling back to "SmartRisk". queryClient was not cleared before navigate("/"), meaning stale cache (settings, lookups) was served after navigation.
+Chosen: After setToken, manually construct WorkspaceInfo with known values (role: "Owner", plan: "TRIAL", modules: ["risk"]) and call setWorkspaces. Call queryClient.clear() immediately before navigate("/").
+Why: setWorkspaces is the only mechanism the sidebar uses to resolve workspace names. queryClient.clear() ensures all queries refetch fresh data scoped to the new workspace token on first load.
+
+**Decision: refresh_access_token issues base token for accounts with no workspaces (August 28, 2026)**
+Raised by: Users spending more than 15 minutes on the wizard had their access token expire. The refresh endpoint queried workspace_members for the account. New accounts with no workspaces returned empty rows, raised InvalidTokenError, returned 401. The interceptor then force-logged out the user, losing all wizard state.
+Chosen: In refresh_access_token, when rows is empty, issue a fresh base token (same shape as login issues for no-workspace accounts) instead of raising. New refresh token also issued. Return both without a 401.
+Alternatives rejected: Extending access token lifetime for all users (breaks the 15-minute security window for active sessions). Skipping refresh for no-workspace accounts (leaves the user with an expired token, same outcome).
+Why: The no-workspace state is a legitimate application state during onboarding, not an error. The refresh must succeed so the wizard can complete workspace creation.
+
+**Decision: Settings form dirty state fixed with key prop and post-save sync pattern (August 28, 2026)**
+Raised by: WorkspaceSettings initialized form via useState from the settings prop. When query.data changed after mount (background refetch or mutation onSuccess updating cache), the prop updated but form did not. isDirty then fired the unsaved banner with no user interaction.
+Chosen: WorkspaceSettings receives a key prop in pages_Settings.tsx tied to stable identity fields (name|organization|industry). Forces clean remount when data meaningfully changes. Additionally, all tab components (WorkspaceSettings, RolesTab, AITab, BriefTab, LookupEditorContent) sync their form state to the server response in their mutation onSuccess callbacks to prevent dirty state immediately after a successful save.
+Alternatives rejected: useEffect to reset form on settings change (wipes mid-edit state on background refetch). Storing a baseline snapshot (adds state complexity).
+Why: The key approach addresses the root cause (stale form from old prop). Post-save sync closes the secondary gap (form not matching normalized server response).
+
+**Decision: Get Started drawer updated to remove wizard-covered steps, add matrix step (August 28, 2026)**
+Raised by: Steps 7 (Brand your workspace) and 8 (Build your team) directly overlap with wizard Steps 1 and 6. Users arriving from the wizard would see these as unchecked even though they had just completed them. Risk matrix customization was deferred by the wizard but had no corresponding prompt in the drawer.
+Chosen: Steps 7 and 8 removed. New step 3 added: "Customise your risk matrix" pointing to /settings. Step 2 description updated to acknowledge wizard-seeded categories. TOTAL_STEPS corrected from 8 to 7.
+Why: The drawer should guide users through post-onboarding tasks, not repeat onboarding tasks. The matrix step closes the explicit deferral made in the wizard.
+
+**Decision: auth left panels redesigned with auth-feature row pattern; legal footer added (August 28, 2026)**
+Raised by: Design files (login.html, forgot-password.html, Create_Account_step1.html) provided updated left panel content. Current app used auth-info-card (glass cards with checkmark circles). Design used auth-feature rows (icon + title + subtitle). Each page had page-specific messaging rather than generic brand copy. Footer lacked legal registration information.
+Chosen: New auth-feature, auth-features, auth-feature-icon, auth-feature-title, auth-feature-sub CSS classes added to index.css. All three pages updated with page-specific eyebrow, headline, description, and feature rows using Lucide icons (matching app brand, not Tabler icons from design). Legal footer added: NDPC/DCP/12625, ISO 31000 & COSO ERM, SmartRisk Sheets Technologies Limited, RC 9170218. auth-left h2 size increased from 26px to 34px to match design impact. No gradients added (brand rule maintained).
+Alternatives rejected: Adopting Tabler icons (app uses Lucide throughout). Adding radial-gradient background (no gradients brand rule).
+Why: Page-specific messaging improves conversion. Login says "Welcome back." Register says brand pitch. Forgot password says recovery-specific content. Legal footer is a compliance requirement.
+
+**Decision: reset password token expiry confirmed as 15 minutes, not 24 hours (August 28, 2026)**
+Raised by: Design HTML said "valid for 24 hours." The email body in send_reset_email said "15 minutes." create_reset_token uses timedelta(minutes=15). The left panel copy was initially written as "24 hours" matching the design, which was wrong.
+Chosen: Left panel copy corrected to "15 minutes" to match the actual token expiry. Email body unchanged (already correct at 15 minutes). Token expiry unchanged.
+Why: Copy must match the actual system behavior. Users who wait 24 hours before clicking a 15-minute link will receive an expired token error.
+
+**Decision: send_reset_email wrapped in asyncio.run_in_executor (August 28, 2026)**
+Raised by: send_reset_email calls resend.Emails.send() which is a synchronous blocking HTTP call. It was called directly inside the async forgot_password service, blocking the asyncio event loop for the duration of the Resend HTTP roundtrip.
+Chosen: Wrapped in asyncio.get_event_loop().run_in_executor(None, send_reset_email, to, reset_link) to offload to a thread pool executor.
+Why: Consistent with how other blocking calls are handled in the codebase. The email delivers identically; the event loop is no longer held.
+
+**Decision: GoogleSignInButton network guard and pending state added (August 28, 2026)**
+Raised by: When network is unavailable, clicking "Continue with Google" triggered the OAuth popup (or failed silently) with no feedback for up to 2 minutes. No loading state existed between button click and onSuccess firing.
+Chosen: navigator.onLine checked before triggering login(). If offline, onError called immediately with network message. googlePending state added: true on click, false on onSuccess or onError. Button shows spinner and "Connecting to Google…" while pending. onError checks navigator.onLine at callback time to distinguish cancellation from network loss. Applied to both pages_Login.tsx and pages_Register.tsx.
+Why: Users deserve immediate feedback. Two minutes of silent waiting is unacceptable UX. navigator.onLine is not 100% reliable but catches the most common case and costs nothing.
+
+**Decision: Report Builder state persisted across navigation via Zustand store (August 28, 2026)**
+Raised by: useReports state lived entirely inside the ReportBuilder page component. React Router unmounted the page on navigation. Every return visit reset canvas, settings, step, preview data, and AI narratives to defaults.
+Chosen: New reportBuilderStore (Zustand, no persist middleware) holds activeBlocks, settings, step, blockData, aiData. useReports initializes useState from store on mount and writes back via set() whenever any of these fields change. reset() clears both store and local state atomically. "New report" button added to report builder header with confirm dialog before clearing. No localStorage used; state is session-level only (resets on page reload, which triggers loadSavedSettings from API as before).
+Alternatives rejected: localStorage/sessionStorage (serialization complexity, size limits with blockData). Lifting useReports to app level (architectural change, affects all pages). CSS visibility (renders all pages simultaneously, wasteful).
+Why: Zustand without persist is the lightest session-level persistence mechanism in the existing stack. Zero architectural change to the rest of the app. The reset button gives users explicit control over when to start fresh.
+
+**Decision: PDF content width corrected from 170mm to 180mm to match GAS portrait margins (August 28, 2026)**
+Raised by: GAS portrait CSS uses `@page{margin:18mm 15mm 22mm 15mm}`. Python used `margin = 20 * mm` giving 170mm content width. GAS content width = 210 - 15 - 15 = 180mm. The 10mm gap caused KPI label wrapping, narrower cells, and unnecessary vertical growth on the executive dashboard.
+Chosen: `_make_doc` margin changed from 20mm to 15mm. All content page elements (HRFlowable at 100%, posture row, bullet rows, KPI table) inherit the wider frame automatically. Dashboard-specific hardcoded 170mm references updated to 180mm.
+Why: Root cause fix rather than compensating with smaller fonts. Matches the actual GAS geometry.
+
+**Decision: _kpi_table restructured as flat table; LINEBEFORE on first column only (August 28, 2026)**
+Raised by: Previous implementation wrapped each KPI in a nested Table with its own LINEBEFORE, creating a colored vertical divider before every metric. GAS reference has a single colored left-edge accent on the strip, no inter-cell borders. The nested tables also doubled padding overhead (inner 10+6pt + outer 4pt = 20pt per cell dead space), causing label text to wrap.
+Chosen: Flat multi-row Table where all KPI values share row 0 and all labels share row 1. LINEBEFORE applied to (0,0)-(0,-1) only (first column across all rows). First KPI color used for the single left accent. Padding tightened to 8pt left, 4pt right, 7pt top on value row, 6pt bottom on last row.
+Alternatives rejected: Keeping nested tables but suppressing LINEBEFORE on all but the first — workable but still carries the double-padding problem. Complete redesign of the KPI component — ruled out by spec.
+Why: Flat table eliminates nested padding overhead, resolves label wrapping, and produces the correct single-accent visual matching GAS.
+
+**Decision: Control Strength KPI added via control_effectiveness field on RiskRow (August 28, 2026)**
+Raised by: `compute_executive_dashboard` had only 5 KPIs. GAS computes 6 including Control Strength from `ctrlEffToNum_` / `_ctrlStrength`. `RiskRow` dataclass had no `control_effectiveness` field so the value was silently dropped in `_fetch_risks`.
+Chosen: `control_effectiveness: int` added to `RiskRow`. `_fetch_risks` reads it from the ORM Risk model. `compute_executive_dashboard` computes `_ctrl_strength` as the average of non-zero values (assumes 0-100 scale, matching GAS default when lookup max = 100). Color thresholds: green ≥75, amber ≥50, red <50. Inserted fifth, between High Risks and Avg Residual.
+Why: Data is already in the DB. The field just was not plumbed through the reporting layer. No migration required.
+
+**Decision: _PillChip custom Flowable replaces rectangular Table chip on cover (August 28, 2026)**
+Raised by: ReportLab Table does not support border-radius. The confidentiality chip was rendered as a Table with BOX border, producing a rectangle. GAS uses `border-radius:20px` producing a pill.
+Chosen: `_PillChip(Flowable)` draws a rounded rect via `canvas.roundRect()` with radius = height/2 for a full pill shape. Placed in the same Table cell slot as the previous chip. `Flowable` added to platypus imports.
+Alternatives rejected: Approximating with a small border-radius via ReportLab rounded corners (not available on Table). Using SVG (heavyweight, not needed).
+Why: `canvas.roundRect()` is the correct ReportLab primitive for this geometry. Custom Flowable is the standard pattern when Tables cannot reproduce the required shape.
+
+**Decision: Cover _meta_gap computed dynamically from frame height (August 28, 2026)**
+Raised by: Cover used `Spacer(1, 6*mm)` before the metadata grid, leaving the metadata compressed into the top half of the cover. GAS uses `margin-top: auto` to push metadata toward the bottom.
+Chosen: `_meta_gap = max(10*mm, frame_height - _top_est - _bot_est)`. Frame height = 297-18-14 = 265mm portrait. `_top_est` = 90mm (brand row + 48mm spacer + eyebrow + title + period + rule). `_bot_est` = 78mm (meta table + small spacer + disclaimer + footer bar), calibrated after a first render at 57mm overshot the target position by 16mm. Final gap = 97mm.
+Why: Dynamic computation is preferred over an arbitrary large Spacer. The formula ties the gap to the actual frame height so it degrades gracefully for landscape or non-standard page sizes.
+
+**Decision: PageTemplate sequencing fixed — NextPageTemplate before PageBreak (August 28, 2026)**
+Raised by: `NextPageTemplate("content")` was placed after `PageBreak()` in the story. ReportLab allocates a new page's template at the point of the page break using the most recently processed `NextPageTemplate`. Placing it after meant the first content page used the cover template (`_on_cover_page`) and received no navy header.
+Chosen: `NextPageTemplate("content")` moved immediately before `PageBreak()`. The trailing duplicate after the block pages comment removed.
+Why: `NextPageTemplate` is a flowable that sets state for the next break. Its position relative to `PageBreak` in the story is what determines which template the new page receives.
+
+**Decision: Report email wired to executive-dashboard block data; posture row and AI bullets added (August 28, 2026)**
+Raised by: `_build_email_html` ignored `block_data["executive-dashboard"]` entirely, always using 4 hardcoded KPIs from individual blocks and a derived fallback for bullets. GAS prioritises `ed.bullets` from `computeExecutiveDashboard_`. AI-generated executive dashboard text was not passed to the email function at all. Org name was not shown in the email header.
+Chosen: `_build_email_html` signature gains `ai_data` and `org_name`. KPIs sourced from `ed["kpis"]` (6 data-driven) when present, fallback to 4 hardcoded. Posture row (Status / Trend / Confidence) inserted when `ed["posture"]` is present. Bullet priority: AI text → `ed["bullets"]` → `_derive_bullets` fallback. `_esc()` added on all user-sourced strings. `send_report_email` gains `ai_data` and `org_name` parameters. Route passes `payload.ai_data` and `_org`.
+Alternatives rejected: Keeping hardcoded KPIs (loses Control Strength and Avg Residual in email). Skipping posture row (useful executive context, data already present, one table row).
+Why: Email should reflect the same data the PDF shows. Wiring the executive dashboard block closes the gap between the PDF and the email summary.
+
+**Decision: RESEND_FROM_EMAIL updated to no-reply display name format (August 28, 2026)**
+Raised by: Report emails were sent from bare `info@smartrisksheets.com` with no display name, making the sender unrecognisable and implying a monitored reply inbox.
+Chosen: `RESEND_FROM_EMAIL=SmartRisk Pulse <noreply@smartrisksheets.com>`. Resend accepts RFC 5322 `Name <address>` format in the from field directly. Domain already verified. No code changes required.
+Why: No-reply address sets correct expectations. Display name improves recognisability in recipient inboxes. Environment variable is the correct layer for this — the code passes the value through unchanged.
 Raised by: Both banners had border-left: 4px solid applied alongside a 1px uniform border, creating an asymmetric visual extrusion on the left edge that conflicted with the card-style design language of the rest of the app.
 Chosen: border-left removed from trial-warn--amber, trial-warn--red, and unsaved-banner. Uniform 1px border retained on all sides. Dark mode override for border-left-color on unsaved-banner also removed.
 Alternatives considered: Top accent strip (border-top: 3px solid), icon-led no-border variant, compact pill. User decision to proceed with simple uniform border pending final design pass on the banner family.
@@ -1015,4 +1124,82 @@ Raised by: Trial users needed feedback explaining why "Switch workspace" and "+ 
 Chosen: Two-variant CSS approach. Base .tooltip-wrap uses bottom-positioned ::after for open contexts (workspace picker page, where there is vertical space). .tooltip-wrap--inline overrides ::after to position: static, rendering the tip text as an inline block directly below the disabled item inside the dropdown. overflow: hidden removed from .topbar-dropdown (6px padding makes it redundant; no visual side effect). Both variants use data-tip attribute on the wrapper span so the disabled button's pointer-events: none does not block hover detection.
 Alternatives rejected: right-positioned floating tooltip went off screen (dropdown is at right edge). Left-positioned floating tooltip overlapped page content and appeared partially obscured. Native title attribute invisible on disabled elements.
 Why: Inline reveal is reliable regardless of container overflow or viewport position. It matches the visual weight of a dropdown hint rather than a tooltip bubble, which is appropriate for a constrained dropdown context.
+
+---
+
+## Session: August 28, 2026 — Foundations Phase (Stream A and B Prerequisites)
+
+**Decision: Residual risk formula corrected from percentage to scaled 1-5 (August 28, 2026)**
+Raised by: User reported residual risk on the register table not visibly subtracting control effectiveness from inherent risk. Root cause: the August 17 decision changed `control_effectiveness` to a 1-5 integer scale but never updated the scoring formula. `_score()` still used `ce = value / 100`, giving a maximum reduction of 5% (severity=15, CE=5 → residual=14.25, rounds to 14). The stat card already converted 1-5 to percentage via `* 20`, confirming the 1-5 scale intent.
+Chosen: `ce = (control_effectiveness or 0) / 5` in `app/services/risk.py _score()` and `src/utils/scoring.ts computeScore()`. Maps 1→20%, 2→40%, 3→60%, 4→80%, 5→100%. Standard formula `residual = severity × (1 - ce)` is unchanged. Verified against ISO 31000 / COSO ERM standard: residual = inherent × (1 - control effectiveness%). GAS used direct subtraction which is non-standard and breaks at low severity values.
+Why: The stat card's `* 20` conversion was already treating 5 as 100% effective. The scoring formula had to match that interpretation. Direct subtraction (GAS pattern) is mathematically incorrect on a 1-25 severity scale.
+
+**Decision: RiskUpdate.control_effectiveness le=100 corrected to le=5 (August 28, 2026)**
+Raised by: The August 17 decision stated all three schemas carrying `control_effectiveness` were corrected to `le=5`. `RiskCreate` was fixed. `RiskUpdate` was missed and still had `le=100`. `BulkImportRow` was also missed and still had `le=100`.
+Chosen: Both corrected to `le=5` in `app/schemas/risk.py`.
+Why: A user editing an existing risk could submit CE=60, the formula would compute `ce=12.0`, and residual would go negative. The validator must enforce the same bounds as the form.
+
+**Decision: Unevidenced control freshness state added as computed field (August 28, 2026)**
+Raised by: Build brief for External Submission Link requires that promoted risks show no misleading residual when no control test has been logged. The existing `freshness` field tracks risk review recency from `last_reviewed_at`. A separate concept is needed for control test recency.
+Chosen: `control_freshness` added to `RiskResponse` as a Pydantic v2 `@computed_field` derived from `control_last_tested`. Returns `'Unevidenced'` when `control_last_tested` is null, then `'Fresh'` / `'Aging'` / `'Stale'` using the same 15/30-day thresholds as `compute_freshness`. No DB column added — it is derived on every read. The residual cell badge in `RiskTable` switches from `r.freshness` to `r.control_freshness`. `RiskFreshness` type gains `'Unevidenced'`. `freshnessClass`, `freshnessColor`, `FRESH_META`, `.freshness-unevidenced`, and `.fresh-tip.unevidenced` all extended.
+Alternatives rejected: Storing a separate `control_freshness` column (adds a migration and requires a write on every control_last_tested change). Modifying `compute_freshness` to use `control_last_tested` instead of `last_reviewed_at` (breaks existing freshness semantics for risk review tracking).
+Why: The two freshness concepts are distinct: risk review recency (`freshness`, drives activity feed and phase-one tracking) and control test recency (`control_freshness`, drives residual credibility). Keeping them separate avoids conflating two independent governance clocks.
+
+**Decision: Four new columns added to risks table for register enhancement (August 28, 2026)**
+Raised by: Stream A Risk Register Enhancement requires Root Cause, Financial Exposure, Linked Decision, and Control Assertion Source fields on risks. These were not in the original schema.
+Chosen: Migrations 032 and 033 add `root_cause TEXT`, `financial_exposure TEXT`, `linked_decision TEXT`, `control_assertion_source TEXT` to the `risks` table, all nullable, each in its own `op.execute()` call. All four added to `RiskCreate`, `RiskUpdate`, and `RiskResponse` schemas. `create_risk` constructor maps all four. `update_risk` handles them automatically via `model_dump(exclude_unset=True)`.
+Why: All four are optional analyst-entered fields with no constraints or FK dependencies. TEXT nullable is the correct type. No existing query is affected.
+
+**Decision: appetite_thresholds table created as a standalone service table (August 28, 2026)**
+Raised by: Stream A adds an Appetite column to the risk register. Each risk must be compared against a per-category residual threshold set by the workspace. This data cannot live in `workspace_settings` JSONB because it is queried per-category on every register read and benefits from a typed indexed column.
+Chosen: Migration 034 creates `appetite_thresholds` with `(tenant_id, category)` unique constraint, `threshold INTEGER` (1-25 scale matching severity), `rationale TEXT`, `set_by TEXT`, `set_at`, `updated_at`. Index on `tenant_id`. `AppetiteThreshold` ORM model and `AppetiteThresholdUpsert` / `AppetiteThresholdResponse` schemas created. Routes and frontend service deferred to Stream A.
+Alternatives rejected: Storing thresholds in `workspace_settings` JSONB (non-queryable per category, requires full blob read and Python-side filter on every register load). Adding a `threshold` column to `lookups` (lookups stores label arrays, not per-category numeric values, mixing concerns).
+Why: A standalone indexed table is the correct pattern for per-category numeric config that is read alongside every risk list query. Consistent with `matrix_config` pattern already established in this project.
+
+**Decision: Two product streams scoped and sequenced (August 28, 2026)**
+Raised by: Four uploaded files (risk register mock, appetite settings mock, submission form mock, build brief PDF) define two distinct build streams requiring sequencing.
+Stream A: Risk Register Enhancement. Appetite thresholds settings tab, register table redesign (columns: Risk ID, Description, Owner, Business Impact, Severity, Level, Financial Exposure, Appetite, Decision Required), Decision Required tracking, Add/Edit modal updates (Root Cause, Financial Exposure, Control Assertion section with Last Tested and Assertion Source).
+Stream B: External Submission Link. Tokenised public form, submission_tokens and risk_submissions tables, triage queue, scoring and promotion flow, five submitter notifications, rate limiting via DB counter table.
+Chosen: Foundations first (this session), then Stream A, then Stream B.
+Why: Stream A ships visible value to existing users with no new public attack surface. Stream B depends on Unevidenced state (now in foundations) and is the higher security surface. Scenario Mode deferred entirely: it belongs in a dedicated tab inside the risk detail view, not the Add/Edit modal, and requires a product decision on tier gating and storage model before building.
 Why: Math.round(x * 100) / 100 eliminates 15-digit floating point noise at 2 decimal places. The fmt helper avoids trailing zeros (2.00 becomes 2). Both old and new scores formatted for consistency.
+
+---
+
+## Session: August 28, 2026 — Stream A: Risk Register Enhancement
+
+**Decision: Appetite service uses select-then-upsert pattern, not INSERT ON CONFLICT (August 28, 2026)**
+Raised by: The appetite PUT endpoint must insert if no record exists for the category, update if one does.
+Chosen: Select first, branch on result: new record uses `db.add(row)`, existing record uses direct attribute assignment. `db.flush()` + `db.refresh(row)` follow in both branches. `# type: ignore[assignment]` on Column attribute writes per Pylance rules.
+Alternatives rejected: `insert().on_conflict_do_update().returning()` — valid but more complex and harder to type safely under Pylance. Raw asyncpg upsert — bypasses ORM, breaks the project flush/refresh convention.
+Why: Consistent with the pattern used in every other upsert in this codebase. Pylance-clean. No raw SQL.
+
+**Decision: Appetite status uses 75% near-zone boundary (August 28, 2026)**
+Raised by: The Appetite column needs a three-tier status (Within, Near, Exceeds) from residual vs category threshold.
+Chosen: `exceeds` when `residual > threshold`; `near` when `residual > threshold * 0.75`; `within` otherwise. Validated against all four mock data points.
+Alternatives rejected: Equal-to-threshold as "Within" — R-001 counterexample (residual=15, threshold=15 shows Near in mock). Fixed-point bands — fragile across the 1-25 scale.
+Why: Percentage boundary adapts proportionally. The last 25% of a threshold triggers a caution state, matching standard GRC appetite governance logic.
+
+**Decision: useEffect state reset replaced by key prop on RiskDetailModal mount (August 28, 2026)**
+Raised by: `decisionText` state in `RiskDetailModal` needed resetting when a different risk was opened. Initial implementation used `useEffect(() => setDecisionText(''), [risk?.id])`, which React 19 flags as calling setState synchronously in an effect body.
+Chosen: Remove the `useEffect` entirely. Apply `key={selected?.id ?? 'none'}` to the `RiskDetailModal` mount in `RiskRegister.tsx`. React remounts the component on key change, resetting all useState to initials automatically.
+Alternatives rejected: `useEffect` with state setter — React 19 anti-pattern, cascading render warning. `useRef` to track previous id — adds complexity without correctness benefit.
+Why: Idiomatic React identity-reset pattern. No effect needed. The detail modal remounts infrequently (only when selected risk changes), so there is no performance cost.
+
+**Decision: undecided filter implemented as backend query param with separate count query (August 28, 2026)**
+Raised by: The undecided button needs a workspace-wide count and must filter the risk list to undecided risks only.
+Chosen: `undecided: bool | None = None` added to `list_risks` service and route. `Risk.linked_decision.is_(None)` applied when True. Frontend adds `undecided?: boolean` to `ListRisksParams`. A dedicated TanStack Query (`queryKey: ['risks', 'undecided-count']`, `page_size: 1`) reads `meta.total` for the button label independently of the main list query.
+Alternatives rejected: Deriving count from current page risks — counts current page only, misleading when paginated. Dedicated `/risks/count` endpoint — extra route for no added capability since `list_risks` already returns total.
+Why: Cheapest way to get a workspace-wide undecided count. TanStack Query caches and deduplicates independently. Auto-invalidated by any risk mutation since `['risks']` prefix matching covers `['risks', 'undecided-count']`.
+
+**Decision: control effectiveness fields grouped into form-section card in RiskForm (August 28, 2026)**
+Raised by: Three new control fields (Last Tested, Assertion Source) join existing Controls and Effectiveness fields. Four fields together need visual grouping to signal they form one governance unit.
+Chosen: `.form-section` wrapper `gridColumn: span 12` inside the outer `.row`, containing a nested `.row` for the four control fields plus a `.form-section-note` explaining the governance clock relationship.
+Alternatives rejected: Flat field layout alongside other form fields — no visual distinction in a long form. Section header as plain `<hr>` or text divider — insufficient affordance.
+Why: Consistent with `.settings-section` pattern used throughout Settings. Signals to analysts that effectiveness, last tested, and assertion source are three aspects of one control quality assertion.
+
+**Decision: Treatment filter UI removed from RiskRegister, state retained (August 28, 2026)**
+Raised by: Treatment is no longer a table column. Keeping a filter for a column not visible in the table is confusing.
+Chosen: Remove the Treatment `<select>` from the filter bar JSX. Retain `treatment` state, `setTreatment`, and all query param wiring.
+Alternatives rejected: Full removal of all seven treatment references — correct long-term, deferred to avoid scope creep.
+Why: The state always resolves to `undefined` in query params via `|| undefined`. No query is affected. The cleanup is a one-line find-replace on next RiskRegister touch.

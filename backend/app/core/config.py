@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     APP_ENV: str = "development"
     FRONTEND_URL: str = "http://localhost:5173"
 
+    @property
+    def allowed_origins(self) -> list[str]:
+        return [u.strip() for u in self.FRONTEND_URL.split(",") if u.strip()]
+
     # Billing
     TRIAL_DURATION_DAYS: int = 14
     PAID_DURATION_DAYS: int = 365
