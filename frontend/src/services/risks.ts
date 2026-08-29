@@ -19,6 +19,7 @@ export interface ListRisksParams {
   treatment?: string;
   owner?:     string;
   search?:    string;
+  undecided?: boolean;
 }
 
 export interface RiskListResponse {
@@ -36,6 +37,7 @@ export async function listRisks(params: ListRisksParams = {}): Promise<RiskListR
   if (params.treatment) query.set('treatment',  params.treatment);
   if (params.owner)     query.set('owner',      params.owner);
   if (params.search)    query.set('search',     params.search);
+  if (params.undecided) query.set('undecided',  'true');
 
   const qs  = query.toString();
   const url = `/api/v1/risks${qs ? `?${qs}` : ''}`;
@@ -78,6 +80,7 @@ export interface StatsParams {
   treatment?: string;
   owner?:     string;
   search?:    string;
+  undecided?: boolean;
 }
 
 export async function getStats(params: StatsParams = {}): Promise<RiskStats> {

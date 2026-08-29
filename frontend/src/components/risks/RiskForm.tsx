@@ -31,7 +31,12 @@ export interface RiskFormValues {
   comments:              string;
   owner_email:           string;
   target_date:           string;
-  mitigation_status:     MitigationStatus;
+  mitigation_status:        MitigationStatus;
+  root_cause:               string;
+  financial_exposure:       string;
+  linked_decision:          string;
+  control_last_tested:      string;
+  control_assertion_source: string;
 }
 
 const EMPTY: RiskFormValues = {
@@ -41,6 +46,8 @@ const EMPTY: RiskFormValues = {
   controls: '', control_effectiveness: 0,
   mitigation_plan: '', comments: '',
   owner_email: '', target_date: '', mitigation_status: 'Open',
+  root_cause: '', financial_exposure: '', linked_decision: '',
+  control_last_tested: '', control_assertion_source: 'Self-assessed',
 };
 
 interface Props {
@@ -93,7 +100,12 @@ export default function RiskForm({ editId, initial, submitLabel, loading, error,
       owner_email:           v.owner_email      || undefined,
       target_date:           v.target_date      || undefined,
       mitigation_status:     v.mitigation_status,
-      logged_at:             v.logged_at        || undefined,
+      logged_at:             v.logged_at               || undefined,
+      root_cause:            v.root_cause              || undefined,
+      financial_exposure:    v.financial_exposure       || undefined,
+      linked_decision:       v.linked_decision          || undefined,
+      control_last_tested:   v.control_last_tested      || undefined,
+      control_assertion_source: v.control_assertion_source || undefined,
     });
   }
 
@@ -155,13 +167,33 @@ export default function RiskForm({ editId, initial, submitLabel, loading, error,
             />
           </div>
 
-          {/* Primary Impact */}
+          {/* Root Cause */}
+          <div className="field" style={{ gridColumn: 'span 12' }}>
+            <label>Root cause <span className="field-hint" style={{ display: 'inline', fontStyle: 'italic' }}>optional</span></label>
+            <textarea
+              value={v.root_cause}
+              onChange={f('root_cause')}
+              placeholder="What is actually driving this risk? Leave blank if not yet known."
+              style={{ minHeight: 60 }}
+            />
+          </div>
+
+          {/* Primary Impact + Financial Exposure */}
           <div className="field" style={{ gridColumn: 'span 6' }}>
-            <label>Primary Impact</label>
+            <label>Business impact</label>
             <input
               value={v.primary_impact}
               onChange={f('primary_impact')}
-              placeholder="e.g. Financial, Reputational"
+              placeholder="e.g. Loan losses, Regulatory fine"
+            />
+          </div>
+
+          <div className="field" style={{ gridColumn: 'span 6' }}>
+            <label>Financial exposure <span className="field-hint" style={{ display: 'inline', fontStyle: 'italic' }}>optional</span></label>
+            <input
+              value={v.financial_exposure}
+              onChange={f('financial_exposure')}
+              placeholder="e.g. ₦450M — analyst estimate, not derived from severity"
             />
           </div>
 
@@ -189,26 +221,6 @@ export default function RiskForm({ editId, initial, submitLabel, loading, error,
             </select>
           </div>
 
-          {/* Existing Controls */}
-          <div className="field" style={{ gridColumn: 'span 8' }}>
-            <label>Existing Controls</label>
-            <input
-              value={v.controls}
-              onChange={f('controls')}
-              placeholder="e.g. Weekly review, vendor qualification…"
-            />
-          </div>
-
-          {/* Control Effectiveness */}
-          <div className="field" style={{ gridColumn: 'span 4' }}>
-            <label>Control Effectiveness</label>
-            <select value={v.control_effectiveness} onChange={f('control_effectiveness')}>
-              {CTRL_EFF.map(o => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
-          </div>
-
           {/* Mitigation Plan */}
           <div className="field" style={{ gridColumn: 'span 8' }}>
             <label>Mitigation Plan</label>
@@ -216,6 +228,59 @@ export default function RiskForm({ editId, initial, submitLabel, loading, error,
               value={v.mitigation_plan}
               onChange={f('mitigation_plan')}
               placeholder="e.g. Source qualified vendors, increase reserves…"
+            />
+          </div>
+
+          {/* Control Effectiveness Assessment */}
+          <div className="form-section" style={{ gridColumn: 'span 12' }}>
+            <p className="form-section-title">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/>
+              </svg>
+              Control effectiveness assessment
+            </p>
+            <div className="row">
+              <div className="field" style={{ gridColumn: 'span 8' }}>
+                <label>Existing controls</label>
+                <input
+                  value={v.controls}
+                  onChange={f('controls')}
+                  placeholder="e.g. Weekly review, vendor qualification…"
+                />
+              </div>
+              <div className="field" style={{ gridColumn: 'span 4' }}>
+                <label>Effectiveness</label>
+                <select value={v.control_effectiveness} onChange={f('control_effectiveness')}>
+                  {CTRL_EFF.map(o => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="field" style={{ gridColumn: 'span 4' }}>
+                <label>Last tested</label>
+                <input type="date" value={v.control_last_tested} onChange={f('control_last_tested')} />
+              </div>
+              <div className="field" style={{ gridColumn: 'span 4' }}>
+                <label>Assertion source</label>
+                <select value={v.control_assertion_source} onChange={f('control_assertion_source')}>
+                  <option>Self-assessed</option>
+                  <option>Independently tested</option>
+                  <option>External audit</option>
+                </select>
+              </div>
+            </div>
+            <p className="form-section-note">
+              This rating shows as untested until a Last tested date is entered, and can go stale over time, following the same governance clock as risk review freshness.
+            </p>
+          </div>
+
+          {/* Linked Decision */}
+          <div className="field" style={{ gridColumn: 'span 12' }}>
+            <label>Linked decision <span className="field-hint" style={{ display: 'inline', fontStyle: 'italic' }}>optional</span></label>
+            <input
+              value={v.linked_decision}
+              onChange={f('linked_decision')}
+              placeholder="Which upcoming decision does this risk affect?"
             />
           </div>
 

@@ -10,6 +10,7 @@ import WorkspaceSettings from "../components/settings/WorkspaceSettings";
 import LookupEditor from "../components/settings/LookupEditor";
 import NotificationPrefs from "../components/settings/NotificationPrefs";
 import MatrixSettings from "../components/settings/MatrixSettings";
+import AppetiteSettings from "../components/settings/AppetiteSettings";
 
 // ── AI Policy Builder — module-scope constants ───────────────────────────
 
@@ -814,7 +815,8 @@ function BillingTab() {
 const TABS = [
   { id: "ws",     label: "Workspace",       icon: "building-2"  },
   { id: "matrix", label: "Risk Matrix",     icon: "grid-2x2"    },
-  { id: "tax",    label: "Risk Config",     icon: "tags"        },
+  { id: "tax",      label: "Risk Config",        icon: "tags"        },
+  { id: "appetite", label: "Risk Appetite",       icon: "gauge"       },
   { id: "roles",  label: "Users & Roles",   icon: "users"       },
   { id: "ai",     label: "AI & Automation", icon: "sparkles"    },
   { id: "brief",  label: "Risk Brief",      icon: "mail"        },
@@ -883,6 +885,9 @@ export default function Settings() {
           </div>
           <div className={`tab-panel${activeTab === "tax" ? " active" : ""}`}>
             <LookupEditor />
+          </div>
+          <div className={`tab-panel${activeTab === "appetite" ? " active" : ""}`}>
+            <AppetiteSettings />
           </div>
           <div className={`tab-panel${activeTab === "roles" ? " active" : ""}`}>
             <RolesTab />

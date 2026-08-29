@@ -15,9 +15,9 @@ At the end of every session Claude outputs a fresh version of this file with all
  
 ---
  
-**Phase:** Phase 16 active. PDF report parity pass in progress. All block renderers updated. Matrix-aware donut implemented. Remaining: apply outstanding patches to services_report.py (matrix gaps audit completed, patches written but not yet applied — next session reads fresh file state from project before writing).
-**Status:** Session 18, August 22, 2026: Bug fixes, dashboard parity, and full PDF report parity pass. See session log below.
-**Next action:** Begin next session by reading SMARTRISK_V2_SETUP.md, SMARTRISK_V2_DECISIONS.md, then this file. First task: paste current live state of services_report.py and services_pdf_report.py for fresh read, then apply matrix gap patches (compute_risk_snapshot label lookup fix, level_index added to top-risks and top-emerging-risks output, _level_badge_cell index-based color path). Second task: apply outstanding PDF rendering patches (findings, recommendations, risk table level badge, conclusion). Third task: font swap pass once TTF files are confirmed available.
+**Phase:** Stream A complete. All four Stream A items delivered: Appetite Settings tab, Risk Register table redesign, Decision Required tracking, Add and Edit modal updates.
+**Status:** Session 19, August 28, 2026: Stream A fully built. See session log below.
+**Next action:** Begin next session by reading SMARTRISK_V2_SETUP.md, SMARTRISK_V2_DECISIONS.md, then this file. First task: manual browser QA of all Stream A changes. Second task: begin Stream B — External Submission Link.
  
 ---
  
@@ -1860,9 +1860,130 @@ Previous file was a single-form page (143 lines). Rebuilt as a 6-step wizard (~3
 - trial-warn--red: border-left: 4px solid #ef4444 removed. Uniform 1px border retained.
 - unsaved-banner: border-left: 4px solid #f59e0b removed. Dark mode override for border-left-color also removed.
 
-### Known gap: setWorkspaces not called after wizard launch
-- After setToken(authResult.access_token), the sidebar resolves workspace name from s.workspaces.find(w => w.tenant_id === s.claims.active_tenant_id). The wizard never calls setWorkspaces, so the array is empty and the name falls back to 'SmartRisk'.
-- Fix identified but not applied this session. First task next session.
+### Known gap resolved: setWorkspaces now called after wizard launch
+- setWorkspaces called with manually constructed WorkspaceInfo (role: Owner, plan: TRIAL, modules: [risk]) after setToken in handleLaunch.
+- queryClient.clear() called before navigate("/") to flush stale cache for new workspace.
+
+---
+
+## Session: August 28, 2026
+
+### Onboarding wizard wiring fixes
+- org_name JSONB key corrected from "org_name" to "organization" in routes_workspaces.py. Settings now reads organization name correctly after onboarding.
+- TIMEZONES in utils_constants.ts replaced with IANA identifiers (Africa/Lagos, UTC, Europe/London, etc.) to match settings_WorkspaceSettings.tsx select values.
+- FRAMEWORKS in utils_constants.ts updated to match Settings options (NIST CSF added, NIST RMF removed, COBIT and ISO 27001 added).
+- INITIAL_DATA.timezone default changed from "WAT (UTC+1)" to "Africa/Lagos".
+- INDUSTRIES in settings_WorkspaceSettings.tsx updated to include "Oil & gas" matching wizard tile key.
+- Skip invites button wired to handleLaunch (was bare navigate("/"), caused full redirect loop back to wizard).
+- "Skip for now" label changed to "Skip invites" for accuracy.
+- Legend hint text added under Workspace name and Organization name fields in Step 1.
+- Risk owner names from Step 5 categories now saved to risk_owner lookup alongside category names in handleLaunch.
+- Launch animation: useEffect-driven cycling messages (buildLaunchSteps), launchSteps useState, progress bar fill. Steps are dynamically built from what the user actually filled in (logo, categories, invites). React 19 compliant: no ref reads during render.
+
+### Auth resilience
+- refresh_access_token now issues a fresh base token for accounts with no workspace_members rows. Fixes forced logout when access token expires mid-wizard.
+- GoogleSignInButton on Login and Register pages: navigator.onLine checked before triggering OAuth, googlePending state added (spinner + "Connecting to Google..." while popup is open), precise error messages for offline vs cancellation.
+
+### Workspace picker
+- WorkspacePicker fetches GET /api/v1/workspaces on mount and calls setWorkspaces from API response. No longer reads stale in-memory store.
+- routes_workspaces list endpoint now includes member role in each workspace entry.
+- fetching state prevents empty-workspace flash before API responds.
+
+### Settings form dirty state
+- WorkspaceSettings: key prop in pages_Settings.tsx tied to name|organization|industry. Forces clean remount when identity data changes.
+- WorkspaceSettings, RolesTab, AITab, BriefTab: post-save form sync to server response in mutation onSuccess. Prevents dirty banner immediately after save.
+- LookupEditorContent: key prop tied to lookups.updated_at. Post-save local state synced to server response.
+
+### Get Started drawer
+- Steps 7 (Brand your workspace) and 8 (Build your team) removed; both covered by onboarding wizard.
+- New step 3: Customise your risk matrix, pointing to /settings.
+- Step 2 description updated to acknowledge wizard-seeded categories.
+- TOTAL_STEPS corrected from 8 to 7.
+
+### Auth left panels
+- New CSS classes: auth-feature, auth-features, auth-feature-icon, auth-feature-title, auth-feature-sub added to src/index.css.
+- auth-left h2 size increased from 26px to 34px.
+- auth-left-footer updated: line-height added, content updated with legal registration info on all three pages.
+- Login left panel: "Pulse Portal" eyebrow, "Welcome back." headline, login-specific description, 3 feature rows (Clock, BarChart2, Activity icons).
+- Register left panel: "Risk Intelligence" eyebrow, brand pitch headline, 3 same feature rows.
+- Forgot password left panel: "Pulse Portal" eyebrow, "Forgot your password?" headline, 2 feature rows (ShieldCheck, Mail icons). Expiry copy corrected to 15 minutes (was 24 hours from design HTML, which was wrong).
+- No gradients added. No Tabler icons. Lucide only. Brand identity maintained.
+
+### Forgot password email fix
+- send_reset_email (synchronous Resend call) wrapped in asyncio.get_event_loop().run_in_executor() inside async forgot_password service. Event loop no longer blocked.
+- Token expiry confirmed as 15 minutes. Email body already correct. Left panel copy corrected.
+
+### Report Builder state persistence
+- New file: src/store/reportBuilderStore.ts. Zustand store (no persist) holds activeBlocks, settings, step, blockData, aiData.
+- hooks_useReports.ts: initializes useState from store on mount, syncs back to store in set() for all persistent fields, exposes reset() that clears both store and local state.
+- pages_ReportBuilder.tsx: "New report" button added to header with confirm dialog before reset.
+- State survives React Router navigation. Page reload resets store to defaults and loadSavedSettings() repopulates from API as before.
+
+### Files modified
+Backend: routes_workspaces.py, services_auth.py
+Frontend: pages_CreateWorkspace.tsx, utils_constants.ts, settings_WorkspaceSettings.tsx, settings_LookupEditor.tsx, pages_Settings.tsx, pages_WorkspacePicker.tsx, layout_GetStartedDrawer.tsx, pages_Login.tsx, pages_Register.tsx, pages_ForgotPassword.tsx, src_index.css, hooks_useReports.ts, pages_ReportBuilder.tsx
+New: src/store/reportBuilderStore.ts
+
+### Open items for next session
+- Manual browser QA: full onboarding wizard end-to-end with fresh account (register → wizard → dashboard → settings verify)
+- Verify FRONTEND_URL is set to https://app.smartrisksheets.com in Render environment (reset link goes to localhost if missing)
+- Module gating still unimplemented: require_module backend, frontend route guards, block selector, dashboard sections, LookupEditor tab, AI tab
+- Font swap pass in PDF (Arial/Georgia TTF replacing Helvetica/Times-Bold)
+- UptimeRobot ping on /api/health every 10 minutes
+- causeLinkRise missing from _compute_control_metrics return dict
+- ownerNudge missing from _build_weekly_digest return dict
+- SMARTRISK_V2_SETUP.md not updated to reflect APScheduler/MemoryJobStore decision
+- PDF visual QA: regenerate report and compare cover + executive dashboard side-by-side against SmartRisk (3).pdf reference — cover vertical position, pill chip, KPI strip, posture row, bullet density
+
+---
+
+### Session: August 28, 2026 — PDF Report Parity, Control Strength KPI, Email Wiring, Sender Identity
+
+**Completed:**
+
+#### PDF cover page parity
+- `Flowable` added to pdf_report.py imports.
+- `_PillChip` custom Flowable added: draws a rounded pill chip via `canvas.roundRect()`, replacing the rectangular Table-with-BOX chip. Reproduces GAS `border-radius:20px` pill treatment. Cannot be achieved with a ReportLab Table.
+- `has_cover` parameter added to `_make_canvas_cls`. `_draw_footer` now returns immediately on page 1 when cover is present, preventing the muted canvas footer text from layering over the cover's own navy footer bar.
+- Cover vertical composition fixed: `_meta_gap` computed dynamically as `frame_height - _top_est - _bot_est`. A4 portrait frame height = 265mm. `_top_est` = 90mm, `_bot_est` = 78mm (calibrated after first render at 57mm overshot by 16mm). Gap = 97mm, placing the metadata block at approximately 73% down the page, reproducing the GAS `margin-top: auto` result.
+- PageTemplate sequencing corrected: `NextPageTemplate("content")` moved before `PageBreak()` in `build_pdf`. The previous order placed `NextPageTemplate("content")` after `PageBreak()`, so the first content page was allocated to the cover template and received no navy header.
+
+#### PDF content width
+- `_make_doc` left and right margin changed from 20mm to 15mm. Source: GAS portrait CSS `@page{margin:18mm 15mm 22mm 15mm}`. Content width increases from 170mm to 180mm across all content pages. This is the root cause of KPI label wrapping and dashboard narrowness.
+
+#### PDF executive dashboard parity
+- `_kpi_table` restructured as a flat multi-row Table. Nested Table per KPI cell eliminated. Removes double-padding overhead (inner 10+6 + outer 4 = 20pt dead space per cell). LINEBEFORE applied to first column only, matching GAS single left-edge accent. Previous implementation applied LINEBEFORE inside every nested KPI table, producing a colored divider before every metric which is visually incorrect.
+- KPI value font size raised to 15pt (unit 9pt) after width fix provided sufficient space. Leading adjusted to 18pt.
+- `_render_executive_dashboard` KPI total width and posture colWidths updated from 170mm to 180mm.
+- Posture row padding reduced: TOPPADDING/BOTTOMPADDING 8→5pt, LEFTPADDING/RIGHTPADDING 12→8pt.
+- Inter-section Spacers reduced: 3mm→2mm between KPI row, posture row, and leadership section.
+- Bullet text fontSize reduced 11→9pt, leading tightened 15→12pt.
+- Posture label fontSize reduced 10→8pt. Posture value fontSize reduced 13→10pt.
+- Leadership heading fontSize reduced 10→8pt.
+
+#### Report data — Control Strength KPI
+- `control_effectiveness: int` field added to `RiskRow` dataclass in services_report.py.
+- `_fetch_risks` updated to read `control_effectiveness` from the ORM Risk model.
+- `compute_executive_dashboard` computes `_ctrl_strength` as the average of non-zero `control_effectiveness` values across risks in the date window. Color thresholded: green ≥75, amber ≥50, red <50. Mirrors GAS `ctrlEffToNum_` / `_ctrlStrength` logic. Control Strength inserted as fifth KPI, between High Risks and Avg Residual, matching GAS order. Executive dashboard now returns 6 KPIs.
+
+#### Report email — wiring and redesign
+- `from html import escape as _esc` added to services_email.py.
+- `_derive_bullets` extracted as a module-level function. Was previously inline in `_build_email_html`. Same GAS `buildEmailBullets_` fallback logic.
+- `_posture_cell` added as module-level HTML helper, accepts `last: bool` flag to suppress border-right on the final column.
+- `_build_email_html` rewritten. Signature gains `ai_data: dict` and `org_name: str`. KPI row driven from `executive-dashboard.kpis` (6 data-driven metrics with correct colors) when present; falls back to 4 hardcoded metrics from individual blocks for backward compatibility. Posture row (Status / Trend / Confidence) inserted between KPI strip and bullets when `executive-dashboard.posture` is present. Bullet priority chain: AI narrative from `ai_data["executive-dashboard"]` → computed `ed["bullets"]` → `_derive_bullets` fallback. Matches GAS `ed.bullets` priority at line 1543. `_esc()` wraps all user-sourced strings. Org name rendered as secondary header line when it differs from report title. Navy brand bar added at bottom.
+- `send_report_email` signature updated: `ai_data: dict` and `org_name: str` added as explicit parameters.
+- `routes_reports.py`: `ai_data=payload.ai_data` and `org_name=_org` added to `send_report_email` call. Both were already in scope.
+
+#### Email sender identity
+- `RESEND_FROM_EMAIL` updated in `.env` and Render environment to `SmartRisk Pulse <noreply@smartrisksheets.com>`. Smartrisksheets.com domain verified on Resend. RFC 5322 `Name <address>` format accepted directly by Resend in the from field. No code changes required.
+
+### Files modified
+Backend: app/services/pdf_report.py, app/services/report.py, app/services/email.py, app/api/v1/routes/reports.py
+Frontend: none
+New files: none
+Environment: RESEND_FROM_EMAIL updated on Render and local .env
+
+**Decisions recorded:** See SMARTRISK_V2_DECISIONS.md session entry for August 28, 2026 (PDF parity and email wiring)
 
 ### Google OAuth: Cloud Console setup decisions
 - External audience selected (not Internal). Internal restricts to single Google Workspace org; external with testing mode achieves same effect for team-only access during development. Test users list controls who can authenticate in testing mode.
@@ -1870,6 +1991,104 @@ Previous file was a single-form page (143 lines). Rebuilt as a 6-step wizard (~3
 - Vercel env vars scoped per environment: VITE_GOOGLE_CLIENT_ID set to production value under Production, staging value under Preview. Same key name, different values, Vercel injects correct one at build time.
 - GOOGLE_CLIENT_ID on Render: production backend only. If a staging backend service is created later, add staging client ID there too.
 - VITE_ prefix exposes client ID to browser bundle. This is by design and safe: Google OAuth client IDs are public-facing identifiers, not secrets.
+
+---
+
+### Foundations Phase: Stream A and B Prerequisites
+
+**Goal:** Lay the data and type foundations required for Stream A (Risk Register Enhancement) and Stream B (External Submission Link) without breaking any existing functionality.
+
+**Session date:** August 28, 2026
+
+**Migrations:**
+
+- [x] Migration 032: `root_cause`, `financial_exposure`, `linked_decision` added to `risks` table (3 separate `op.execute()` calls)
+- [x] Migration 033: `control_assertion_source` added to `risks` table
+- [x] Migration 034: `appetite_thresholds` table created with `tenant_id`, `category`, `threshold`, `rationale`, `set_by`, `set_at`, `updated_at` and `idx_appetite_thresholds_tenant_id` index
+
+**Backend:**
+
+- [x] `app/models/risk.py`: `root_cause`, `financial_exposure`, `linked_decision`, `control_assertion_source` columns added
+- [x] `app/models/appetite_threshold.py`: new model, `AppetiteThreshold`, composite unique on `(tenant_id, category)`
+- [x] `app/models/__init__.py`: `AppetiteThreshold` registered
+- [x] `app/schemas/risk.py`: `RiskCreate`, `RiskUpdate`, `RiskResponse` gain all four new fields; `RiskResponse` gains `control_freshness` as a Pydantic v2 `@computed_field` derived from `control_last_tested` (Unevidenced when null, Fresh/Aging/Stale by 15/30-day thresholds); `BulkImportRow.control_effectiveness` corrected from `le=100` to `le=5` (missed in August 17 decision)
+- [x] `app/schemas/appetite.py`: new schema file, `AppetiteThresholdUpsert` and `AppetiteThresholdResponse`
+- [x] `app/services/risk.py`: `create_risk` constructor maps `root_cause`, `financial_exposure`, `linked_decision`, `control_assertion_source`; `update_risk` unchanged (model_dump(exclude_unset=True) handles new fields automatically)
+
+**Frontend:**
+
+- [x] `src/types/risk.ts`: `RiskFreshness` gains `'Unevidenced'`; `Risk` interface gains `control_freshness`, `control_assertion_source`, `root_cause`, `financial_exposure`, `linked_decision`
+- [x] `src/utils/scoring.ts`: `freshnessClass` gains `'Unevidenced'` → `'freshness-unevidenced'`
+- [x] `src/index.css`: `.freshness-unevidenced` (slate-grey) and `.fresh-tip.unevidenced` added
+- [x] `src/components/risks/RiskTable.tsx`: `freshnessColor` and `FRESH_META` gain Unevidenced; residual cell badge switched from `r.freshness` to `r.control_freshness`
+
+**Residual risk formula corrected (this session):**
+
+- [x] `app/services/risk.py` `_score()`: `ce = (control_effectiveness or 0) / 5` (was `/100`)
+- [x] `src/utils/scoring.ts` `computeScore()`: `ce = (controlEffectiveness ?? 0) / 5` (was `/100`)
+- [x] `app/schemas/risk.py` `RiskUpdate.control_effectiveness`: corrected to `le=5` (was `le=100`, missed in August 17 decision)
+
+**Status:** Complete
+
+**Next session:** Stream A complete. See Stream A section below.
+
+---
+
+### Stream A: Risk Register Enhancement
+
+**Goal:** Appetite settings, register table redesign, Decision Required tracking, Add/Edit modal updates.
+
+**Session date:** August 28, 2026
+
+**Item 1: Appetite Settings tab**
+
+- [x] `app/services/appetite.py`: NEW — `list_appetites` and `upsert_appetite` (select-then-insert-or-update, db.flush() + db.refresh() convention)
+- [x] `app/api/v1/routes/appetite.py`: NEW — `GET /api/v1/appetite` (all roles), `PUT /api/v1/appetite` (Owner-only via `require_permission("manage_settings")`)
+- [x] `app/main.py`: appetite router imported and registered at `/api/v1`
+- [x] `src/types/settings.ts`: `AppetiteThreshold` and `AppetiteThresholdUpsert` interfaces added
+- [x] `src/services/appetite.ts`: NEW — `fetchAppetites` and `upsertAppetite`
+- [x] `src/hooks/useAppetite.ts`: NEW — TanStack Query hook, invalidates `['appetite']` and `['risks']` on save
+- [x] `src/components/settings/AppetiteSettings.tsx`: NEW — per-category rows with inline range slider (1-25), rationale textarea, Owner-only Edit button, `useToast` for feedback; header corrected from custom `apt-header` pattern to standard `settings-section` + `settings-title` + `muted small` matching all other settings tabs
+- [x] `src/pages/Settings.tsx`: `appetite` tab added between Risk Config and Users & Roles; `AppetiteSettings` imported and mounted
+- [x] `src/index.css`: `.apt-header*`, `.apt-row*`, `.apt-cat-name`, `.apt-meta`, `.apt-right`, `.apt-value*`, `.apt-edit-btn`, `.apt-panel*`, `.apt-slider-*`, `.apt-panel-actions` added
+
+**Item 2: Risk register table redesign**
+
+- [x] `src/types/risk.ts`: foundations fields applied (`RiskFreshness` gains `'Unevidenced'`; `Risk` interface gains `control_freshness`, `root_cause`, `financial_exposure`, `linked_decision`, `control_assertion_source`) — these were missing from the project snapshot despite being completed in the Foundations session
+- [x] `src/index.css`: `.apt-pill`, `.apt-pill-within`, `.apt-pill-near`, `.apt-pill-exceeds`, `.apt-pill-unset`, `.dec-linked`, `.dec-warn`, `.dec-days`, `.not-est` added
+- [x] `src/components/risks/RiskTable.tsx`: columns redesigned — Date Logged, Treatment, Residual (with freshness tooltip), AI Insights removed; Business Impact, Financial Exposure, Appetite, Decision Required added; `MOV_CFG`, `freshnessColor`, `parseAI`, `CONF_COLORS`, `STAT_COLORS`, `FRESH_META`, `daysSince` removed; `appetiteStatus`, `decisionDays`, `APT_PILL_CLS`, `APT_LABELS` added; `appetites?: AppetiteThreshold[]` prop added; `freshTip` state removed; `AppetiteThreshold` imported from `types/settings`
+- [x] `src/pages/RiskRegister.tsx`: `useAppetite` imported and called; `appetites` passed to `RiskTable`; Treatment filter `<select>` removed from filter bar JSX (state and query wiring retained)
+
+**Item 3: Decision Required tracking**
+
+- [x] `app/services/risk.py`: `undecided: bool | None = None` added to `list_risks`; filters `Risk.linked_decision.is_(None)` when True
+- [x] `app/api/v1/routes/risks.py`: `undecided: bool | None = Query(None)` added, passed to service
+- [x] `src/services/risks.ts`: `undecided?: boolean` added to `ListRisksParams`; wired to query string as `'true'`
+- [x] `src/pages/RiskRegister.tsx`: `filterUndecided` state added; undecided count query added (`['risks', 'undecided-count']`, page_size=1, reads `meta.total`); undecided button placed inside `.filters` div before its closing tag; `clearFilters` resets `filterUndecided`; `handleLinkDecision` added; `onLinkDecision` passed to `RiskDetailModal`; `key={selected?.id ?? 'none'}` applied to `RiskDetailModal` mount
+- [x] `src/components/risks/RiskDetailModal.tsx`: `useState` imported; `onLinkDecision?: (decision: string) => Promise<void>` prop added; `decisionDays` module-scope function added; `decisionText` and `linkSaving` state added; decision warning box rendered when `!risk.linked_decision` with inline link input gated by `onLinkDecision && canManage`; new grid fields: Last Tested, Assertion Source, Financial Exposure, Linked Decision (when set)
+- [x] `src/index.css`: `.btn-undecided`, `.btn-undecided:hover`, `.btn-undecided.active` (darker amber), `.decision-warn-box`, `.decision-warn-box-label`, `.decision-warn-box-msg` added; `.btn-undecided` gap set to 5px
+
+**Item 4: Add and Edit modal updates**
+
+- [x] `src/types/risk.ts`: `root_cause?`, `financial_exposure?`, `linked_decision?`, `control_assertion_source?` added to `RiskCreate`; `RiskUpdate` inherits via `Partial<RiskCreate>`
+- [x] `src/components/risks/RiskForm.tsx`: `RiskFormValues` gains `root_cause`, `financial_exposure`, `linked_decision`, `control_last_tested`, `control_assertion_source`; EMPTY defaults set; `handleSubmit` passes all five; JSX: Root Cause textarea after Description, Financial Exposure beside Business Impact (both span 6), control fields wrapped in `.form-section` card spanning 12 columns with nested `.row`, Last Tested and Assertion Source added inside section with note, Linked Decision text input before Comments
+- [x] `src/components/risks/EditRiskModal.tsx`: `initial` gains `root_cause`, `financial_exposure`, `linked_decision`, `control_last_tested`, `control_assertion_source` pre-populated from existing risk
+- [x] `src/index.css`: `.form-section`, `.form-section-title`, `.form-section-note` added
+
+**Status:** Complete
+
+**Known gaps carried forward:**
+
+- Manual browser QA of all Stream A changes outstanding before Stream B begins
+- `treatment` state variable and query wiring remain in `RiskRegister.tsx` (always resolves to `undefined`, no functional impact, cleanup deferred to next file touch)
+- `useEffect` import in `RiskDetailModal.tsx` is now unused after the key-prop reset replaced the effect-based reset. Remove on next file touch.
+- Stream B not started
+
+**Next session starts with:**
+
+1. Read `SMARTRISK_V2_SETUP.md`, `SMARTRISK_V2_BUILD.md`, `SMARTRISK_V2_DECISIONS.md` in full
+2. Manual browser QA of Stream A changes (Appetite Settings tab, new table columns, undecided button, decision warning in detail modal, new form fields and control section)
+3. Begin Stream B — External Submission Link (tokenised public form, submission_tokens and risk_submissions tables, triage queue, scoring and promotion flow, five submitter notifications, rate limiting)
 
 ---
 

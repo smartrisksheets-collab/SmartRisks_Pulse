@@ -1,14 +1,21 @@
 // src/components/risks/RiskDetailModal.tsx
 
+import { useState } from 'react';
 import type { Risk } from '../../types/risk';
 import { useCanDo } from '../../utils/permissions';
 
 interface Props {
-  open:     boolean;
-  risk:     Risk | null;
-  onClose:  () => void;
-  onEdit:   () => void;
-  onDelete: () => void;
+  open:              boolean;
+  risk:              Risk | null;
+  onClose:           () => void;
+  onEdit:            () => void;
+  onDelete:          () => void;
+  onLinkDecision?:   (decision: string) => Promise<void>;
+}
+
+function decisionDays(loggedAt: string | null | undefined): number {
+  if (!loggedAt) return 0;
+  return Math.floor((Date.now() - new Date(loggedAt).getTime()) / 86_400_000);
 }
 
 function levelBadgeClass(index: number | null): string {
@@ -25,8 +32,12 @@ function GridField({ label, value }: { label: string; value: string | number | n
   );
 }
 
-export default function RiskDetailModal({ open, risk, onClose, onEdit, onDelete }: Props) {
+export default function RiskDetailModal({ open, risk, onClose, onEdit, onDelete, onLinkDecision }: Props) {
   const canManage = useCanDo('manage_risks');
+  const [decisionText, setDecisionText] = useState('');
+  const [linkSaving,   setLinkSaving]   = useState(false);
+
+
   if (!open || !risk) return null;
 
   return (
@@ -47,6 +58,46 @@ export default function RiskDetailModal({ open, risk, onClose, onEdit, onDelete 
 
         <div className="modal-bd" style={{ overflowY: 'auto', flex: 1 }}>
 
+          {/* Decision warning — shown when no linked decision */}
+          {!risk.linked_decision && (
+            <div className="decision-warn-box">
+              <div className="decision-warn-box-label">
+                Linked decision <span style={{ fontWeight: 400, fontStyle: 'italic', textTransform: 'none' }}>optional</span>
+              </div>
+              {onLinkDecision && canManage && (
+                <div className="field" style={{ marginBottom: 0 }}>
+                  <input
+                    value={decisionText}
+                    onChange={e => setDecisionText(e.target.value)}
+                    placeholder="Which upcoming decision does this risk affect?"
+                  />
+                </div>
+              )}
+              {onLinkDecision && canManage && decisionText.trim() && (
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  style={{ marginTop: 8, padding: '6px 14px', fontSize: 12 }}
+                  disabled={linkSaving}
+                  onClick={async () => {
+                    setLinkSaving(true);
+                    try { await onLinkDecision(decisionText.trim()); }
+                    finally { setLinkSaving(false); }
+                  }}
+                >
+                  {linkSaving ? 'Saving…' : 'Link decision'}
+                </button>
+              )}
+              <div className="decision-warn-box-msg">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#b9762a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                  <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                </svg>
+                <p>No decision linked for {decisionDays(risk.logged_at)} days, flagged as undecided.</p>
+              </div>
+            </div>
+          )}
+
           {/* Two-column field grid */}
           <div className="sr-detail-grid">
             <GridField label="Category"          value={risk.category} />
@@ -60,7 +111,13 @@ export default function RiskDetailModal({ open, risk, onClose, onEdit, onDelete 
             <GridField label="Residual"          value={risk.residual != null ? Math.round(risk.residual) : null} />
             <GridField label="Freshness"         value={risk.freshness} />
             <GridField label="Controls"          value={risk.controls} />
-                        <GridField label="Control Eff."      value={risk.control_effectiveness != null ? `${risk.control_effectiveness}` : null} />
+            <GridField label="Control Eff."      value={risk.control_effectiveness != null ? `${risk.control_effectiveness}` : null} />
+            <GridField label="Last Tested"       value={risk.control_last_tested} />
+            <GridField label="Assertion Source"  value={risk.control_assertion_source} />
+            <GridField label="Financial Exposure" value={risk.financial_exposure} />
+            {risk.linked_decision && (
+              <GridField label="Linked Decision" value={risk.linked_decision} />
+            )}
           </div>
 
           {/* Description */}

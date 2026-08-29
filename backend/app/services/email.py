@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 from datetime import date
+from html import escape as _esc
 
 import resend
 
@@ -25,42 +26,14 @@ def _init() -> None:
     resend.api_key = settings.RESEND_API_KEY
 
 
-def _build_email_html(
-    title:      str,
-    block_data: dict,
-    today_str:  str,
-) -> str:
-    """
-    Builds a summary HTML email body matching the GAS generateEmailSummaryHtml_() design.
-    Brand: Navy #1F2854, Teal #01b88e. No gradients. Solid colors only.
-    Source: Reportservice.gs generateEmailSummaryHtml_() lines 1520-1566.
-    """
-    ei  = block_data.get("exposure-index") or block_data.get("exposure_index") or {}
-    rs  = block_data.get("risk-snapshot")  or block_data.get("risk_snapshot")  or {}
-    krc = block_data.get("key-risk-changes") or block_data.get("key_risk_changes") or {}
-    is_ = block_data.get("incident-stability") or block_data.get("incident_stability") or {}
-
+def _derive_bullets(ei: dict, rs: dict, krc: dict, is_: dict) -> list[str]:
+    """Fallback bullet derivation when no executive-dashboard or AI text is present.
+    Source: Reportservice.gs buildEmailBullets_() lines 1568-1583."""
+    bullets: list[str] = []
     score      = ei.get("score", 0)
-    health     = 100 - score
     high_count = rs.get("high_count") or rs.get("highCount", 0)
     new_high   = krc.get("new_high_risks") or krc.get("newHighRisks", 0)
     open_inc   = is_.get("open", 0)
-
-    kpis = [
-        ("Exposure Index", f"{score}/100",  "#1F2854"),
-        ("Risk Health",    f"{health}/100", "#10b981"),
-        ("High Risks",     str(high_count), "#ef4444"),
-        ("New High Risks", str(new_high),   "#f59e0b"),
-    ]
-    kpi_cells = "".join(
-        f'<td style="width:25%;padding:14px 8px;text-align:center;border-right:1px solid #e2e8f0;">'
-        f'<div style="font-size:22px;font-weight:700;color:{c};">{v}</div>'
-        f'<div style="font-size:11px;color:#64748b;margin-top:3px;">{l}</div>'
-        f'</td>'
-        for l, v, c in kpis
-    )
-
-    bullets: list[str] = []
     if score:
         bullets.append(f"Exposure index is {score}/100 ({ei.get('label', '')}).")
     if high_count:
@@ -76,29 +49,167 @@ def _build_email_html(
         bullets.append(f"{open_inc} open incident{s} requiring resolution.")
     if not bullets:
         bullets.append("Risk posture is stable. See the attached report for details.")
+    return bullets
+
+
+def _posture_cell(label: str, value: str, color: str, last: bool = False) -> str:
+    border = "" if last else "border-right:1px solid #e2e8f0;"
+    return (
+        f'<td style="width:33.33%;padding:8px 12px;text-align:center;{border}">'
+        f'<div style="font-size:9px;font-weight:700;color:#94a3b8;text-transform:uppercase;'
+        f'letter-spacing:.06em;margin-bottom:3px;">{_esc(label)}</div>'
+        f'<div style="font-size:12px;font-weight:700;color:{color};">{_esc(value)}</div>'
+        f'</td>'
+    )
+
+
+def _build_email_html(
+    title:      str,
+    block_data: dict,
+    ai_data:    dict,
+    org_name:   str,
+    today_str:  str,
+) -> str:
+    """
+    Builds a summary HTML email body.
+    KPI and bullet priority: executive-dashboard block → AI narrative → derived fallback.
+    Posture row (Status/Trend/Confidence) inserted when executive-dashboard data present.
+    Brand: Navy #1F2854, Teal #01b88e. No gradients. Solid colors only.
+    Source: Reportservice.gs generateEmailSummaryHtml_() lines 1520-1566.
+    """
+    ed  = block_data.get("executive-dashboard") or {}
+    ei  = block_data.get("exposure-index")      or block_data.get("exposure_index")  or {}
+    rs  = block_data.get("risk-snapshot")       or block_data.get("risk_snapshot")   or {}
+    krc = block_data.get("key-risk-changes")    or block_data.get("key_risk_changes") or {}
+    is_ = block_data.get("incident-stability")  or block_data.get("incident_stability") or {}
+
+    # ── KPI row ────────────────────────────────────────────────────────────────
+    # Use executive-dashboard kpis (6 data-driven metrics) when available.
+    # Fall back to 4 hardcoded metrics from individual blocks.
+    ed_kpis: list[dict] = ed.get("kpis") or []
+    if ed_kpis:
+        n   = len(ed_kpis)
+        pct = f"{100 / n:.2f}%"
+        kpi_cells = "".join(
+            f'<td style="width:{pct};padding:12px 6px;text-align:center;'
+            f'{"" if i == n - 1 else "border-right:1px solid #e2e8f0;"}">'
+            f'<div style="font-size:19px;font-weight:700;color:{_esc(k.get("color","#1F2854"))};">'
+            f'{_esc(str(k.get("value","")))}' 
+            f'<span style="font-size:10px;font-weight:400;color:#94a3b8;">'
+            f'{_esc(k.get("unit","") or "")}</span>'
+            f'</div>'
+            f'<div style="font-size:10px;color:#64748b;margin-top:2px;">{_esc(k.get("label",""))}</div>'
+            f'</td>'
+            for i, k in enumerate(ed_kpis)
+        )
+    else:
+        score      = ei.get("score", 0)
+        health     = 100 - score
+        high_count = rs.get("high_count") or rs.get("highCount", 0)
+        new_high   = krc.get("new_high_risks") or krc.get("newHighRisks", 0)
+        fallback_kpis = [
+            ("Exposure Index", f"{score}/100",  "#1F2854"),
+            ("Risk Health",    f"{health}/100", "#10b981"),
+            ("High Risks",     str(high_count), "#ef4444"),
+            ("New High Risks", str(new_high),   "#f59e0b"),
+        ]
+        kpi_cells = "".join(
+            f'<td style="width:25%;padding:12px 8px;text-align:center;'
+            f'{"" if i == 3 else "border-right:1px solid #e2e8f0;"}">'
+            f'<div style="font-size:21px;font-weight:700;color:{c};">{_esc(v)}</div>'
+            f'<div style="font-size:11px;color:#64748b;margin-top:3px;">{_esc(l)}</div>'
+            f'</td>'
+            for i, (l, v, c) in enumerate(fallback_kpis)
+        )
+
+    # ── Posture row ────────────────────────────────────────────────────────────
+    posture      = ed.get("posture") or {}
+    posture_html = ""
+    if posture.get("status") or posture.get("trend"):
+        trend       = posture.get("trend", "Stable")
+        trend_color = (
+            "#10b981" if trend == "Improving" else
+            "#ef4444" if trend == "Worsening" else
+            "#f59e0b"
+        )
+        posture_html = (
+            '<table style="width:100%;border-collapse:collapse;background:#f8faff;'
+            'border-bottom:1px solid #e2e8f0;">'
+            '<tr>'
+            + _posture_cell("Status",     posture.get("status", ""),     "#1F2854")
+            + _posture_cell("Trend",      trend,                          trend_color)
+            + _posture_cell("Confidence", posture.get("confidence", ""), "#1F2854", last=True)
+            + '</tr></table>'
+        )
+
+    # ── Bullets ────────────────────────────────────────────────────────────────
+    # Priority: AI narrative → executive-dashboard computed bullets → derived fallback.
+    # Matches GAS: ed.bullets takes priority over buildEmailBullets_().
+    ai_text = (ai_data or {}).get("executive-dashboard") or ""
+    if ai_text.strip():
+        bullets: list[str] = [b.strip() for b in ai_text.split("\n") if b.strip()]
+    elif ed.get("bullets"):
+        bullets = [str(b) for b in ed["bullets"] if b]
+    else:
+        bullets = _derive_bullets(ei, rs, krc, is_)
 
     bullet_rows = "".join(
-        f'<tr><td style="padding:5px 0;font-size:12px;color:#334155;border-bottom:1px solid #f1f5f9;">'
-        f'<span style="color:#01b88e;font-weight:700;margin-right:8px;">&#9679;</span>{b}'
+        f'<tr><td style="padding:6px 0;font-size:12px;color:#334155;'
+        f'border-bottom:1px solid #f1f5f9;line-height:1.5;">'
+        f'<span style="color:#01b88e;font-weight:700;margin-right:8px;">&#9679;</span>'
+        f'{_esc(b)}'
         f'</td></tr>'
         for b in bullets
     )
 
+    # ── Header secondary line ─────────────────────────────────────────────────
+    org_line = (
+        f'<div style="font-size:11px;color:rgba(255,255,255,.6);margin-top:2px;">'
+        f'{_esc(org_name)}</div>'
+        if org_name and org_name.strip() and org_name.strip() != title.strip()
+        else ""
+    )
+
     return (
-        '<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;margin:0;padding:0;background:#f1f5f9;">'
-        '<div style="max-width:600px;margin:24px auto;border-radius:10px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,.1);">'
+        '<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;margin:0;'
+        'padding:0;background:#f1f5f9;">'
+        '<div style="max-width:600px;margin:24px auto;border-radius:10px;'
+        'overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.08);">'
+
+        # Navy header
         '<div style="background:#1F2854;padding:24px 28px;">'
-        f'<div style="font-size:18px;font-weight:700;color:#fff;">{title}</div>'
-        f'<div style="font-size:11px;color:#94a3b8;margin-top:4px;">Generated: {today_str}</div>'
+        f'<div style="font-size:18px;font-weight:700;color:#fff;">{_esc(title)}</div>'
+        + org_line +
+        f'<div style="font-size:11px;color:#94a3b8;margin-top:4px;">'
+        f'Generated: {_esc(today_str)}</div>'
         '</div>'
-        f'<table style="width:100%;border-collapse:collapse;background:#fff;border-bottom:1px solid #e2e8f0;"><tr>{kpi_cells}</tr></table>'
+
+        # KPI strip
+        f'<table style="width:100%;border-collapse:collapse;background:#fff;'
+        f'border-bottom:1px solid #e2e8f0;"><tr>{kpi_cells}</tr></table>'
+
+        # Posture row (conditional)
+        + posture_html +
+
+        # Bullets section
         '<div style="background:#fff;padding:20px 28px;">'
-        '<div style="font-size:11px;font-weight:700;color:#1F2854;text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">Summary</div>'
+        '<div style="font-size:11px;font-weight:700;color:#1F2854;text-transform:uppercase;'
+        'letter-spacing:.06em;margin-bottom:10px;">Summary</div>'
         f'<table style="width:100%;border-collapse:collapse;">{bullet_rows}</table>'
         '</div>'
+
+        # Footer note
         '<div style="background:#f8faff;padding:14px 28px;border-top:1px solid #e2e8f0;">'
-        '<div style="font-size:11px;color:#64748b;">See the attached PDF for the full report.</div>'
+        '<div style="font-size:11px;color:#64748b;">'
+        'See the attached PDF for the full report.</div>'
         '</div>'
+
+        # Navy brand bar
+        '<div style="background:#1F2854;padding:10px 28px;">'
+        '<div style="font-size:10px;color:rgba(255,255,255,.4);text-align:center;">'
+        'SmartRisk Pulse &mdash; Confidential Risk Intelligence</div>'
+        '</div>'
+
         '</div></body></html>'
     )
 
@@ -108,6 +219,8 @@ async def send_report_email(
     subject:    str,
     title:      str,
     block_data: dict,
+    ai_data:    dict,
+    org_name:   str,
     pdf_bytes:  bytes,
     file_name:  str,
 ) -> None:
@@ -120,7 +233,7 @@ async def send_report_email(
         raise ValueError("RESEND_FROM_EMAIL is not configured")
 
     today_str  = f"{date.today().day} {date.today().strftime('%B %Y')}"
-    html_body  = _build_email_html(title, block_data, today_str)
+    html_body  = _build_email_html(title, block_data, ai_data, org_name, today_str)
 
     import base64
     pdf_b64 = base64.b64encode(pdf_bytes).decode()
@@ -328,12 +441,6 @@ def send_return_email(
 
 # ── Brief email (Phase 10) ────────────────────────────────────────────────
 # Source: BriefEmailService.gs _buildEmailHtml_ + daily-risk-brief.html template.
-
-def _esc(val: object) -> str:
-    return (str(val or "")
-            .replace("&", "&amp;").replace("<", "&lt;")
-            .replace(">", "&gt;").replace('"', "&quot;"))
-
 
 def _signal_icon(stype: str) -> str:
     icons = {"exposure_up": "↑", "exposure_down": "↓", "band_crossing": "▲",

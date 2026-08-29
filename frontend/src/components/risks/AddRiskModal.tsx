@@ -35,7 +35,7 @@ export default function AddRiskModal({ open, onClose, onSubmit }: Props) {
 
   return (
     <div className="modal-backdrop show" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal">
+      <div className="modal modal-tall">
         <div className="modal-hd">
           <h3 className="modal-title">Add Risk</h3>
           <button className="x" onClick={onClose}>✕</button>

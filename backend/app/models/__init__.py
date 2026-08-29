@@ -12,3 +12,7 @@ from app.models.lookup import Lookup
 from app.models.external_submission import ExternalSubmission
 from app.models.notification_pref import NotificationPref
 from app.models.feedback import Feedback
+from app.models.appetite_threshold import AppetiteThreshold
+from app.models.submission_token import SubmissionToken
+from app.models.risk_submission import RiskSubmission
+from app.models.rate_limit_counter import RateLimitCounter

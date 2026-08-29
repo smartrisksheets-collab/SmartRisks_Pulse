@@ -3,7 +3,7 @@
 export type RiskLevel = string; // display label set by workspace matrix config
 export type RiskTreatment  = 'Mitigate' | 'Transfer' | 'Accept' | 'Avoid';
 export type RiskMovement   = 'Increasing' | 'Improving' | 'Stable';
-export type RiskFreshness  = 'Fresh' | 'Aging' | 'Stale';
+export type RiskFreshness  = 'Fresh' | 'Aging' | 'Stale' | 'Unevidenced';
 export type MitigationStatus = 'Open' | 'In Progress' | 'Closed' | 'Accepted';
 
 export interface RiskQuota {
@@ -43,7 +43,12 @@ export interface Risk {
   target_date:          string | null;
   mitigation_status:    MitigationStatus | null;
   last_reviewed_at:     string | null;
-  control_last_tested:  string | null;
+  control_last_tested:      string | null;
+  control_freshness:        RiskFreshness;
+  control_assertion_source: string | null;
+  root_cause:               string | null;
+  financial_exposure:       string | null;
+  linked_decision:          string | null;
   control_test_result:  string | null;
   source:               string;
   created_at:           string;
@@ -66,8 +71,12 @@ export interface RiskCreate {
   target_date?:          string;
   mitigation_status?:    MitigationStatus;
   logged_at?:            string;
-  control_last_tested?:  string;
-  control_test_result?:  string;
+  control_last_tested?:      string;
+  control_test_result?:      string;
+  root_cause?:               string;
+  financial_exposure?:       string;
+  linked_decision?:          string;
+  control_assertion_source?: string;
 }
 
 export type RiskUpdate = Partial<RiskCreate>;

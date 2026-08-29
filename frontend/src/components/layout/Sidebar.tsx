@@ -20,8 +20,8 @@ const NAV: NavItem[] = [
   { label: 'Report Builder', path: '/reports',     Icon: BarChart2       },
   { label: 'Frameworks',     path: '/frameworks',  Icon: Grid2X2         },
   { label: 'Users',          path: '/users',       Icon: Users           },
-  { label: 'Audit Log',     path: '/audit',       Icon: ClipboardList   },
-  { label: 'Settings',      path: '/settings',    Icon: Settings        },
+  { label: 'Audit Log',      path: '/audit',       Icon: ClipboardList   },
+  { label: 'Settings',       path: '/settings',    Icon: Settings        },
   { label: 'Help',           path: '/help',        Icon: HelpCircle      },
 ];
 
@@ -55,8 +55,11 @@ export default function Sidebar() {
     setMobSidebarOpen(false);
   }
 
-  const isActive = (path: string) =>
-    path === '/' ? location.pathname === '/' : location.pathname.startsWith(path);
+  const isActive = (path: string) => {
+    if (path === '/') return location.pathname === '/';
+    if (path === '/risks') return location.pathname === '/risks';
+    return location.pathname.startsWith(path);
+  };
 
   return (
     <>

@@ -14,7 +14,7 @@ export function computeScore(
   impactScore:         number,
   controlEffectiveness: number | null | undefined,
 ): ScorePreview {
-  const ce       = (controlEffectiveness ?? 0) / 100;
+  const ce       = (controlEffectiveness ?? 0) / 5;
   const severity = likelihood * impactScore;
   const residual = Math.round(severity * (1 - ce) * 100) / 100;
 
@@ -58,9 +58,10 @@ export function movementClass(movement: string | null | undefined): string {
 
 export function freshnessClass(freshness: string | null | undefined): string {
   switch (freshness) {
-    case 'Fresh':  return 'freshness-fresh';
-    case 'Aging':  return 'freshness-aging';
-    case 'Stale':  return 'freshness-stale';
-    default:       return 'freshness-fresh';
+    case 'Fresh':       return 'freshness-fresh';
+    case 'Aging':       return 'freshness-aging';
+    case 'Stale':       return 'freshness-stale';
+    case 'Unevidenced': return 'freshness-unevidenced';
+    default:            return 'freshness-fresh';
   }
 }

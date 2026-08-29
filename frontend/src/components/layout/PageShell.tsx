@@ -28,6 +28,8 @@ function trialDaysRemaining(trial_expires_at: string | null): number | null {
   return Math.ceil((exp.getTime() - Date.now()) / 86_400_000);
 }
 
+import { MAILTO_QUOTE, MAILTO_DEMO } from '../../utils/constants';
+
 function TrialBanner() {
   const claims = useAuthStore(s => s.claims);
   const [dismissed, setDismissed] = useState(false);
@@ -52,6 +54,10 @@ function TrialBanner() {
       <div className="trial-warn-content">
         <div className="trial-warn-msg">{msg}</div>
         <div className="trial-warn-sub">{sub}</div>
+        <div className="trial-warn-actions">
+          <a href={MAILTO_QUOTE} className="trial-warn-action">Request a Quote</a>
+          <a href={MAILTO_DEMO}  className="trial-warn-action">Book a Custom Demo</a>
+        </div>
       </div>
       <button
         className="trial-warn-dismiss"

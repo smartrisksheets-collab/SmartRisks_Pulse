@@ -103,9 +103,10 @@ class RiskRow:
     treatment:        str
     residual:         float
     movement:         str
-    score_delta:      float
-    logged_at:        date | None
-    last_reviewed_at: date | None
+    score_delta:           float
+    control_effectiveness: int
+    logged_at:             date | None
+    last_reviewed_at:      date | None
 
 
 @dataclass
@@ -153,6 +154,7 @@ async def _fetch_risks(db: AsyncSession, tenant_id: UUID) -> list[RiskRow]:
             residual=_to_float(r.residual),  # type: ignore[arg-type]
             movement=str(r.movement or "Stable"),
             score_delta=_to_float(r.score_delta),  # type: ignore[arg-type]
+            control_effectiveness=int(r.control_effectiveness or 0),  # type: ignore[arg-type]
             logged_at=_parse_date(r.logged_at),  # type: ignore[arg-type]
             last_reviewed_at=_parse_date(r.last_reviewed_at),  # type: ignore[arg-type]
         ))
@@ -1030,12 +1032,25 @@ def compute_executive_dashboard(ctx: ReportContext) -> dict:
     elif dir_score == "stable":
         dir_health = "stable"
 
+    # Control Strength: average of non-zero control_effectiveness values.
+    # Mirrors GAS ctrlEffToNum_ / _ctrlStrength logic.
+    # GAS normalises against max lookup value (default 100), so raw int values
+    # stored on a 0-100 scale are used directly here.
+    _ctrl_vals     = [r.control_effectiveness for r in risks if r.control_effectiveness > 0]
+    _ctrl_strength = round(sum(_ctrl_vals) / len(_ctrl_vals)) if _ctrl_vals else 0
+    _ctrl_color    = (
+        "#10b981" if _ctrl_strength >= 75 else
+        "#f59e0b" if _ctrl_strength >= 50 else
+        "#ef4444"
+    )
+
     kpis = [
-        {"label": "Risk Health",      "value": exposure["health"],  "unit": "/100", "color": exposure["health_color"], "direction": dir_health, "prev": None},
-        {"label": "Exposure Index",   "value": exposure["score"],   "unit": "/100", "color": "#1F2854",                "direction": dir_score,  "prev": prev_exposure},
-        {"label": "Total Risks",      "value": snapshot["total"],   "unit": "",     "color": "#1F2854",                "direction": None,       "prev": None},
-        {"label": "High Risks",       "value": snapshot["high_count"], "unit": "", "color": "#ef4444",                "direction": dir_high,   "prev": prev_high},
-        {"label": "Avg Residual",     "value": snapshot["avg_residual"], "unit": "","color": "#64748b",               "direction": None,       "prev": None},
+        {"label": "Risk Health",      "value": exposure["health"],       "unit": "/100", "color": exposure["health_color"], "direction": dir_health, "prev": None},
+        {"label": "Exposure Index",   "value": exposure["score"],        "unit": "/100", "color": "#1F2854",                "direction": dir_score,  "prev": prev_exposure},
+        {"label": "Total Risks",      "value": snapshot["total"],        "unit": "",     "color": "#1F2854",                "direction": None,       "prev": None},
+        {"label": "High Risks",       "value": snapshot["high_count"],   "unit": "",     "color": "#ef4444",                "direction": dir_high,   "prev": prev_high},
+        {"label": "Control Strength", "value": _ctrl_strength,           "unit": "%",    "color": _ctrl_color,              "direction": None,       "prev": None},
+        {"label": "Avg Residual",     "value": snapshot["avg_residual"], "unit": "",     "color": "#64748b",                "direction": None,       "prev": None},
     ]
 
     trend_dir = (

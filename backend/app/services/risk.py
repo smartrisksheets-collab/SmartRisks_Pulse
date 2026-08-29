@@ -37,7 +37,7 @@ def _score(
     control_effectiveness: int | None,
     cfg: MatrixConfig | None = None,
 ) -> dict:
-    ce       = (control_effectiveness or 0) / 100
+    ce       = (control_effectiveness or 0) / 5
     severity = likelihood * impact_score
     residual = round(severity * (1 - ce), 2)
 
@@ -153,11 +153,12 @@ async def list_risks(
     treatment: str | None = None,
     owner: str | None = None,
     search: str | None = None,
+    undecided: bool | None = None,
 ) -> RiskListResponse:
     q = select(Risk).where(Risk.tenant_id == tenant_id)
 
     if risk_id:
-        q = q.where(func.upper(Risk.id) == risk_id.strip().upper())
+        q = q.where(func.upper(Risk.id).like(f"{risk_id.strip().upper()}%"))
     if category:
         q = q.where(Risk.category == category)
     if level:
@@ -173,6 +174,8 @@ async def list_risks(
             | func.lower(Risk.category).like(term)
             | func.lower(Risk.owner).like(term)
         )
+    if undecided is True:
+        q = q.where(Risk.linked_decision.is_(None))
 
     total_result = await db.execute(
         select(func.count()).select_from(q.subquery())
@@ -263,6 +266,10 @@ async def create_risk(
         last_reviewed_at=now,
         control_last_tested=payload.control_last_tested,
         control_test_result=payload.control_test_result or 'Not Tested',
+        control_assertion_source=payload.control_assertion_source,
+        root_cause=payload.root_cause,
+        financial_exposure=payload.financial_exposure,
+        linked_decision=payload.linked_decision,
     )
     db.add(risk)
     await db.flush()

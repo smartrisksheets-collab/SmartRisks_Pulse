@@ -1,4 +1,5 @@
 import { useAuthStore } from '../store/authStore';
+import { MAILTO_QUOTE, MAILTO_DEMO } from '../utils/constants';
 
 export default function PlanExpired() {
   const claims = useAuthStore(s => s.claims);
@@ -50,9 +51,10 @@ export default function PlanExpired() {
         </p>
 
         <div className="expired-actions">
-          <a href="mailto:info@smartrisksheets.com?subject=SmartRisk%20Plan%20Renewal" className="btn btn-navy">
-            Contact us to renew
-          </a>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
+            <a href={MAILTO_QUOTE} className="btn btn-navy">Request a Quote</a>
+            <a href={MAILTO_DEMO}  className="btn btn-secondary">Book a Custom Demo</a>
+          </div>
           <button className="expired-logout" onClick={handleLogout}>
             Sign out
           </button>
