@@ -271,28 +271,47 @@ async def register(db: AsyncSession, email: str, password: str, name: str) -> di
     existing = await db.scalar(select(Account).where(Account.email == email.lower()))
 
     if existing:
-        member_count = await db.scalar(
-            select(func.count()).where(WorkspaceMember.account_id == existing.id)
-        )
-        if member_count > 0:
-            raise DuplicateResourceError("An account with this email already exists. Please sign in.")
-
         if not existing.password_hash:
-            raise InvalidCredentialsError("This email is registered via an invite. Please use your invite link to set a password.")
+            raise InvalidCredentialsError(
+                "This email is registered via an invite. Please use your invite link to set a password."
+            )
         if not verify_password(password, str(existing.password_hash)):
-            raise InvalidCredentialsError("An account with this email exists. Check your password and sign in instead.")
+            raise InvalidCredentialsError(
+                "An account with this email already exists. Please sign in instead."
+            )
 
+        # Password correct — log them in regardless of workspace membership.
+        # If they have existing workspaces they land on the picker and can
+        # create a new workspace from there. If they have none, onboarding continues.
+        workspaces_raw = (await db.execute(
+            select(WorkspaceMember, Tenant)
+            .join(Tenant, Tenant.id == WorkspaceMember.tenant_id)
+            .where(WorkspaceMember.account_id == existing.id)
+            .where(WorkspaceMember.status == "ACTIVE")
+        )).all()
+        workspaces = [
+            {
+                "tenant_id": str(m.tenant_id),
+                "name":      str(t.name    or ""),
+                "role":      str(m.role    or ""),
+                "plan":      str(t.plan    or ""),
+                "modules":   list(t.modules or []),
+            }
+            for m, t in workspaces_raw
+        ]
         base_token = create_access_token({
-            "sub": str(existing.id),
-            "email": existing.email,
-            "workspaces": [],
+            "sub":        str(existing.id),
+            "email":      existing.email,
+            "workspaces": workspaces,
         })
-        refresh = create_refresh_token(str(existing.id), existing.token_version)  # type: ignore[arg-type]
+        refresh = create_refresh_token(
+            str(existing.id), existing.token_version  # type: ignore[arg-type]
+        )
         return {
-            "access_token": base_token,
-            "refresh_token": refresh,
-            "workspaces": [],
-            "incomplete_onboarding": True,
+            "access_token":        base_token,
+            "refresh_token":       refresh,
+            "workspaces":          workspaces,
+            "incomplete_onboarding": len(workspaces) == 0,
         }
 
     account = Account(
