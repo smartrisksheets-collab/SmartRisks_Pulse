@@ -442,12 +442,6 @@ def send_return_email(
 # ── Brief email (Phase 10) ────────────────────────────────────────────────
 # Source: BriefEmailService.gs _buildEmailHtml_ + daily-risk-brief.html template.
 
-def _esc(val: object) -> str:
-    return (str(val or "")
-            .replace("&", "&amp;").replace("<", "&lt;")
-            .replace(">", "&gt;").replace('"', "&quot;"))
-
-
 def _signal_icon(stype: str) -> str:
     icons = {"exposure_up": "↑", "exposure_down": "↓", "band_crossing": "▲",
              "control_fail": "ℹ", "control_overdue": "⏰", "incident": "⚠",
