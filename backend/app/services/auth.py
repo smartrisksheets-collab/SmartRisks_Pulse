@@ -123,7 +123,9 @@ async def login(db: AsyncSession, email: str, password: str) -> dict:
             return {"access_token": base_token, "refresh_token": refresh, "requires_pin": True, "workspaces": workspaces}
 
         token = _build_workspace_token(account, member, tenant)
-        refresh = create_refresh_token(str(account.id), account.token_version)  # type: ignore[arg-type]
+        refresh = create_refresh_token(
+            str(account.id), account.token_version, str(tenant.id)  # type: ignore[arg-type]
+        )
         return {"access_token": token, "refresh_token": refresh, "workspaces": workspaces}
 
     base_token = create_access_token({"sub": str(account.id), "email": account.email, "workspaces": workspaces})
@@ -154,7 +156,9 @@ async def select_workspace(db: AsyncSession, claims: dict, tenant_id: str) -> di
 
     account = await db.get(Account, account_id)
     token = _build_workspace_token(account, member, tenant)
-    refresh = create_refresh_token(str(account_id), account.token_version)  # type: ignore[arg-type]
+    refresh = create_refresh_token(
+        str(account_id), account.token_version, str(tenant.id)  # type: ignore[arg-type]
+    )
     return {"access_token": token, "refresh_token": refresh}
 
 
@@ -194,7 +198,9 @@ async def verify_pin_and_issue_token(db: AsyncSession, claims: dict, pin: str) -
 
     account = await db.get(Account, account_id)
     token = _build_workspace_token(account, member, tenant)
-    refresh = create_refresh_token(str(account_id), account.token_version)  # type: ignore[arg-type]
+    refresh = create_refresh_token(
+        str(account_id), account.token_version, str(tenant.id)  # type: ignore[arg-type]
+    )
     return {"access_token": token, "refresh_token": refresh}
 
 
@@ -218,21 +224,44 @@ async def refresh_access_token(db: AsyncSession, refresh_token: str) -> dict:
         .where(WorkspaceMember.status == "ACTIVE")
     )
     rows = result.all()
-    if not rows:
-        # Account exists but has no workspaces yet, user is mid-onboarding.
-        # Issue a fresh base token so they can complete workspace creation.
+
+    workspaces = [
+        {"tenant_id": str(t.id), "name": t.name, "role": m.role, "plan": t.plan, "modules": t.modules}
+        for m, t in rows
+    ]
+
+    # The refresh token records the workspace it was granted for. Only reissue a
+    # workspace token when that workspace is still an active membership.
+    prior_tenant_id = claims.get("active_tenant_id")
+    match = None
+    if prior_tenant_id:
+        for m, t in rows:
+            if str(t.id) == str(prior_tenant_id):
+                match = (m, t)
+                break
+
+    if match is None:
+        # No established workspace (mid-onboarding, awaiting PIN, or awaiting
+        # workspace selection). Issue a base token only, never guess a tenant.
         new_refresh = create_refresh_token(str(account_id), account.token_version)  # type: ignore[arg-type]
         base_token = create_access_token({
             "sub": str(account_id),
             "email": str(account.email or ""),
-            "workspaces": [],
+            "workspaces": workspaces,
         })
-        return {"access_token": base_token, "refresh_token": new_refresh}
+        return {
+            "access_token": base_token,
+            "refresh_token": new_refresh,
+            "workspaces": workspaces,
+            "requires_workspace_select": len(workspaces) > 0,
+        }
 
-    member, tenant = rows[0]
+    member, tenant = match
     token = _build_workspace_token(account, member, tenant)
-    new_refresh = create_refresh_token(str(account_id), account.token_version)  # type: ignore[arg-type]
-    return {"access_token": token, "refresh_token": new_refresh}
+    new_refresh = create_refresh_token(
+        str(account_id), account.token_version, str(tenant.id)  # type: ignore[arg-type]
+    )
+    return {"access_token": token, "refresh_token": new_refresh, "workspaces": workspaces}
 
 
 async def forgot_password(db: AsyncSession, email: str, frontend_url: str) -> dict:
@@ -381,7 +410,9 @@ async def google_auth(db: AsyncSession, access_token: str) -> dict:
             return {"access_token": base_token, "refresh_token": refresh, "requires_pin": True, "workspaces": workspaces}
 
         token = _build_workspace_token(account, member, tenant)
-        refresh = create_refresh_token(str(account.id), account.token_version)  # type: ignore[arg-type]
+        refresh = create_refresh_token(
+            str(account.id), account.token_version, str(tenant.id)  # type: ignore[arg-type]
+        )
         return {"access_token": token, "refresh_token": refresh, "workspaces": workspaces}
 
     base_token = create_access_token({"sub": str(account.id), "email": account.email, "workspaces": workspaces})

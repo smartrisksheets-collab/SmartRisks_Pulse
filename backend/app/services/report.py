@@ -1032,12 +1032,16 @@ def compute_executive_dashboard(ctx: ReportContext) -> dict:
     elif dir_score == "stable":
         dir_health = "stable"
 
-    # Control Strength: average of non-zero control_effectiveness values.
-    # Mirrors GAS ctrlEffToNum_ / _ctrlStrength logic.
-    # GAS normalises against max lookup value (default 100), so raw int values
-    # stored on a 0-100 scale are used directly here.
+    # Control Strength: average of rated control_effectiveness values, expressed
+    # as a percentage. control_effectiveness is a 1-5 integer in V2, so the
+    # average is scaled by 20 to map 1-5 onto 0-100. This matches the register
+    # (services/risk.py) and the dashboard (services/dashboard.py), both of
+    # which apply the same * 20 normalisation.
+    # GAS equivalent: ctrlEffToNum_ in DashboardService.gs, which normalises
+    # with (n / max) * 100 against its own 0-100 lookup scale.
+    # Risks with 0 (unrated) are excluded so they do not drag the average down.
     _ctrl_vals     = [r.control_effectiveness for r in risks if r.control_effectiveness > 0]
-    _ctrl_strength = round(sum(_ctrl_vals) / len(_ctrl_vals)) if _ctrl_vals else 0
+    _ctrl_strength = round(sum(_ctrl_vals) / len(_ctrl_vals) * 20) if _ctrl_vals else 0
     _ctrl_color    = (
         "#10b981" if _ctrl_strength >= 75 else
         "#f59e0b" if _ctrl_strength >= 50 else

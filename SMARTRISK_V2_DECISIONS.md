@@ -1203,3 +1203,80 @@ Raised by: Treatment is no longer a table column. Keeping a filter for a column 
 Chosen: Remove the Treatment `<select>` from the filter bar JSX. Retain `treatment` state, `setTreatment`, and all query param wiring.
 Alternatives rejected: Full removal of all seven treatment references — correct long-term, deferred to avoid scope creep.
 Why: The state always resolves to `undefined` in query params via `|| undefined`. No query is affected. The cleanup is a one-line find-replace on next RiskRegister touch.
+
+---
+
+## Session 20: August 31, 2026 — Stream B: External Submission System + Infrastructure
+
+**Decision: Tokenised public submission form, not workspace_id query param (August 31, 2026)**
+Raised by: Phase 9 already built `/external/submit/risk?workspace_id=` which takes `workspace_id` from the request body. This is a security gap — any caller who knows a workspace UUID can submit.
+Chosen: Stream B uses a token system. `submission_tokens` table stores a URL-safe 32-byte entropy token (via `secrets.token_urlsafe(32)`) per workspace. The public form URL is `/submit/{token}`. `workspace_id` is derived exclusively from the token record in the database. It is never accepted from the request body.
+Alternatives rejected: Using workspace UUID as the URL param — guessable, enumerable. Using a short code — lower entropy, brute-forceable.
+Why: A 32-byte URL-safe token has ~256 bits of entropy. It is not guessable, not enumerable, and scoped to one workspace. Even if leaked, it can be revoked without affecting existing submissions. Phase 9 endpoints remain untouched for backward compatibility.
+
+**Decision: Rate limiting via DB counter table, not slowapi memory (August 31, 2026)**
+Raised by: The public submission endpoint cannot use the existing slowapi limiter which uses in-process memory. Render cold starts reset memory, and multiple instances cannot share in-memory state.
+Chosen: `rate_limit_counters` table with a single atomic `INSERT ON CONFLICT DO UPDATE` statement using a CASE expression to reset the window when expired. Two counters per submission: `ip:{ip}` (10/hour) and `token:{token}` (100/day). Atomic upsert runs in one round trip, no race condition.
+Alternatives rejected: Redis/Upstash — new paid dependency. Slowapi with Redis backend — same dependency. Postgres advisory locks — more complex than an atomic upsert.
+Why: The DB is already present, already connected, already survives restarts. The atomic upsert handles concurrent requests correctly without locks. Consistent with the project principle of not adding new infrastructure dependencies.
+
+**Decision: Token revocation is permanent (soft-revoke only) (August 31, 2026)**
+Raised by: Product decision needed on whether revoked tokens can be reactivated.
+Chosen: Permanent soft-revoke. `revoked_at` timestamp is set and never cleared. No unrevoke endpoint exists. The revoke confirmation modal explicitly states this is permanent and that a new link must be created if collection needs to resume.
+Why: Reactivation creates confusion about which submissions came in during the revoked window. Permanent revocation is cleaner operationally and easier to audit. Tokens are cheap to create.
+
+**Decision: Triage queue and Token Manager accessed from Risk Register toolbar, not sidebar (August 31, 2026)**
+Raised by: Initial design added both as sidebar nav items. After review, two extra sidebar items for a single-role admin function made the nav feel like a settings menu.
+Chosen: Bell icon in Risk Register toolbar navigates to `/risks/triage` (Submissions Inbox). Link icon navigates to `/risks/submission-links` (Token Manager). Both pages have a back button to Risk Register. The routes remain protected (RequireModule risk + RequirePermission manage_risks). No sidebar entries.
+Alternatives rejected: Sidebar entries with badge — adds clutter for all users including analysts who do not manage tokens. Modal instead of page — triage queue needs enough space for detail, combobox search, and action panels.
+Why: The toolbar already had both icons with related functions (Phase 9). Stream B naturally evolves those icons into richer destinations. No new UI affordances needed. Sidebar stays clean.
+
+**Decision: `promoted_risk_id` on risk_submissions typed as VARCHAR not UUID (August 31, 2026)**
+Raised by: Runtime DBAPIError — asyncpg rejected `R-003` as input for a UUID column. Risk IDs in this project follow the pattern R-{year}-{sequence} or R-{number}, not UUID format.
+Chosen: Migration 040 alters the column type from UUID to VARCHAR. `RiskSubmission` ORM model updated to `Column(String)`. `RiskSubmissionResponse` Pydantic schema updated to `str | None`.
+Why: Risk IDs are human-readable strings, not UUIDs. The schema was written to mirror the risks table which uses a composite PK (id VARCHAR, tenant_id UUID), but `promoted_risk_id` references the string `id` not a UUID.
+
+**Decision: Risk ID filter in list_risks changed to prefix ILIKE (August 31, 2026)**
+Raised by: Merge combobox in triage queue enables searching by risk ID. Typing `R-` returned no results because the filter used exact match (`==`).
+Chosen: `func.upper(Risk.id).like(f"{risk_id.strip().upper()}%")` replaces the exact match. This also improves the Risk Register's own ID filter bar — partial IDs now return matching results.
+Alternatives rejected: Full-text search on ID — overkill. Client-side filtering — requires fetching all risks first.
+Why: Prefix match is the natural behaviour for an ID search field. A user typing `R-0` expects to see `R-001`, `R-002`, `R-003`. Prefix ILIKE delivers this with a single indexed query.
+
+**Decision: ensure_category auto-registers promoted categories to lookups (August 31, 2026)**
+Raised by: When a submission is promoted with a category typed free-form in the promote panel, that category may not exist in the workspace lookups. The edit modal's category dropdown would not show the promoted category on next edit, and the appetite threshold would not match.
+Chosen: `ensure_category(db, workspace_id, category)` added to lookup service. Called after `create_risk` in the promote service. Case-insensitive check prevents near-duplicates (e.g. "operational" vs "Operational"). Appends only if not already present.
+Why: A promoted risk must remain fully editable. If the category is not in lookups, the edit modal cannot display it correctly and appetite matching fails. Auto-registration at promotion time is the correct single point of control.
+
+**Decision: Appetite category matching made case-insensitive on frontend (August 31, 2026)**
+Raised by: Appetite status showed "No threshold" for risks whose category string differed in casing from the appetite category string (e.g. risk has "operational", appetite has "Operational").
+Chosen: `a.category.trim().toLowerCase() === (r.category ?? '').trim().toLowerCase()` replaces the exact `===` match in `RiskTable.tsx`.
+Why: Case differences can enter the system via CSV import, promoted submissions, or legacy data. Case-insensitive matching is the correct behaviour for a category label comparison. The ensure_category function prevents future mismatches at the write level; this fix covers existing data.
+
+**Decision: Triage reroute blocked at backend if incident module not enabled (August 31, 2026)**
+Raised by: Risk-only workspaces do not have the incident module. The reroute outcome creates an incident. Allowing reroute on a risk-only workspace would write to the incidents table in violation of module gating.
+Chosen: Route-level check: `if "incident" not in claims.get("modules", [])` raises HTTP 400 before the service is called. Frontend hides the button entirely when `!hasIncident` (reads from `useAuthStore`).
+Why: Double guard — UI and backend. The UI guard prevents confusion (the button never appears). The backend guard is the security control. Module gating must be enforced at the boundary, not assumed from UI state.
+
+**Decision: CORS multi-origin via comma-separated FRONTEND_URL (August 31, 2026)**
+Raised by: Staging setup requires both `pulse.smartrisksheets.com` and `staging-pulse.smartrisksheets.com` to be allowed origins on the shared Render backend.
+Chosen: `FRONTEND_URL` environment variable accepts a comma-separated string. `allowed_origins` property on Settings splits on commas and strips whitespace. `CORSMiddleware` receives `settings.allowed_origins` (a list) instead of `[settings.FRONTEND_URL]`.
+Alternatives rejected: Two separate env vars — adds complexity. Wildcard CORS — unacceptable security posture for a production SaaS.
+Why: Single env var, no code change needed when adding more origins. Works on Render without a redeploy beyond the env var change.
+
+**Decision: Staging/production split using one shared backend (Option A) (August 31, 2026)**
+Raised by: Team size is one tester. Full environment isolation (two Supabase projects, two Render services) is more setup than the team needs right now.
+Chosen: One Supabase, one production Render service (deploys from main). A second Render staging service (deploys from staging branch) was also set up. Both frontends point at the same backend via shared env vars. Git workflow: all work on staging branch, Vercel auto-builds staging-pulse.smartrisksheets.com, tester reviews, PR to main triggers production deploy.
+Staging domains: `staging-pulse.smartrisksheets.com` (not `staging.pulse` — Cloudflare could not resolve multi-dot subdomain).
+Alternatives rejected: Option B (full environment isolation) — correct long term, overkill for one tester. Direct push to main — no QA gate before production.
+Why: Lowest operational overhead for the current team size. The staging Render service gives the backend branch isolation without a second database. Can graduate to full isolation when the team grows.
+
+**Decision: Register flow allows invited users to create their own workspace (August 31, 2026)**
+Raised by: An invited user (whose email is already in accounts + workspace_members) received a DuplicateResourceError when attempting to register a new account to create their own workspace.
+Chosen: Remove the hard block on `member_count > 0`. Instead, verify the password. If correct, return a login token with their existing workspaces. They land on the workspace picker where the Create Workspace button already exists. If incorrect, return InvalidCredentialsError. The workspace creation limit check counts `Tenant.created_by == account_id` (owned workspaces only), so invited memberships do not count against the limit.
+Alternatives rejected: Keeping the DuplicateResourceError and adding a UI message — leaves the user with no path to create their own workspace. Creating a second account with a different email — incorrect, violates the one-account-per-email model.
+Why: The distinction between owning a workspace and being a member of one is already correctly modelled via `Tenant.created_by` and `WorkspaceMember.role`. The registration flow needed to respect this distinction rather than conflating account existence with workspace ownership.
+
+**Decision: Trial expiry banners include Request a Quote and Book a Custom Demo mailto CTAs (August 31, 2026)**
+Raised by: Users seeing the trial expiry banner had no in-app path to act on it. The existing text only informed; it did not convert.
+Chosen: Two pre-filled mailto links added to both the 7-day amber banner and the 2-day red banner in PageShell TrialBanner, and to the PlanExpired page. `MAILTO_QUOTE` and `MAILTO_DEMO` constants live in `src/utils/constants.ts`. Each mailto pre-fills subject and a structured body (organisation name, contact name, phone number fields). Clicking opens the user's default email client with the message ready to send to `info@smartrisksheets.com`.
+Why: The lowest-friction conversion path from inside a SaaS trial is a pre-filled email. No new page, no form, no backend. The user clicks, reviews the pre-filled message, and sends.

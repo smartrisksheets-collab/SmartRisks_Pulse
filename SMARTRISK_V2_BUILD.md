@@ -15,9 +15,9 @@ At the end of every session Claude outputs a fresh version of this file with all
  
 ---
  
-**Phase:** Stream A complete. All four Stream A items delivered: Appetite Settings tab, Risk Register table redesign, Decision Required tracking, Add and Edit modal updates.
-**Status:** Session 19, August 28, 2026: Stream A fully built. See session log below.
-**Next action:** Begin next session by reading SMARTRISK_V2_SETUP.md, SMARTRISK_V2_DECISIONS.md, then this file. First task: manual browser QA of all Stream A changes. Second task: begin Stream B — External Submission Link.
+**Phase:** Stream B complete. External Submission System fully built and pushed to staging.
+**Status:** Session 20, August 31, 2026: Stream B fully built. Staging/production split configured. See session log below.
+**Next action:** Begin next session by reading SMARTRISK_V2_SETUP.md, SMARTRISK_V2_DECISIONS.md, then this file. First task: staging QA with tester across all Stream B surfaces (public form, submissions inbox, token manager, promotion flow). Second task: address any bugs found in staging QA.
  
 ---
  
@@ -2079,16 +2079,115 @@ Environment: RESEND_FROM_EMAIL updated on Render and local .env
 
 **Known gaps carried forward:**
 
-- Manual browser QA of all Stream A changes outstanding before Stream B begins
 - `treatment` state variable and query wiring remain in `RiskRegister.tsx` (always resolves to `undefined`, no functional impact, cleanup deferred to next file touch)
 - `useEffect` import in `RiskDetailModal.tsx` is now unused after the key-prop reset replaced the effect-based reset. Remove on next file touch.
-- Stream B not started
+- File attachment upload on public form (ExternalSubmit.tsx) is UI-only. Supabase Storage presigned URL endpoint not yet built. `attachment_url` always null until built.
+- Escalation scheduler job for submissions with no triage action after 5 working days not yet built. Deferred to Phase 16 hardening.
+- Duplicate detection in triage detail is word-match only (crude). Full-text similarity deferred.
+- `PendingSubmissionsModal` and `ExternalLinkModal` are now dead code (replaced by TriageQueue and TokenManager pages). Remove on next file touch.
+- `usePendingCount` from `useExternalSubmissions` is no longer called anywhere. Remove on next file touch.
+- Manual browser QA of Stream B on staging outstanding.
 
 **Next session starts with:**
 
 1. Read `SMARTRISK_V2_SETUP.md`, `SMARTRISK_V2_BUILD.md`, `SMARTRISK_V2_DECISIONS.md` in full
-2. Manual browser QA of Stream A changes (Appetite Settings tab, new table columns, undecided button, decision warning in detail modal, new form fields and control section)
-3. Begin Stream B — External Submission Link (tokenised public form, submission_tokens and risk_submissions tables, triage queue, scoring and promotion flow, five submitter notifications, rate limiting)
+2. Staging QA of Stream B with tester: public form submission, acknowledgement email, triage inbox, accept and promote, merge, reroute, close, token revocation
+3. Address any bugs found during staging QA
+
+---
+
+### Stream B: External Submission System
+
+**Goal:** Tokenised public submission form, triage queue, token management, rate limiting, five outcome notification emails, promotion to risk register.
+
+**Session date:** August 31, 2026
+
+**Migrations (035-040):**
+
+- [x] Migration 035: `submission_tokens` table (id, workspace_id, token UNIQUE, label, department, issued_by, issued_at, expires_at, revoked_at, submission_count)
+- [x] Migration 036: `risk_submissions` table (id, workspace_id, token_id, reference, submitter fields, description, cause, affects, suggested_category, existing_controls, suggested_action, submitter_urgency, attachment_url, status, triage fields, promoted_risk_id, submitted_at, submitter_ip)
+- [x] Migration 037: `source_submission_id UUID` nullable column added to `risks`
+- [x] Migration 038: `rate_limit_counters` table (key VARCHAR PK, window_start, count, updated_at)
+- [x] Migration 039: indexes on all four new tables
+- [x] Migration 040: `promoted_risk_id` type corrected from UUID to VARCHAR (risk IDs are strings like R-003, not UUIDs)
+- [x] All six migrations run clean against local Docker Postgres
+- [x] Raw SQL from upgrade() blocks run clean in Supabase SQL editor
+
+**Backend — models:**
+
+- [x] `app/models/submission_token.py`: NEW — SubmissionToken ORM model
+- [x] `app/models/risk_submission.py`: NEW — RiskSubmission ORM model, `promoted_risk_id` typed as String not UUID
+- [x] `app/models/rate_limit_counter.py`: NEW — RateLimitCounter ORM model
+- [x] `app/models/risk.py`: `source_submission_id = Column(PG_UUID(as_uuid=True))` added
+- [x] `app/models/__init__.py`: SubmissionToken, RiskSubmission, RateLimitCounter registered
+
+**Backend — schemas:**
+
+- [x] `app/schemas/submission.py`: NEW — SubmissionTokenCreate, SubmissionTokenResponse, TokenResolveResponse, PublicSubmitRequest (with honeypot field excluded from serialisation), PublicSubmitResponse, RiskSubmissionListItem, RiskSubmissionResponse, TriageMergeRequest, TriageRerouteRequest, TriageCloseRequest, PromoteRequest. `promoted_risk_id` typed as `str | None` not UUID.
+
+**Backend — services:**
+
+- [x] `app/services/submission.py`: NEW — `_check_rate_limit` (atomic INSERT ON CONFLICT upsert, raises ValueError on limit exceeded), `_get_token_record`, `_token_is_active`, `_generate_reference` (SUB-{year}-{zfill(4)}), `_init_resend`, `_send_acknowledgement`, `_send_outcome_email`, `create_token`, `list_tokens`, `revoke_token` (permanent soft-revoke), `resolve_token_for_form` (neutral error for invalid/expired/revoked), `create_submission` (honeypot check, rate limit, reference generation, token submission_count increment), `get_pending_count`, `list_pending`, `get_submission`, `get_duplicate_candidates` (word-match ILIKE), `_get_sub_or_404`, `triage_accept`, `triage_merge` (appends to target risk comments), `triage_reroute` (creates incident via incident_svc), `triage_close`, `promote` (creates risk via risk_svc, links source_submission_id, calls ensure_category)
+- [x] `app/services/lookup.py`: `ensure_category` added — case-insensitive check, appends only if not present
+- [x] `app/services/risk.py`: `risk_id` filter changed from exact `==` to prefix `ILIKE '{value}%'` for better partial ID search
+
+**Backend — routes:**
+
+- [x] `app/api/v1/routes/submissions.py`: NEW — public endpoints (GET/POST `/submissions/form/{token}`, no JWT); token management (POST/GET `/submissions/tokens`, POST `/submissions/tokens/{token_id}/revoke`); triage (GET count/list/detail/duplicates, POST accept/merge/reroute/close/promote). All triage routes pass `triaged_by_id = UUID(claims["sub"])` and `triaged_by_email = claims["email"]`. Reroute blocked with 400 if incident module not in claims. Rate limit ValueError caught as 429.
+- [x] `app/main.py`: submissions router registered at `/api/v1`, CORS changed from `[settings.FRONTEND_URL]` to `settings.allowed_origins`
+- [x] `app/core/config.py`: `allowed_origins` property added, splits `FRONTEND_URL` on commas
+
+**Backend — fixes:**
+
+- [x] `app/services/auth.py`: `register()` fixed — invited users (member_count > 0) no longer get hard-blocked with DuplicateResourceError. Password verified, if correct user is logged in and returned to workspace picker where they can create their own workspace.
+- [x] `app/services/email.py`: duplicate `_esc` function at line 445 removed (ruff F811 — shadowed `from html import escape as _esc` at line 13)
+
+**Frontend — types, services, hooks:**
+
+- [x] `src/types/submission.ts`: NEW — TriageStatus, SubmissionType, SubmitterUrgency, SubmissionToken, RiskSubmissionListItem, RiskSubmission, TokenResolveResponse, SubmissionTokenCreate, TriageMergePayload, TriageNotePayload, PromotePayload
+- [x] `src/services/submissions.ts`: NEW — all API calls at `/api/v1/submissions/...`
+- [x] `src/hooks/useSubmissions.ts`: NEW — useTokens, useCreateToken, useRevokeToken, useTriagePendingCount (refetchInterval 60s), useTriageQueue, useSubmission, useDuplicates, useTriageAccept (with reset() on catch), useTriageMerge, useTriageReroute, useTriageClose, usePromote (invalidates risks on success)
+
+**Frontend — pages:**
+
+- [x] `src/pages/ExternalSubmit.tsx`: NEW — public form, unauthenticated, uses `.sf-` CSS design system, 6-section layout (About You, What are you reporting, Tell us about it, What is already being done, How pressing, Footer), honeypot field, minimum time-on-page bot check, incident amber callout, success state with reference, invalid state, WhatHappensNext panel, Brandbar. React 19 compliant (useRef init moved to effect, setState only in async callbacks).
+- [x] `src/pages/TriageQueue.tsx`: NEW — Submissions Inbox page, table with pending count, detail modal (modal-submission class, sub-pills, sub-meta, sub-field/sub-label/sub-value, duplicate candidates panel), action buttons with native title tooltips, accept/merge/reroute/close/promote panels, live risk search combobox in merge panel (useQuery with prefix ILIKE for IDs, keyword search for descriptions, page_size 10, onMouseDown selection, merge-preview card), back button to Risk Register, module guard hides Reroute button on risk-only workspaces
+- [x] `src/pages/TokenManager.tsx`: NEW — Submission Links page, table (label, department, submissions count, issued, expires, status pill, copy link, revoke), create modal, revoke confirmation modal with permanent revocation warning, back button to Risk Register
+
+**Frontend — wiring:**
+
+- [x] `src/App.tsx`: `/submit/:token` public route (ExternalSubmit, outside PageShell), `/risks/triage` and `/risks/submission-links` protected routes (RequireModule risk + RequirePermission manage_risks)
+- [x] `src/layout/Sidebar.tsx`: Triage Queue and Submission Links removed from NAV array, Inbox/Link2 imports removed, useTriagePendingCount removed, badge rendering removed, isActive fix for `/risks` exact match retained
+- [x] `src/pages/RiskRegister.tsx`: usePendingCount replaced with useTriagePendingCount, bell icon navigates to `/risks/triage`, link icon navigates to `/risks/submission-links`, ExternalLinkModal and PendingSubmissionsModal removed, unused claims/useAuth removed
+- [x] `src/layout/PageShell.tsx`: MAILTO_QUOTE and MAILTO_DEMO CTAs added to TrialBanner for all 7-day warning days (not just urgent 2-day)
+- [x] `src/pages/PlanExpired.tsx`: Request a Quote and Book a Custom Demo buttons replace single "Contact us to renew" link
+- [x] `src/utils/constants.ts`: MAILTO_QUOTE and MAILTO_DEMO pre-filled mailto constants added
+
+**Frontend — CSS:**
+
+- [x] `src/index.css`: `.modal-tall` modifier (max-height, flex column, form child flex, modal-bd scroll); `.sf-` design system (sf-page, sf-wrap, sf-brandbar, sf-mark, sf-head, sf-form, sf-sect, sf-sect-num, sf-field, sf-input, sf-grid2, sf-choices, sf-choice, sf-urg, sf-callout variants, sf-upload, sf-foot, sf-submit, sf-privacy, sf-err, sf-next, sf-success, sf-invalid, sf-dept-static); triage status pills (triage-pending/accepted/merged/rerouted/closed); urgency pills (urgency-now/soon/no_rush); token manager (token-url, token-revoked); submission inbox modal (modal-submission, sub-pills, sub-meta, sub-meta-email, sub-field, sub-label, sub-value, sub-actions-bar, sub-action-panel, sub-action-title); merge combobox (merge-combo, merge-dropdown, merge-option, merge-option-id, merge-option-desc, merge-option-empty, merge-preview, merge-preview-id, merge-preview-desc); trial warn actions (trial-warn-actions, trial-warn-action per colour variant); `.filters .btn-undecided { padding: 10px 12px !important }` alignment fix; `.filter-action` removed (replaced by `.field` wrapper with empty label)
+
+**Infrastructure — staging/production split:**
+
+- [x] `staging` branch created from `main`, pushed to GitHub
+- [x] `.github/workflows/ci.yml`: `staging` branch added to push triggers (was `main` and `develop`)
+- [x] Vercel: `staging-pulse.smartrisksheets.com` domain added, connected to Preview environment
+- [x] Vercel: `VITE_GOOGLE_CLIENT_ID` split — Production value (production OAuth client), Preview value scoped to `staging` branch (staging OAuth client `376784100329-jcs6...`)
+- [x] Google Cloud Console: new OAuth 2.0 client `SmartRisk Pulse - Staging` created with `https://staging-pulse.smartrisksheets.com` origin and redirect
+- [x] Google Cloud Console: new OAuth 2.0 client `SmartRisk Pulse - Production` created with `https://pulse.smartrisksheets.com` origin and redirect
+- [x] Render: `FRONTEND_URL` updated to comma-separated `https://pulse.smartrisksheets.com,https://staging-pulse.smartrisksheets.com`
+- [x] Render: staging backend service created pointing at `staging` branch (separate deploy from production)
+- [x] Cloudflare: `staging-pulse` CNAME added pointing to `d25e8c5cfc65b041.vercel-dns-017.com`, proxy disabled
+
+**Status:** Complete. Pushed to staging. Awaiting staging QA.
+
+**Next session starts with:**
+
+1. Read `SMARTRISK_V2_SETUP.md`, `SMARTRISK_V2_BUILD.md`, `SMARTRISK_V2_DECISIONS.md` in full
+2. Confirm staging-pulse.smartrisksheets.com is live and DNS has fully propagated
+3. Run staging QA with tester: public form end-to-end, all four triage outcomes, token create/revoke, promotion to register
+4. Fix any bugs found in QA
+5. Once QA passes, merge staging to main and confirm production deployment
 
 ---
 

@@ -4,6 +4,7 @@ import { useAuthStore } from '../../store/authStore';
 import { useAuth } from '../../hooks/useAuth';
 import { useSettings } from '../../hooks/useSettings';
 import { useSettingsStore } from '../../store/settingsStore';
+import { roleLabel } from '../../utils/roles';
 // useCanDo not needed here — claims used directly in nav filter
 import {
   LayoutDashboard, FileText, ShieldAlert,
@@ -113,7 +114,7 @@ export default function Sidebar() {
           <div className="pill" style={{ overflow: 'hidden' }}>
             <div className="status-dot active" />
             <span style={{ fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {claims?.role ?? 'Analyst'} · {claims?.plan ?? 'Trial'}
+              {roleLabel(claims?.role) || 'Analyst'} · {claims?.plan ?? 'Trial'}
             </span>
           </div>
           <div className="sidebar-copy">

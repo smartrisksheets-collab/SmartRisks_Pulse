@@ -101,6 +101,15 @@ export interface BulkImportRow {
   mitigation_plan?:      string;
   comments?:             string;
   logged_at?:            string;
+  owner_email?:              string;
+  target_date?:              string;
+  mitigation_status?:        string;
+  control_last_tested?:      string;
+  control_test_result?:      string;
+  control_assertion_source?: string;
+  root_cause?:               string;
+  financial_exposure?:       string;
+  linked_decision?:          string;
 }
 
 export interface BulkImportError {
