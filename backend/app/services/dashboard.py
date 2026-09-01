@@ -31,6 +31,9 @@ from app.schemas.dashboard import (
     SnapshotDelta,
 )
 from app.services.snapshot import get_snapshot_delta
+import logging
+
+logger = logging.getLogger(__name__)
 
 _MONTH = literal_column("'month'")
 _DAYS_DEFAULT = 90
@@ -41,9 +44,19 @@ _TREND_MONTHS = 6
 
 
 async def _run(fn, *args):
-    """Run a query function in its own isolated session for parallel execution."""
-    async with AsyncSessionLocal() as session:
-        return await fn(session, *args)
+    """Run a query function in its own isolated session for parallel execution.
+
+    Returns None if the query raises. The thirteen dashboard queries are
+    independent, so one failure should degrade a single card rather than
+    returning a 500 for the whole page. The exception is logged with the
+    function name so a silently missing section is still traceable.
+    """
+    try:
+        async with AsyncSessionLocal() as session:
+            return await fn(session, *args)
+    except Exception:
+        logger.exception("dashboard query failed: %s", getattr(fn, "__name__", fn))
+        return None
 
 
 async def get_dashboard(
@@ -86,21 +99,33 @@ async def get_dashboard(
 
     # _build_attention is synchronous and needs kpis + incident_health,
     # so it runs after the gather resolves.
-    attention = _build_attention(kpis, incident_health)  # type: ignore[arg-type]
+    # _run returns None when a query fails, so every field falls back to its
+    # empty form. Each sub-schema declares defaults on all fields, so the
+    # no-arg constructors below are valid and the response contract is
+    # unchanged: the frontend still receives a fully shaped object and a
+    # failed query renders as one empty card rather than a 500.
+    kpis            = kpis            or KPISummary()
+    incident_health = incident_health or IncidentHealthSummary()
+    total_incidents = total_incidents or TotalIncidentsSummary()
+    lifecycle       = lifecycle       or IncidentLifecycle()
+    avg_resolution  = avg_resolution  or IncidentResolution()
+    snapshot_delta  = snapshot_delta  or SnapshotDelta()
+
+    attention = _build_attention(kpis, incident_health)
 
     return DashboardResponse(
         kpis=kpis,
-        risks_by_level=risks_by_level,
-        risks_by_category=risks_by_category,
-        top_risks=top_risks,
-        top_open_incidents=top_open_incidents,
-        residual_trend=residual_trend,
-        incident_velocity=incident_velocity,
+        risks_by_level=risks_by_level or {},
+        risks_by_category=risks_by_category or {},
+        top_risks=top_risks or [],
+        top_open_incidents=top_open_incidents or [],
+        residual_trend=residual_trend or [],
+        incident_velocity=incident_velocity or [],
         incident_health=incident_health,
         total_incidents=total_incidents,
         lifecycle=lifecycle,
         avg_resolution=avg_resolution,
-        activity_feed=activity_feed,
+        activity_feed=activity_feed or [],
         attention=attention,
         snapshot_delta=snapshot_delta,
     )

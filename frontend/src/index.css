@@ -978,7 +978,11 @@ tr.row-flash { animation: rowFlash 2.2s ease; }
 .sr-split-label   { font-size: 11px; color: #64748b; }
 .sr-split-value   { font-size: 24px; font-weight: 800; letter-spacing: -.02em; color: #1F2854; }
 
-.sr-intel      { font-size: 12px; padding: 6px 10px; border-radius: 999px; width: fit-content; margin-top: 14px; }
+/* Pushed to the foot of the card. The Control Signal card has less content
+   than its three siblings, so the pill would otherwise float mid-card with
+   dead space beneath it. margin-top: auto consumes the free space in the
+   flex column and aligns the pill with the bottom of the other cards. */
+.sr-intel      { font-size: 12px; padding: 6px 10px; border-radius: 999px; width: fit-content; margin-top: auto; padding-top: 6px; }
 .sr-intel.good { background: #ecfdf5; color: #047857; }
 .sr-intel.warn { background: #fef3c7; color: #b45309; }
 .sr-intel.bad  { background: #fee2e2; color: #b91c1c; }
