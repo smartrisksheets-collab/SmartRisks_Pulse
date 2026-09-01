@@ -101,7 +101,7 @@ export default function RiskDetailModal({ open, risk, onClose, onEdit, onDelete,
           {/* Two-column field grid */}
           <div className="sr-detail-grid">
             <GridField label="Category"          value={risk.category} />
-            <GridField label="Owner"             value={risk.owner} />
+            <GridField label="Dept/Risk Owner"   value={risk.owner} />
             <GridField label="Date Logged"       value={risk.logged_at} />
             <GridField label="Last Reviewed"     value={risk.last_reviewed_at?.slice(0, 10)} />
             <GridField label="Likelihood"        value={risk.likelihood} />

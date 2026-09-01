@@ -188,7 +188,12 @@ function ActionPlanModal({ open, onClose, insight, assignedOwners, onSetOwner }:
           <div className="ap-action-list">
             {insight.action_items.map((item: ActionItem, idx: number) => (
               <div key={idx} className="ap-action-item">
-                <div className="ap-action-num">{item.sentence_num}</div>
+                {/* Display position, not sentence_num. sentence_num is a stable
+                    identity for the summary sentence this action came from and
+                    has gaps when a sentence is omitted for missing data, so it
+                    would show a list starting at 2 on a new workspace. It stays
+                    the key for owner assignment below. */}
+                <div className="ap-action-num">{idx + 1}</div>
                 <div className="ap-action-body">
                   <div className="ap-action-source">{item.source_label}</div>
                   <div className="ap-action-title">{item.title}</div>
@@ -371,7 +376,7 @@ function DistributionModal({
           <button className="dl-modal-x md" onClick={onClose}>✕</button>
         </div>
         {chartData.length > 0 ? (
-          <ResponsiveContainer width="100%" height={Math.max(200, chartData.length * 36)}>
+          <ResponsiveContainer width="100%" height={Math.max(320, chartData.length * 52)}>
             <BarChart data={chartData} layout="vertical" margin={{ top: 0, right: 16, bottom: 0, left: 0 }}>
               <XAxis type="number" tick={{ fontSize: 11, fill: 'var(--muted)' }} allowDecimals={false} />
               <YAxis type="category" dataKey="name" tick={{ fontSize: 12, fill: 'var(--text)' }} width={120} />

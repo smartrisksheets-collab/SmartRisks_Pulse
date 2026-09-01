@@ -92,20 +92,23 @@ export default function RiskForm({ editId, initial, submitLabel, loading, error,
       treatment:             v.treatment,
       likelihood:            v.likelihood,
       impact_score:          v.impact_score,
-      primary_impact:        v.primary_impact   || undefined,
-      controls:              v.controls         || undefined,
-      control_effectiveness: v.control_effectiveness || undefined,
-      mitigation_plan:       v.mitigation_plan  || undefined,
-      comments:              v.comments         || undefined,
-      owner_email:           v.owner_email      || undefined,
-      target_date:           v.target_date      || undefined,
+      // Text fields send null when cleared, never undefined. undefined is
+      // dropped by JSON.stringify, so the backend's exclude_unset=True would
+      // read the field as "not being changed" and keep the old value.
+      primary_impact:        v.primary_impact           || null,
+      controls:              v.controls                 || null,
+      control_effectiveness: v.control_effectiveness    || undefined,
+      mitigation_plan:       v.mitigation_plan          || null,
+      comments:              v.comments                 || null,
+      owner_email:           v.owner_email              || null,
+      target_date:           v.target_date              || null,
       mitigation_status:     v.mitigation_status,
-      logged_at:             v.logged_at               || undefined,
-      root_cause:            v.root_cause              || undefined,
-      financial_exposure:    v.financial_exposure       || undefined,
-      linked_decision:       v.linked_decision          || undefined,
-      control_last_tested:   v.control_last_tested      || undefined,
-      control_assertion_source: v.control_assertion_source || undefined,
+      logged_at:             v.logged_at                || undefined,
+      root_cause:            v.root_cause               || null,
+      financial_exposure:    v.financial_exposure       || null,
+      linked_decision:       v.linked_decision          || null,
+      control_last_tested:   v.control_last_tested      || null,
+      control_assertion_source: v.control_assertion_source || null,
     });
   }
 
@@ -140,9 +143,9 @@ export default function RiskForm({ editId, initial, submitLabel, loading, error,
 
           {/* Owner */}
           <div className="field" style={{ gridColumn: 'span 3' }}>
-            <label>Owner {req}</label>
+            <label>Dept/Risk Owner {req}</label>
             <select value={v.owner} onChange={f('owner')} required>
-              <option value="">— Select Owner —</option>
+              <option value="">— Select Dept/Risk Owner —</option>
               {owners.map(o => <option key={o} value={o}>{o}</option>)}
               {v.owner && !owners.includes(v.owner) && (
                 <option value={v.owner}>{v.owner}</option>
@@ -235,7 +238,8 @@ export default function RiskForm({ editId, initial, submitLabel, loading, error,
           <div className="form-section" style={{ gridColumn: 'span 12' }}>
             <p className="form-section-title">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/>
+                <circle cx="12" cy="12" r="3"/>
+                <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/>
               </svg>
               Control effectiveness assessment
             </p>

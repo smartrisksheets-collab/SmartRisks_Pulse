@@ -1,6 +1,8 @@
 // src/components/incidents/IncidentStatCards.tsx
 
 import type { IncidentStats } from '../../types/incident';
+import { formatMoneyCompact } from '../../utils/format';
+import { useSettingsStore } from '../../store/settingsStore';
 
 interface Props {
   stats:   IncidentStats | null;
@@ -8,6 +10,8 @@ interface Props {
 }
 
 export default function IncidentStatCards({ stats, loading }: Props) {
+  const currency = useSettingsStore(s => s.currency);
+
   if (loading || !stats) {
     return (
       <div className="im-top-strip">
@@ -23,14 +27,7 @@ export default function IncidentStatCards({ stats, loading }: Props) {
   const { health, totals, lifecycle, resolution } = stats;
   const healthColor = health.label === 'Healthy' ? '#047857' : health.label === 'At Risk' ? '#f59e0b' : '#dc2626';
 
-  const fmtImpact = (v: string | null) => {
-    if (!v) return '₦0';
-    const n = parseFloat(v);
-    if (isNaN(n)) return '₦0';
-    if (n >= 1_000_000) return `₦${(n / 1_000_000).toFixed(2)}M`;
-    if (n >= 1_000)     return `₦${(n / 1_000).toFixed(0)}k`;
-    return `₦${n.toLocaleString()}`;
-  };
+  const fmtImpact = (v: string | null) => formatMoneyCompact(v, currency);
 
   const slaTarget = 5;
   const mttr = resolution.avg_days;

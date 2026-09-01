@@ -3,6 +3,9 @@
 // import { useState } from 'react';
 import type { Risk } from '../../types/risk';
 import type { AppetiteThreshold } from '../../types/settings';
+import { formatDate, formatExposure } from '../../utils/format';
+import { useSettingsStore } from '../../store/settingsStore';
+
 
 interface Props {
   risks:        Risk[];
@@ -49,7 +52,11 @@ const APT_LABELS: Record<string, string> = {
   within: 'Within', near: 'Near', exceeds: 'Exceeds',
 };
 
+
+
 export default function RiskTable({ risks, loading, onView, flashId, aiFlashIds, selectedIds, onToggle, onToggleAll, appetites }: Props) {
+  const currency = useSettingsStore(s => s.currency);
+
   if (loading && !risks.length) {
     return (
       <div className="table-wrap">
@@ -82,14 +89,16 @@ export default function RiskTable({ risks, loading, onView, flashId, aiFlashIds,
               />
             </th>
             <th style={{ width: 90 }}>Risk ID</th>
+            <th style={{ width: 110 }}>Date Logged</th>
             <th>Description</th>
-            <th style={{ width: 130 }}>Owner</th>
+            <th style={{ width: 130 }}>Dept/Risk Owner</th>
             <th style={{ width: 140 }}>Business Impact</th>
             <th style={{ width: 70, textAlign: 'center' }}>Severity</th>
             <th style={{ width: 90 }}>Level</th>
+            <th style={{ width: 80, textAlign: 'center' }}>Residual</th>
             <th style={{ width: 120 }}>Financial Exposure</th>
             <th style={{ width: 100, background: 'rgba(1,184,142,.06)' }}>Appetite</th>
-            <th style={{ width: 120 }}>Decision Required</th>
+            <th style={{ width: 120 }}>Decision</th>
           </tr>
         </thead>
         <tbody id="riskBody">
@@ -125,9 +134,16 @@ export default function RiskTable({ risks, loading, onView, flashId, aiFlashIds,
                   </span>
                 </td>
 
+                {/* Date Logged */}
+                <td className="date-col" style={{ fontSize: 12, color: 'var(--muted)' }}>
+                  {formatDate(r.logged_at)}
+                </td>
+
                 {/* Description */}
-                <td style={{ maxWidth: 220 }}>
-                  <span style={{ fontWeight: 600, fontSize: 13 }}>{r.description ?? '—'}</span>
+                <td className="risk-desc-cell">
+                  <span className="risk-desc-text" title={r.description ?? ''}>
+                    {r.description ?? '—'}
+                  </span>
                 </td>
 
                 {/* Owner */}
@@ -146,9 +162,16 @@ export default function RiskTable({ risks, loading, onView, flashId, aiFlashIds,
                   <span className={`badge ${levelBadgeClass(r.level_index)}`}>{r.level ?? '—'}</span>
                 </td>
 
+                {/* Residual */}
+                <td style={{ textAlign: 'center', fontWeight: 700 }}>
+                  {r.residual != null ? Math.round(r.residual) : '—'}
+                </td>
+
                 {/* Financial Exposure */}
                 <td style={{ fontSize: 12 }}>
-                  {r.financial_exposure ?? <span className="not-est">Not estimated</span>}
+                  {r.financial_exposure
+                    ? formatExposure(r.financial_exposure, currency)
+                    : <span className="not-est">Not estimated</span>}
                 </td>
 
                 {/* Appetite */}

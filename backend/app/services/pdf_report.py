@@ -1168,7 +1168,7 @@ def _render_risk_ownership(data: dict, ai_text: str | None) -> list:
     if not owners:
         return out
 
-    rows = [["Owner", "High Risks", "Total", "Avg Residual", "Top Category"]] + [
+    rows = [["Dept/Risk Owner", "High Risks", "Total", "Avg Residual", "Top Category"]] + [
         [
             Paragraph(o.get("owner", ""), _S["body"]),
             Paragraph(str(o.get("high_count", 0)), ParagraphStyle(

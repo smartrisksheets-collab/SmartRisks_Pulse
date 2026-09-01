@@ -62,21 +62,24 @@ export interface RiskCreate {
   treatment:             RiskTreatment;
   likelihood:            number;
   impact_score:          number;
-  primary_impact?:       string;
-  controls?:             string;
+  // Nullable fields send null when cleared. undefined means "leave unchanged",
+  // null means "clear this value". The backend's exclude_unset=True depends on
+  // the distinction, so it must survive in the type.
+  primary_impact?:       string | null;
+  controls?:             string | null;
   control_effectiveness?: number;
-  mitigation_plan?:      string;
-  comments?:             string;
-  owner_email?:          string;
-  target_date?:          string;
+  mitigation_plan?:      string | null;
+  comments?:             string | null;
+  owner_email?:          string | null;
+  target_date?:          string | null;
   mitigation_status?:    MitigationStatus;
   logged_at?:            string;
-  control_last_tested?:      string;
-  control_test_result?:      string;
-  root_cause?:               string;
-  financial_exposure?:       string;
-  linked_decision?:          string;
-  control_assertion_source?: string;
+  control_last_tested?:      string | null;
+  control_test_result?:      string | null;
+  root_cause?:               string | null;
+  financial_exposure?:       string | null;
+  linked_decision?:          string | null;
+  control_assertion_source?: string | null;
 }
 
 export type RiskUpdate = Partial<RiskCreate>;
@@ -101,6 +104,15 @@ export interface BulkImportRow {
   mitigation_plan?:      string;
   comments?:             string;
   logged_at?:            string;
+  owner_email?:              string;
+  target_date?:              string;
+  mitigation_status?:        string;
+  control_last_tested?:      string;
+  control_test_result?:      string;
+  control_assertion_source?: string;
+  root_cause?:               string;
+  financial_exposure?:       string;
+  linked_decision?:          string;
 }
 
 export interface BulkImportError {

@@ -175,6 +175,15 @@ class BulkImportRow(BaseModel):
     mitigation_plan: str | None       = None
     comments: str | None              = None
     logged_at: date | None            = None
+    owner_email: str | None                = None
+    target_date: date | None               = None
+    mitigation_status: str | None          = None
+    control_last_tested: date | None       = None
+    control_test_result: str | None        = None
+    control_assertion_source: str | None   = None
+    root_cause: str | None                 = None
+    financial_exposure: str | None         = None
+    linked_decision: str | None            = None
 
     @field_validator('category', 'description', 'owner', 'treatment', mode='before')
     @classmethod

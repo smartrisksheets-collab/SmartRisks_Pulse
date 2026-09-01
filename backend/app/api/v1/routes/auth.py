@@ -13,7 +13,13 @@ from app.services import invite as invite_service
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-_COOKIE_OPTS = dict(httponly=True, secure=True, samesite="lax", max_age=60 * 60 * 24 * 7)
+_COOKIE_OPTS = dict(
+    httponly=True,
+    secure=True,
+    samesite="none",
+    path="/",
+    max_age=60 * 60 * 24 * 7,
+)
 
 
 def _set_refresh(response: Response, result: dict) -> None:
@@ -89,7 +95,7 @@ async def refresh(
 
 @router.post("/logout")
 async def logout(response: Response):
-    response.delete_cookie("refresh_token")
+    response.delete_cookie("refresh_token", path="/", secure=True, httponly=True, samesite="none")
     return {"data": {"message": "Logged out"}, "error": None, "meta": {}}
 
 

@@ -4,6 +4,7 @@ import { apiGet, apiPost } from '../services/api';
 import { useAuthStore } from '../store/authStore';
 import type { WorkspaceInfo } from '../types/auth';
 import type { ModuleKey, PlanStage, UserRole } from '../types/api';
+import { roleLabel } from '../utils/roles';
 
 export default function WorkspacePicker() {
   const navigate = useNavigate();
@@ -86,7 +87,7 @@ export default function WorkspacePicker() {
               <div className="workspace-card-name">{ws.name}</div>
               <div className="workspace-card-meta">
                 <span className="badge">{ws.plan}</span>
-                <span>{ws.role}</span>
+                <span>{roleLabel(ws.role)}</span>
               </div>
             </button>
           ))}

@@ -553,6 +553,15 @@ async def bulk_import(
                 mitigation_plan=row.mitigation_plan,
                 comments=row.comments,
                 logged_at=row.logged_at,
+                owner_email=row.owner_email,
+                target_date=row.target_date,
+                mitigation_status=row.mitigation_status,
+                control_last_tested=row.control_last_tested,
+                control_test_result=row.control_test_result,
+                control_assertion_source=row.control_assertion_source,
+                root_cause=row.root_cause,
+                financial_exposure=row.financial_exposure,
+                linked_decision=row.linked_decision,
             )
             await create_risk(db, tenant_id, create_payload, user_email, cfg)
             imported += 1

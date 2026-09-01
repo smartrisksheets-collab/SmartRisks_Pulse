@@ -552,6 +552,14 @@ table thead tr:hover th { background: #1F2854 !important; color: #ffffff !import
 
 tbody td { padding: 12px; border-bottom: 1px solid var(--line); vertical-align: top; color: var(--text); }
 tbody td.date-col { white-space: nowrap; font-variant-numeric: tabular-nums; letter-spacing: .01em; }
+
+/* Risk register description cell. Truncated to one line so the wider column
+   set still fits; full text is available in the risk detail modal. */
+tbody td.risk-desc-cell { max-width: 200px; }
+.risk-desc-text {
+  display: block; font-weight: 600; font-size: 13px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 tbody tr:hover td { background: var(--bg-secondary); }
 tbody tr:last-child td { border-bottom: none; }
 

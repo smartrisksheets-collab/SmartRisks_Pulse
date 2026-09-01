@@ -8,7 +8,8 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone, date
 
-from sqlalchemy import select
+import httpx
+from sqlalchemy import select, text
 
 from app.db.session import AsyncSessionLocal
 from app.models.tenant import Tenant
@@ -82,6 +83,88 @@ async def job_recycle_purge() -> None:
                 await purge_expired(db)
     except Exception:
         logger.exception("job_recycle_purge failed")
+
+
+# ── job: orphaned logo sweep ───────────────────────────────────────────────
+
+_ORPHAN_LOGO_SQL = text(
+    """
+    SELECT o.name
+    FROM storage.objects o
+    WHERE o.bucket_id = 'workspace-logos'
+      AND o.created_at < now() - interval '1 day'
+      AND NOT EXISTS (
+          SELECT 1 FROM tenants t
+          WHERE t.logo_url LIKE '%' || o.name
+      )
+    ORDER BY o.created_at
+    LIMIT 200
+    """
+)
+
+
+async def job_orphan_logo_sweep() -> None:
+    """
+    Delete workspace logo files no tenant references.
+    Runs at 03:00 UTC on Sundays.
+
+    Direct DELETE on storage.objects is blocked by Supabase's protect_delete()
+    trigger, so removal goes through the Storage API using the same request
+    shape as services.settings._delete_logo_from_storage.
+
+    The one-day floor protects files uploaded moments ago: the frontend uploads
+    the file and patches tenants.logo_url as two separate calls, so a brand new
+    object legitimately has no referencing row for a short window.
+    """
+    from app.core.config import settings as app_settings
+
+    if not app_settings.SUPABASE_URL or not app_settings.SUPABASE_SERVICE_KEY:
+        logger.info("job_orphan_logo_sweep: storage credentials unset, skipped")
+        return
+
+    try:
+        async with AsyncSessionLocal() as db:
+            names = (await db.execute(_ORPHAN_LOGO_SQL)).scalars().all()
+    except Exception:
+        logger.exception("job_orphan_logo_sweep: orphan query failed")
+        return
+
+    if not names:
+        logger.info("job_orphan_logo_sweep: nothing to remove")
+        return
+
+    headers = {
+        "Authorization": f"Bearer {app_settings.SUPABASE_SERVICE_KEY}",
+        "apikey": app_settings.SUPABASE_SERVICE_KEY,
+    }
+    deleted = 0
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            for name in names:
+                url = (
+                    f"{app_settings.SUPABASE_URL}"
+                    f"/storage/v1/object/workspace-logos/{name}"
+                )
+                try:
+                    resp = await client.delete(url, headers=headers)
+                    if resp.status_code in (200, 204):
+                        deleted += 1
+                    else:
+                        logger.warning(
+                            "job_orphan_logo_sweep: %s returned HTTP %s",
+                            name, resp.status_code,
+                        )
+                except Exception as exc:
+                    logger.warning("job_orphan_logo_sweep: %s failed: %s", name, exc)
+    except Exception:
+        logger.exception("job_orphan_logo_sweep failed")
+        return
+
+    logger.info(
+        "job_orphan_logo_sweep: removed %d of %d orphaned logo(s)",
+        deleted, len(names),
+    )
 
 
 # ── job: daily freshness update ────────────────────────────────────────────

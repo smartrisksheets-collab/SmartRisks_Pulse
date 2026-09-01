@@ -6,6 +6,7 @@ import { useAuthStore } from '../../store/authStore';
 import { useAuth } from '../../hooks/useAuth';
 import { usePresence } from '../../hooks/usePresence';
 import GetStartedDrawer from './GetStartedDrawer';
+import { roleLabel } from '../../utils/roles';
 
 function computeGsPulse(tid: string): boolean {
   if (!tid) return false;
@@ -175,7 +176,7 @@ export default function Topbar({ title = 'Dashboard' }: TopbarProps) {
         <div className="topbar-dd-wrap" ref={menuRef}>
           <button className="topbar-user-btn" onClick={() => setMenuOpen((v) => !v)}>
             <div className="topbar-avatar">{initials}</div>
-            <span>{claims?.role}</span>
+            <span>{roleLabel(claims?.role)}</span>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
               stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="6 9 12 15 18 9"/>

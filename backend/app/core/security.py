@@ -40,7 +40,11 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
     return jwt.encode(to_encode, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
 
 
-def create_refresh_token(account_id: str, token_version: int) -> str:
+def create_refresh_token(
+    account_id: str,
+    token_version: int,
+    active_tenant_id: str | None = None,
+) -> str:
     expire = datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
     return jwt.encode(
         {
@@ -48,6 +52,7 @@ def create_refresh_token(account_id: str, token_version: int) -> str:
             "exp": expire,
             "type": "refresh",
             "token_version": token_version,
+            "active_tenant_id": active_tenant_id,
         },
         settings.JWT_SECRET,
         algorithm=settings.JWT_ALGORITHM,

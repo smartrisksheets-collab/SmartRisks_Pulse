@@ -41,6 +41,37 @@ def _is_high(r: 'RiskRow') -> bool:  # type: ignore[return]
     return r.is_elevated
 
 
+def _band_labels(mc: MatrixConfig | None) -> list[str]:
+    """Band labels for this workspace, trimmed to the configured band count."""
+    if mc is None:
+        return ["Low", "Medium", "High", "Critical"]
+    count  = int(mc.band_count or 4)  # type: ignore[arg-type]
+    labels = [
+        str(mc.band_1_label or "Low"),
+        str(mc.band_2_label or "Medium"),
+        str(mc.band_3_label or "High"),
+        str(mc.band_4_label or "Critical"),
+        str(mc.band_5_label or "Extreme"),
+    ]
+    return labels[:count]
+
+
+def _elevated_phrase(mc: MatrixConfig | None) -> str:
+    """Human phrase naming the bands counted as elevated, e.g. 'High or Critical'.
+
+    The threshold mirrors services/risk.py _score, which sets is_elevated via
+    max(band_count - 1, 2). Keep the two in step if that formula changes.
+    """
+    labels    = _band_labels(mc)
+    threshold = max(len(labels) - 1, 2)
+    top       = labels[threshold - 1:]
+    if not top:
+        return "elevated"
+    if len(top) == 1:
+        return top[0]
+    return " or ".join(top)
+
+
 def _level_color(level: str | None) -> str:
     # kept for callers that pass raw strings; prefer _level_index_color
     l = (level or "").lower()
@@ -467,7 +498,7 @@ def compute_ai_exec_summary(ctx: ReportContext) -> dict:
     if snapshot["high_count"] > 0:
         s = "s are" if snapshot["high_count"] > 1 else " is"
         lines.append(
-            f"{snapshot['high_count']} risk{s} rated High or Very High, "
+            f"{snapshot['high_count']} risk{s} rated {_elevated_phrase(ctx.matrix_config)}, "
             "requiring priority management attention."
         )
     top_treatment = sorted(snapshot["by_treatment"].items(), key=lambda x: x[1], reverse=True)
@@ -543,9 +574,15 @@ def compute_risk_distribution(ctx: ReportContext) -> dict:
         by_category[r.category] = by_category.get(r.category, 0) + 1
 
     tot   = len(ctx.risks) or 1
-    hi_ct = sum(1 for r in ctx.risks if r.is_elevated)
+    # Elevated is level_index >= max(band_count - 1, 2). Low is band 1. Everything
+    # between them is the middle group, which is empty on a 3-band matrix because
+    # elevated starts at band 2. Deriving the threshold here rather than assuming
+    # a fixed band layout keeps the three percentages summing to 100.
+    _bands   = _band_labels(ctx.matrix_config)
+    _elev_ix = max(len(_bands) - 1, 2)
+    hi_ct = sum(1 for r in ctx.risks if r.level_index >= _elev_ix)
     lo_ct = sum(1 for r in ctx.risks if r.level_index == 1)
-    me_ct = tot - hi_ct - lo_ct
+    me_ct = max(0, tot - hi_ct - lo_ct)
     hi_pct = round(hi_ct / tot * 100)
     me_pct = round(me_ct / tot * 100)
     lo_pct = round(lo_ct / tot * 100)
@@ -650,7 +687,7 @@ def compute_top_emerging_risks(ctx: ReportContext) -> dict:
                 "desc":        r.desc[:120],
                 "level":       r.level,
                 "level_index": r.level_index,
-                "residual":    r.residual,
+                "residual":    round(r.residual),
                 "logged":      r.logged_at.isoformat() if r.logged_at else None,
                 "movement":    r.movement,
                 "score_delta": r.score_delta,
@@ -709,7 +746,7 @@ def compute_findings(ctx: ReportContext) -> dict:
     if total_risks > 0 and (high_count / total_risks) < 0.2:
         pct = round((high_count / total_risks) * 100)
         positive.append(
-            f"High-risk concentration is within acceptable levels at {pct}% of the total risk register."
+            f"Elevated-risk concentration is within acceptable levels at {pct}% of the total risk register."
         )
     if 0 < avg_residual < 6:
         positive.append(
@@ -719,7 +756,8 @@ def compute_findings(ctx: ReportContext) -> dict:
     if total_risks > 0 and (high_count / total_risks) > 0.3:
         pct = round((high_count / total_risks) * 100)
         key_risks.append(
-            f"High-risk concentration is elevated — {high_count} of {total_risks} tracked risks ({pct}%) are rated High or above."
+            f"Elevated-risk concentration is high, {high_count} of {total_risks} tracked risks "
+            f"({pct}%) are rated {_elevated_phrase(ctx.matrix_config)}."
         )
     if avg_residual > 12:
         key_risks.append(
@@ -1032,12 +1070,16 @@ def compute_executive_dashboard(ctx: ReportContext) -> dict:
     elif dir_score == "stable":
         dir_health = "stable"
 
-    # Control Strength: average of non-zero control_effectiveness values.
-    # Mirrors GAS ctrlEffToNum_ / _ctrlStrength logic.
-    # GAS normalises against max lookup value (default 100), so raw int values
-    # stored on a 0-100 scale are used directly here.
+    # Control Strength: average of rated control_effectiveness values, expressed
+    # as a percentage. control_effectiveness is a 1-5 integer in V2, so the
+    # average is scaled by 20 to map 1-5 onto 0-100. This matches the register
+    # (services/risk.py) and the dashboard (services/dashboard.py), both of
+    # which apply the same * 20 normalisation.
+    # GAS equivalent: ctrlEffToNum_ in DashboardService.gs, which normalises
+    # with (n / max) * 100 against its own 0-100 lookup scale.
+    # Risks with 0 (unrated) are excluded so they do not drag the average down.
     _ctrl_vals     = [r.control_effectiveness for r in risks if r.control_effectiveness > 0]
-    _ctrl_strength = round(sum(_ctrl_vals) / len(_ctrl_vals)) if _ctrl_vals else 0
+    _ctrl_strength = round(sum(_ctrl_vals) / len(_ctrl_vals) * 20) if _ctrl_vals else 0
     _ctrl_color    = (
         "#10b981" if _ctrl_strength >= 75 else
         "#f59e0b" if _ctrl_strength >= 50 else
@@ -1097,7 +1139,7 @@ def compute_executive_dashboard(ctx: ReportContext) -> dict:
 
     if snapshot["high_count"] > 0 and snapshot["total"] > 0 and (snapshot["high_count"] / snapshot["total"]) > 0.3:
         bullets.append(
-            "A significant share of active risks are rated High or above, signalling that existing controls "
+            f"A significant share of active risks are rated {_elevated_phrase(ctx.matrix_config)}, signalling that existing controls "
             "are insufficient to protect the organisation's strategic objectives. Structured remediation is required this period."
         )
 

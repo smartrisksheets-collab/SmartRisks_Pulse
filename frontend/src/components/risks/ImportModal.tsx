@@ -5,6 +5,8 @@ import * as XLSX from 'xlsx';
 import type { BulkImportRow, BulkImportResult } from '../../types/risk';
 import { useLookups } from '../../hooks/useLookups';
 import { useFeedbackStore } from '../../store/feedbackStore';
+import { useAuthStore } from '../../store/authStore';
+import { loadImportMapping, saveImportMapping } from '../../utils/importMapping';
 
 interface Props {
   open:     boolean;
@@ -17,7 +19,7 @@ interface ImpField { key: string; label: string; required: boolean; }
 const IMP_FIELDS: ImpField[] = [
   { key: 'category',              label: 'Category',              required: true  },
   { key: 'description',           label: 'Description',           required: true  },
-  { key: 'owner',                 label: 'Owner',                 required: true  },
+  { key: 'owner',                 label: 'Dept/Risk Owner',       required: true  },
   { key: 'likelihood',            label: 'Likelihood',            required: true  },
   { key: 'impact_score',          label: 'Impact Score',          required: true  },
   { key: 'treatment',             label: 'Treatment',             required: true  },
@@ -27,11 +29,21 @@ const IMP_FIELDS: ImpField[] = [
   { key: 'control_effectiveness', label: 'Control Effectiveness', required: false },
   { key: 'mitigation_plan',       label: 'Mitigation Plan',       required: false },
   { key: 'comments',              label: 'Comments',              required: false },
+  { key: 'owner_email',              label: 'Owner Email',              required: false },
+  { key: 'target_date',              label: 'Target Date',              required: false },
+  { key: 'mitigation_status',        label: 'Mitigation Status',        required: false },
+  { key: 'control_last_tested',      label: 'Control Last Tested',      required: false },
+  { key: 'control_test_result',      label: 'Control Test Result',      required: false },
+  { key: 'control_assertion_source', label: 'Control Assertion Source', required: false },
+  { key: 'root_cause',               label: 'Root Cause',               required: false },
+  { key: 'financial_exposure',       label: 'Financial Exposure',       required: false },
+  { key: 'linked_decision',          label: 'Linked Decision',          required: false },
 ];
 
 const REQUIRED_KEYS = IMP_FIELDS.filter(f => f.required).map(f => f.key);
 
 function normalize(s: string) { return s.toLowerCase().replace(/[^a-z0-9]/g, ''); }
+
 
 const AUTO_MAP: Record<string, string> = {
   category: 'category', riskcategory: 'category', riskcat: 'category',
@@ -46,12 +58,27 @@ const AUTO_MAP: Record<string, string> = {
   controleffectiveness: 'control_effectiveness', controleff: 'control_effectiveness',
   mitigationplan: 'mitigation_plan', plan: 'mitigation_plan',
   comments: 'comments', analystcomments: 'comments',
+  owneremail: 'owner_email', riskowneremail: 'owner_email', email: 'owner_email',
+  targetdate: 'target_date', duedate: 'target_date', targetcompletiondate: 'target_date',
+  mitigationstatus: 'mitigation_status', status: 'mitigation_status',
+  controllasttested: 'control_last_tested', lasttested: 'control_last_tested',
+  controltestdate: 'control_last_tested',
+  controltestresult: 'control_test_result', testresult: 'control_test_result',
+  controlassertionsource: 'control_assertion_source',
+  assertionsource: 'control_assertion_source', assertion: 'control_assertion_source',
+  rootcause: 'root_cause', cause: 'root_cause',
+  financialexposure: 'financial_exposure', exposure: 'financial_exposure',
+  financialimpact: 'financial_exposure',
+  linkeddecision: 'linked_decision', decision: 'linked_decision',
+  dateraised: 'logged_at', dateidentified: 'logged_at',
+  ownername: 'owner', existingcontrol: 'controls',
 };
 
 interface PreviewRow extends BulkImportRow { _valid: boolean; _errors: string[]; }
 
 export default function ImportModal({ open, onClose, onImport }: Props) {
   const { lookups, patch: patchLookups } = useLookups();
+  const tenantId = useAuthStore(s => s.claims?.active_tenant_id ?? null);
   const [step, setStep]         = useState(1);
   const [headers, setHeaders]   = useState<string[]>([]);
   const [rawRows, setRawRows]   = useState<Record<string, string>[]>([]);
@@ -64,6 +91,7 @@ export default function ImportModal({ open, onClose, onImport }: Props) {
   const [error, setError]       = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const fileRef                 = useRef<HTMLInputElement>(null);
+  
 
   const importStage =
     progress < 35 ? 'Validating rows...' :
@@ -120,13 +148,14 @@ export default function ImportModal({ open, onClose, onImport }: Props) {
         const hdrs = Object.keys(data[0]).filter(h => !h.startsWith('__EMPTY'));
         setHeaders(hdrs);
         setRawRows(data as Record<string, string>[]);
-        // Auto-map headers
+        // Restore the last mapping used in this workspace when it still fits
+        // this file, otherwise fall back to alias-based auto-mapping.
         const m: Record<string, string> = {};
         IMP_FIELDS.forEach(f => {
           const match = hdrs.find(h => AUTO_MAP[normalize(h)] === f.key);
           if (match) m[f.key] = match;
         });
-        setMapping(m);
+        setMapping(loadImportMapping(tenantId, hdrs) ?? m);
         setFileInfo(`✅ ${file.name} — ${data.length} rows detected`);
         setError(null);
       } catch {
@@ -177,6 +206,15 @@ export default function ImportModal({ open, onClose, onImport }: Props) {
         control_effectiveness: get('control_effectiveness') ? Number(get('control_effectiveness')) : undefined,
         mitigation_plan:       get('mitigation_plan') || undefined,
         comments:              get('comments') || undefined,
+        owner_email:              get('owner_email') || undefined,
+        target_date:              get('target_date') || undefined,
+        mitigation_status:        get('mitigation_status') || undefined,
+        control_last_tested:      get('control_last_tested') || undefined,
+        control_test_result:      get('control_test_result') || undefined,
+        control_assertion_source: get('control_assertion_source') || undefined,
+        root_cause:               get('root_cause') || undefined,
+        financial_exposure:       get('financial_exposure') || undefined,
+        linked_decision:          get('linked_decision') || undefined,
         _valid:                errors.length === 0,
         _errors:               errors,
       };
@@ -250,12 +288,22 @@ export default function ImportModal({ open, onClose, onImport }: Props) {
           control_effectiveness: r.control_effectiveness,
           mitigation_plan:       r.mitigation_plan,
           comments:              r.comments,
+          owner_email:              r.owner_email,
+          target_date:              r.target_date,
+          mitigation_status:        r.mitigation_status,
+          control_last_tested:      r.control_last_tested,
+          control_test_result:      r.control_test_result,
+          control_assertion_source: r.control_assertion_source,
+          root_cause:               r.root_cause,
+          financial_exposure:       r.financial_exposure,
+          linked_decision:          r.linked_decision,
         }));
       const r = await onImport(rows);
       setProgress(100);
       await new Promise(res => setTimeout(res, 500));
       if (r) {
         setResult(r);
+        saveImportMapping(tenantId, mapping);
         await autoAddToLookups(rows);
         useFeedbackStore.getState().trigger('import_risk', 'How was the import experience?');
       }
@@ -401,7 +449,7 @@ export default function ImportModal({ open, onClose, onImport }: Props) {
                       <th>#</th>
                       <th>Description</th>
                       <th>Category</th>
-                      <th>Owner</th>
+                      <th>Dept/Risk Owner</th>
                       <th>Status</th>
                     </tr>
                   </thead>

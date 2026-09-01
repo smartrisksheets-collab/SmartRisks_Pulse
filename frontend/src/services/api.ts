@@ -1,6 +1,7 @@
 import axios from 'axios';
 import type { AxiosResponse, InternalAxiosRequestConfig } from 'axios';
 import type { ApiResponse } from '../types/api';
+import type { WorkspaceInfo } from '../types/auth';
 import { useAuthStore } from '../store/authStore';
 
 const api = axios.create({
@@ -21,14 +22,16 @@ let _refreshPromise: Promise<string | null> | null = null;
 async function _attemptRefresh(): Promise<string | null> {
   if (_refreshPromise) return _refreshPromise;
   _refreshPromise = axios
-    .post<ApiResponse<{ access_token: string }>>(
+    .post<ApiResponse<{ access_token: string; workspaces?: WorkspaceInfo[] }>>(
       `${import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'}/api/v1/auth/refresh`,
       null,
       { withCredentials: true }
     )
     .then((res) => {
       const token = res.data?.data?.access_token ?? null;
+      const list  = res.data?.data?.workspaces;
       if (token) useAuthStore.getState().setToken(token);
+      if (list && list.length > 0) useAuthStore.getState().setWorkspaces(list);
       return token;
     })
     .catch(() => null)
@@ -64,6 +67,17 @@ api.interceptors.response.use(
       if (!newToken) {
         // Refresh failed (cookie missing, expired, or server error).
         _forceLogout();
+        return Promise.reject(error);
+      }
+
+      // The refresh succeeded but returned a base token with no workspace
+      // (mid-onboarding, awaiting PIN, or awaiting workspace selection).
+      // Retrying would 401 again and force a logout, so route the user to
+      // the gate instead and let the router take over.
+      const refreshed = useAuthStore.getState().claims;
+      if (!refreshed?.active_tenant_id) {
+        const target = refreshed?.pending_tenant_id ? '/verify-pin' : '/workspaces';
+        if (window.location.pathname !== target) window.location.href = target;
         return Promise.reject(error);
       }
 

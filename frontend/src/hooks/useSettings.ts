@@ -71,7 +71,8 @@ export function useSettings() {
     applyBrandColors(d.primary_color, d.accent_color);
     setTheme(d.theme_mode as "light" | "dark" | "auto");
     setLogoUrl(d.logo_url ?? null);
-  }, [query.data, setLogoUrl, setTheme]);
+    if (d.currency_symbol) setCurrency(d.currency_symbol);
+  }, [query.data, setLogoUrl, setTheme, setCurrency]);
 
   return { query, update, setPinMutation, removePinMutation };
 }

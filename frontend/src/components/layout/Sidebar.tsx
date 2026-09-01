@@ -4,6 +4,7 @@ import { useAuthStore } from '../../store/authStore';
 import { useAuth } from '../../hooks/useAuth';
 import { useSettings } from '../../hooks/useSettings';
 import { useSettingsStore } from '../../store/settingsStore';
+import { roleLabel } from '../../utils/roles';
 // useCanDo not needed here — claims used directly in nav filter
 import {
   LayoutDashboard, FileText, ShieldAlert,
@@ -48,7 +49,9 @@ export default function Sidebar() {
   );
   const logoUrl = useSettingsStore((s) => s.logoUrl);
   const { query: settingsQuery } = useSettings();
-  const industry = settingsQuery.data?.industry ?? '';
+  // Organization is the sub-line. Industry is only a fallback for workspaces
+  // that have not filled in an organization name in Settings.
+  const brandSub = settingsQuery.data?.organization || settingsQuery.data?.industry || '';
 
   function go(path: string) {
     navigate(path);
@@ -84,7 +87,7 @@ export default function Sidebar() {
         </div>
           <div className="brand-info">
             <div className="brand-name">{workspaceName}</div>
-            <div className="brand-sub">{industry}</div>
+            <div className="brand-sub">{brandSub}</div>
           </div>
         </div>
 
@@ -113,7 +116,7 @@ export default function Sidebar() {
           <div className="pill" style={{ overflow: 'hidden' }}>
             <div className="status-dot active" />
             <span style={{ fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {claims?.role ?? 'Analyst'} · {claims?.plan ?? 'Trial'}
+              {roleLabel(claims?.role) || 'Analyst'} · {claims?.plan ?? 'Trial'}
             </span>
           </div>
           <div className="sidebar-copy">

@@ -343,7 +343,7 @@ function TopRisksTable({ data, ai, blockKey, onEdit }: { data: TopRisksData; ai?
               <td style={{ padding: '6px 8px', fontWeight: 700, color: '#1F2854' }}>{r.id}</td>
               <td style={{ padding: '6px 8px' }}>{(r.desc || '').substring(0, 80)}</td>
               <td style={{ padding: '6px 8px', fontWeight: 700, color: levelColor(r.level) }}>{r.level}</td>
-              <td style={{ padding: '6px 8px' }}>{r.residual}</td>
+              <td style={{ padding: '6px 8px' }}>{r.residual != null ? Math.round(r.residual) : '—'}</td>
               <td style={{ padding: '6px 8px', color: trendArrowColor(r.movement) }}>{trendArrow(r.movement)}</td>
             </tr>
           ))}
@@ -451,7 +451,7 @@ function RiskOwnershipBlock({ data, onEdit }: { data: RiskOwnershipData; onEdit:
       <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse', marginBottom: 8 }}>
         <thead>
           <tr style={{ background: '#f8fafc' }}>
-            {['Owner', 'High Risks', 'Total', 'Avg Residual', 'Top Category'].map((h) => (
+            {['Dept/Risk Owner', 'High Risks', 'Total', 'Avg Residual', 'Top Category'].map((h) => (
               <th key={h} style={{ padding: '6px 8px', textAlign: 'left', color: '#475569', borderBottom: '1px solid #e2e8f0' }}>{h}</th>
             ))}
           </tr>
