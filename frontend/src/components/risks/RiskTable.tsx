@@ -150,8 +150,10 @@ export default function RiskTable({ risks, loading, onView, flashId, aiFlashIds,
                 <td style={{ fontSize: 12, fontWeight: 700 }}>{r.owner ?? '—'}</td>
 
                 {/* Business Impact */}
-                <td style={{ fontSize: 12, fontWeight: 700 }}>
-                  {r.primary_impact ?? <span className="not-est">Not entered</span>}
+                <td className="risk-impact-cell" style={{ fontSize: 12 }}>
+                  {r.primary_impact
+                    ? <span className="risk-impact-text" title={r.primary_impact}>{r.primary_impact}</span>
+                    : <span className="not-est">Not entered</span>}
                 </td>
 
                 {/* Severity */}
