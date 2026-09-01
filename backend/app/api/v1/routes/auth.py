@@ -130,7 +130,7 @@ async def forgot_password(
     payload: ForgotPasswordRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    result = await auth_service.forgot_password(db, payload.email, settings.FRONTEND_URL)
+    result = await auth_service.forgot_password(db, payload.email, settings.allowed_origins[0])
     return {"data": result, "error": None, "meta": {}}
 
 
