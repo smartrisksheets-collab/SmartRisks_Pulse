@@ -555,8 +555,8 @@ tbody td.date-col { white-space: nowrap; font-variant-numeric: tabular-nums; let
 
 /* Risk register description cell. Truncated to one line so the wider column
    set still fits; full text is available in the risk detail modal. */
-tbody td.risk-desc-cell { max-width: 200px; }
-tbody td.risk-impact-cell { max-width: 140px; }
+tbody td.risk-desc-cell { max-width: 250px; }
+tbody td.risk-impact-cell { max-width: 250px; }
 .risk-impact-text {
   display: block; font-weight: 700; font-size: 12px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
