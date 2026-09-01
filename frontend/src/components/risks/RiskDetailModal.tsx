@@ -129,9 +129,16 @@ export default function RiskDetailModal({ open, risk, onClose, onEdit, onDelete,
           </div>
 
           {/* Optional fields */}
+          {risk.root_cause && (
+            <div className="sr-detail-section">
+              <div className="sr-detail-label">Root Cause</div>
+              <div className="sr-detail-value">{risk.root_cause}</div>
+            </div>
+          )}
+
           {risk.primary_impact && (
             <div className="sr-detail-section">
-              <div className="sr-detail-label">Primary Impact</div>
+              <div className="sr-detail-label">Business Impact</div>
               <div className="sr-detail-value">{risk.primary_impact}</div>
             </div>
           )}
