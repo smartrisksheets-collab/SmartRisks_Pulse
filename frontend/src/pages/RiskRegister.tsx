@@ -354,7 +354,7 @@ export default function RiskRegister() {
             </select>
           </div>
           <div className="field">
-            <label>Owner</label>
+            <label>Dept/Risk Owner</label>
             <select value={owner} onChange={e => { setOwner(e.target.value); setPage(1); }}>
               <option value="">All</option>
               {Array.from(new Set(risks.map(r => r.owner).filter(Boolean))).map(o => (

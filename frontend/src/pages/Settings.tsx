@@ -1,6 +1,7 @@
 // src/pages/Settings.tsx
 
 import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useSettings } from "../hooks/useSettings";
 import { useAuthStore } from "../store/authStore";
 import UnsavedBanner from "../components/settings/UnsavedBanner";
@@ -828,7 +829,14 @@ type TabId = (typeof TABS)[number]["id"];
 // ── Main Settings page ───────────────────────────────────────────────────
 export default function Settings() {
   const { query } = useSettings();
-  const [activeTab, setActiveTab] = useState<TabId>("ws");
+  // Read the initial tab from ?tab= so Get Started can link straight to
+  // Risk Config, Risk Matrix or Risk Appetite. Falls back to Workspace.
+  const [searchParams] = useSearchParams();
+  const requestedTab   = searchParams.get("tab");
+  const initialTab     = TABS.some(t => t.id === requestedTab)
+    ? (requestedTab as TabId)
+    : "ws";
+  const [activeTab, setActiveTab] = useState<TabId>(initialTab);
 
   if (query.isLoading) {
     return (

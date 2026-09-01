@@ -23,7 +23,7 @@ const LOOKUP_KEYS: Array<keyof LookupPatch> = [
 const LOOKUP_LABELS: Record<string, string> = {
   category:          "Category",
   treatment:         "Treatment",
-  risk_owner:        "Risk Owner",
+  risk_owner:        "Dept/Risk Owner",
   business_unit:     "Business Unit",
   incident_category: "Incident Category",
   incident_severity: "Incident Severity",

@@ -539,7 +539,7 @@ export default function Users() {
         </div>
 
         <p className="muted small" style={{ marginTop: 10 }}>
-          Users here populate the "Risk Owner" dropdown in the Risk Register.
+          Users here populate the "Dept/Risk Owner" dropdown in the Risk Register.
         </p>
       </div>
 

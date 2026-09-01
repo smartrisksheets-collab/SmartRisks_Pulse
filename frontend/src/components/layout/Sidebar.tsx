@@ -49,7 +49,9 @@ export default function Sidebar() {
   );
   const logoUrl = useSettingsStore((s) => s.logoUrl);
   const { query: settingsQuery } = useSettings();
-  const industry = settingsQuery.data?.industry ?? '';
+  // Organization is the sub-line. Industry is only a fallback for workspaces
+  // that have not filled in an organization name in Settings.
+  const brandSub = settingsQuery.data?.organization || settingsQuery.data?.industry || '';
 
   function go(path: string) {
     navigate(path);
@@ -85,7 +87,7 @@ export default function Sidebar() {
         </div>
           <div className="brand-info">
             <div className="brand-name">{workspaceName}</div>
-            <div className="brand-sub">{industry}</div>
+            <div className="brand-sub">{brandSub}</div>
           </div>
         </div>
 

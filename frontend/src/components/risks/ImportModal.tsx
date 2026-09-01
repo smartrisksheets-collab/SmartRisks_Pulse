@@ -19,7 +19,7 @@ interface ImpField { key: string; label: string; required: boolean; }
 const IMP_FIELDS: ImpField[] = [
   { key: 'category',              label: 'Category',              required: true  },
   { key: 'description',           label: 'Description',           required: true  },
-  { key: 'owner',                 label: 'Owner',                 required: true  },
+  { key: 'owner',                 label: 'Dept/Risk Owner',       required: true  },
   { key: 'likelihood',            label: 'Likelihood',            required: true  },
   { key: 'impact_score',          label: 'Impact Score',          required: true  },
   { key: 'treatment',             label: 'Treatment',             required: true  },
@@ -449,7 +449,7 @@ export default function ImportModal({ open, onClose, onImport }: Props) {
                       <th>#</th>
                       <th>Description</th>
                       <th>Category</th>
-                      <th>Owner</th>
+                      <th>Dept/Risk Owner</th>
                       <th>Status</th>
                     </tr>
                   </thead>

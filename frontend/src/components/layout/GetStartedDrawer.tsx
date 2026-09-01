@@ -16,25 +16,25 @@ const STEPS: StepDef[] = [
     desc: 'Get familiar with your live risk exposure index, residual trends, top risk drivers, and operational intelligence feed.',
     goLabel: 'Go to Dashboard →', goTo: '/' },
 
-  { id: 2, title: 'Complete your risk dropdowns',
-    desc: 'Your onboarding seeded your categories and owners. Finish the config by adding treatment options, business units, and likelihood labels in Settings.',
-    goLabel: 'Go to Risk Config →', goTo: '/settings' },
+  { id: 2, title: 'Set up your Risk Config',
+    desc: 'Define your departments and risk owners, risk categories, and treatment options. This is the foundation everything else builds on.',
+    goLabel: 'Go to Risk Config →', goTo: '/settings?tab=tax' },
 
-  { id: 3, title: 'Customise your risk matrix',
-    desc: 'The 5-band default matrix is ready to use. If your organisation uses a 3 or 4-band model, or custom labels, configure it now in Settings → Risk Matrix.',
-    goLabel: 'Go to Risk Matrix →', goTo: '/settings' },
+  { id: 3, title: 'Customise your Risk Matrix',
+    desc: 'The 5-band default matrix is ready to use. If your organisation uses a 3 or 4-band model, or custom labels, configure it now in Settings, Risk Matrix.',
+    goLabel: 'Go to Risk Matrix →', goTo: '/settings?tab=matrix' },
 
-  { id: 4, title: 'Add your first risk',
+  { id: 4, title: 'Set your Risk Appetite',
+    desc: 'Define the thresholds that determine what level of risk is acceptable before escalation or treatment is triggered.',
+    goLabel: 'Go to Risk Appetite →', goTo: '/settings?tab=appetite' },
+
+  { id: 5, title: 'Add your first risk',
     desc: 'Log a risk in the Risk Register with a description, likelihood, impact, and treatment plan.',
     goLabel: 'Go to Risk Register →', goTo: '/risks' },
 
-  { id: 5, title: 'Import existing risks',
+  { id: 6, title: 'Import existing risks',
     desc: 'Already have risks in a spreadsheet? Import them in bulk via CSV or XLSX using the Import button on the Risk Register.',
     goLabel: 'Import Risks →', goTo: '/risks' },
-
-  { id: 6, title: 'Generate AI Insights',
-    desc: 'Open any risk and click Generate AI Insights to get intelligent mitigation recommendations powered by AI.',
-    goLabel: 'Go to Risk Register →', goTo: '/risks' },
 
   { id: 7, title: 'Print your first Executive Report',
     desc: 'Generate a formatted PDF risk report ready for board or management review from the Report Builder.',

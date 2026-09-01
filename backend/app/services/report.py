@@ -687,7 +687,7 @@ def compute_top_emerging_risks(ctx: ReportContext) -> dict:
                 "desc":        r.desc[:120],
                 "level":       r.level,
                 "level_index": r.level_index,
-                "residual":    r.residual,
+                "residual":    round(r.residual),
                 "logged":      r.logged_at.isoformat() if r.logged_at else None,
                 "movement":    r.movement,
                 "score_delta": r.score_delta,
