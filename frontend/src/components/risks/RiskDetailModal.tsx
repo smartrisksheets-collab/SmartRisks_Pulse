@@ -46,7 +46,7 @@ export default function RiskDetailModal({ open, risk, onClose, onEdit, onDelete,
 
         <div className="modal-hd">
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <h3 className="modal-title">{risk.description}</h3>
+            <h3 className="modal-title">{risk.id}</h3>
             <span className={`badge ${levelBadgeClass(risk.level_index)}`}>{risk.level ?? '—'}</span>
             <span style={{
               fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 4,
