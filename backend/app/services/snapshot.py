@@ -19,6 +19,7 @@ from app.models.snapshot import SnapshotMonthly, SnapshotDaily
 from app.models.risk import Risk
 from app.models.incident import Incident
 from app.schemas.dashboard import SnapshotDelta
+from decimal import Decimal
 
 
 # ---------------------------------------------------------------------------
@@ -164,13 +165,21 @@ async def write_monthly_snapshot(
 # Snapshot delta (embedded in dashboard response)
 # ---------------------------------------------------------------------------
 
-def _pct_delta(curr: float | None, prev: float | None) -> float | None:
-    """Compute % change from prev to curr. Returns None if prev is 0 or None."""
+def _pct_delta(curr: float | Decimal | None, prev: float | Decimal | None) -> float | None:
+    """Compute % change from prev to curr. Returns None if prev is 0 or None.
+
+    prev is always a stored SnapshotMonthly row, whose NUMERIC columns arrive as
+    Decimal. curr is normally the live dict from compute_live_kpis, which casts
+    to float. Python refuses to subtract across the two, so both are coerced
+    here rather than at each of the six call sites in _build_delta_obj.
+    """
     if prev is None or prev == 0:
         return None
     if curr is None:
         return None
-    return round(((curr - prev) / abs(prev)) * 100, 1)
+    c = float(curr)
+    p = float(prev)
+    return round(((c - p) / abs(p)) * 100, 1)
 
 
 def _build_delta_obj(
