@@ -40,6 +40,7 @@ from app.scheduler.jobs import (
     job_recycle_purge,
     job_freshness_update,
     job_brief_send,
+    job_orphan_logo_sweep,
 )
 
 
@@ -53,6 +54,8 @@ async def lifespan(_app: FastAPI):
     scheduler.add_job(job_monthly_snapshot, "cron", hour=0,  minute=5,  day=1, id="monthly_snapshot")
     # Recycle bin purge — 02:00 UTC
     scheduler.add_job(job_recycle_purge,    "cron", hour=2,  minute=0,  id="recycle_purge")
+    # Orphaned logo sweep, 03:00 UTC on Sundays
+    scheduler.add_job(job_orphan_logo_sweep, "cron", day_of_week="sun", hour=3, minute=0, id="orphan_logo_sweep")
     # Freshness recompute — 06:00 UTC
     scheduler.add_job(job_freshness_update, "cron", hour=6,  minute=0,  id="freshness_update")
     # Brief dispatch — every hour 07:00 to 10:00 UTC; each job checks per-tenant send time

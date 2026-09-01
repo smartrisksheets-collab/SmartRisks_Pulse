@@ -48,11 +48,16 @@ async def set_pin(
 async def upload_logo(
     file: UploadFile = File(...),
     claims: dict = Depends(get_active_tenant),
+    db: AsyncSession = Depends(get_db),
 ) -> dict:
-    content = await file.read()
+    tenant_id   = UUID(claims["active_tenant_id"])
+    current     = await settings_svc.get_settings(db, tenant_id)
+    content      = await file.read()
     content_type = file.content_type or "application/octet-stream"
-    filename = file.filename or "logo"
-    logo_url = await settings_svc.upload_logo(content, content_type, filename)
+    filename     = file.filename or "logo"
+    logo_url = await settings_svc.upload_logo(
+        content, content_type, filename, current.logo_url
+    )
     return {"data": {"logo_url": logo_url}, "error": None, "meta": {}}
 
 
