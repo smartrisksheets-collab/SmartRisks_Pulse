@@ -96,7 +96,7 @@ export default function RiskTable({ risks, loading, onView, flashId, aiFlashIds,
             <th style={{ width: 70, textAlign: 'center' }}>Severity</th>
             <th style={{ width: 90 }}>Level</th>
             <th style={{ width: 80, textAlign: 'center' }}>Residual</th>
-            <th style={{ width: 120 }}>Financial Exposure</th>
+            <th style={{ width: 120 }}>Estimate</th>
             <th style={{ width: 100, background: 'rgba(1,184,142,.06)' }}>Appetite</th>
             <th style={{ width: 120 }}>Decision</th>
           </tr>
@@ -135,23 +135,25 @@ export default function RiskTable({ risks, loading, onView, flashId, aiFlashIds,
                 </td>
 
                 {/* Date Logged */}
-                <td className="date-col" style={{ fontSize: 12, color: 'var(--muted)' }}>
+                <td className="date-col" style={{ fontSize: 12, fontWeight: 700 }}>
                   {formatDate(r.logged_at)}
                 </td>
 
                 {/* Description */}
                 <td className="risk-desc-cell">
-                  <span className="risk-desc-text" title={r.description ?? ''}>
+                  <span className="risk-desc-text" style={{ fontWeight: 700 }} title={r.description ?? ''}>
                     {r.description ?? '—'}
                   </span>
                 </td>
 
                 {/* Owner */}
-                <td style={{ fontSize: 12, color: 'var(--muted)' }}>{r.owner ?? '—'}</td>
+                <td style={{ fontSize: 12, fontWeight: 700 }}>{r.owner ?? '—'}</td>
 
                 {/* Business Impact */}
-                <td style={{ fontSize: 12 }}>
-                  {r.primary_impact ?? <span className="not-est">Not entered</span>}
+                <td className="risk-impact-cell" style={{ fontSize: 12 }}>
+                  {r.primary_impact
+                    ? <span className="risk-impact-text" title={r.primary_impact}>{r.primary_impact}</span>
+                    : <span className="not-est">Not entered</span>}
                 </td>
 
                 {/* Severity */}
@@ -168,7 +170,7 @@ export default function RiskTable({ risks, loading, onView, flashId, aiFlashIds,
                 </td>
 
                 {/* Financial Exposure */}
-                <td style={{ fontSize: 12 }}>
+                <td style={{ fontSize: 12, fontWeight: 700 }}>
                   {r.financial_exposure
                     ? formatExposure(r.financial_exposure, currency)
                     : <span className="not-est">Not estimated</span>}
@@ -181,7 +183,7 @@ export default function RiskTable({ risks, loading, onView, flashId, aiFlashIds,
                       a => a.category.trim().toLowerCase() === (r.category ?? '').trim().toLowerCase()
                     );
                     const status = appetiteStatus(r.residual, rec?.threshold ?? null);
-                    if (status === 'unset') return <span className="apt-pill apt-pill-unset">No threshold</span>;
+                    if (status === 'unset') return <span className="apt-pill apt-pill-unset tooltip-wrap" data-tip="Visit settings to set risk appetite.">No threshold</span>;
                     return <span className={APT_PILL_CLS[status]}>{APT_LABELS[status]}</span>;
                   })()}
                 </td>
@@ -191,7 +193,7 @@ export default function RiskTable({ risks, loading, onView, flashId, aiFlashIds,
                   {r.linked_decision
                     ? <span className="dec-linked">Linked</span>
                     : (
-                      <div className="dec-warn">
+                      <div className="dec-warn tooltip-wrap" data-tip="Edit risk to link a decision to the risk." style={{ position: 'relative' }}>
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#b9762a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                           <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
                           <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>

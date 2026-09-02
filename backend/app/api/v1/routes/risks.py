@@ -12,7 +12,7 @@ from app.core.dependencies import get_db, get_active_tenant, require_module, req
 from app.db.session import AsyncSessionLocal
 from app.services.settings import get_ai_config
 from app.schemas.risk import (
-    RiskCreate, RiskUpdate, BulkImportRequest,
+    RiskCreate, RiskUpdate, BulkImportRequest, BulkImportResponse,
     AIInsightRequest, RiskStatsResponse,
 )
 from app.services import risk as risk_service
@@ -115,6 +115,22 @@ async def _auto_run_ai(tenant_id: UUID, risk_id: str, user_email: str) -> None:
             await db.commit()
         except Exception as exc:
             logger.error('auto_run_ai failed | risk=%s | %s', risk_id, exc)
+
+
+@router.post("/import")
+@limiter.limit("10/minute")
+async def bulk_import(
+    request: Request,
+    payload: BulkImportRequest,
+    db:      AsyncSession = Depends(get_db),
+    claims:  dict         = Depends(require_permission("manage_risks")),
+    _:       dict         = Depends(require_module("risk")),
+) -> dict:
+    tenant_id = UUID(claims["active_tenant_id"])
+    result: BulkImportResponse = await risk_service.bulk_import(
+        db, tenant_id, payload, claims["email"]
+    )
+    return {"data": result.model_dump(), "error": None, "meta": {}}
 
 
 @router.post("")

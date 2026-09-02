@@ -46,6 +46,19 @@ async def _get_tenant_name(db: AsyncSession, tenant_id: UUID) -> tuple[str, str]
     return name, industry
 
 
+async def _fetch_logo_bytes(db: AsyncSession, tenant_id: UUID) -> bytes | None:
+    import httpx
+    result = await db.get(Tenant, tenant_id)
+    if not result or not result.logo_url:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(str(result.logo_url))
+            return resp.content if resp.status_code == 200 else None
+    except Exception:
+        return None
+
+
 # ── Preview ────────────────────────────────────────────────────────────────────
 
 @router.post("/preview")
@@ -125,6 +138,7 @@ async def export_report(
     try:
         settings_dict = payload.settings.model_dump()
         _org, _ = await _get_tenant_name(db, tenant_id)
+        _logo   = await _fetch_logo_bytes(db, tenant_id)
         pdf_bytes = pdf_report.build_pdf(
             blocks=payload.blocks,
             block_data=payload.block_data,
@@ -134,6 +148,7 @@ async def export_report(
             date_to=payload.date_to,
             orientation=payload.orientation,
             org_name=_org,
+            logo_bytes=_logo,
         )
         import base64
         title    = payload.settings.report_title or "SmartRisk_Report"
@@ -171,6 +186,7 @@ async def email_report(
         filename = title.replace(" ", "_") + ".pdf"
 
         _org, _ = await _get_tenant_name(db, tenant_id)
+        _logo   = await _fetch_logo_bytes(db, tenant_id)
         pdf_bytes = pdf_report.build_pdf(
             blocks=payload.blocks,
             block_data=payload.block_data,
@@ -179,6 +195,7 @@ async def email_report(
             date_from=payload.date_from,
             date_to=payload.date_to,
             org_name=_org,
+            logo_bytes=_logo,
         )
         await email_service.send_report_email(
             to=payload.to,

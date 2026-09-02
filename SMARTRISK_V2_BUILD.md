@@ -2191,6 +2191,100 @@ Environment: RESEND_FROM_EMAIL updated on Render and local .env
 
 ---
 
+## Session: September 1 2026, Bug Review and UI Polish
+
+### Auth and session stability
+
+- Fixed cross-site 401 logout. Refresh cookie was `SameSite=Lax`, so the browser withheld it on the cross-site POST from Vercel to Render, logging users out every 15 minutes. Changed to `SameSite=None; Secure` with matching attributes on `delete_cookie`. Separate Render services on `onrender.com` against a Vercel frontend on `smartrisksheets.com` means cross-site is permanent for any user not on the custom domain migration path.
+- Custom domain migration identified as the complete fix for Safari and Brave, which block third-party cookies outright regardless of SameSite. Both Render services support custom domains. Staging not yet migrated.
+- Fixed PIN gate and workspace picker bypass on token refresh. Refresh tokens now carry `active_tenant_id`. `refresh_access_token` matches the stored tenant rather than taking `rows[0]` from an unordered query. Falls back to a base token when no established workspace, routing the user to the picker rather than guessing.
+- Fixed `_attemptRefresh` interceptor in `services_api.ts` retrying after a base-token refresh, which produced a second 401 and a hard redirect to `/login`. Interceptor now reads claims after refresh and routes to picker or PIN screen instead of retrying.
+- Refresh response now includes `workspaces` list so the picker has current data after a base-token fallback.
+- `delete_cookie` on logout now carries matching attributes so the browser actually clears the cookie.
+
+### Reports
+
+- Fixed Control Strength KPI in `compute_executive_dashboard`. Raw 1-5 `control_effectiveness` was averaged and displayed as a percent, reading as single digits and permanently red. Applied the same `* 20` normalisation used by the register and dashboard.
+- Fixed hardcoded "High or Very High" in four narrative sites across `compute_ai_exec_summary`, `compute_findings` (two branches), and `compute_executive_dashboard`. Narratives now derive band names from `matrix_config` via the new `_elevated_phrase` helper.
+- Fixed `me_ct` in `compute_risk_profile` which subtracted the stored `is_elevated` boolean from a `level_index` count, producing a negative middle percentage on a 3-band matrix. Both counts now compute from `level_index` with a `max(0, ...)` floor.
+- Fixed residual rounded at source in `compute_executive_dashboard` and `compute_findings`. Second residual site in the same file was still emitting the raw Decimal. Preview and PDF now agree.
+
+### Import wizard
+
+- Added nine optional fields to the import wizard: `root_cause`, `financial_exposure`, `linked_decision`, `control_assertion_source`, `owner_email`, `target_date`, `mitigation_status`, `control_last_tested`, `control_test_result`.
+- Added header aliases for all nine plus common aliases for existing fields (`dateraised`, `ownername`, `existingcontrol`).
+- Added per-workspace column mapping persistence in `localStorage`. Mapping is restored only when every saved column exists in the newly uploaded file. Key is `sr-import-map:{tenantId}`.
+- Template download updated automatically (derives from `IMP_FIELDS`).
+- Backend `BulkImportRow` and `bulk_import` service updated to accept and pass through all nine.
+
+### Risk register
+
+- Added Date Logged column (after Risk ID) and Residual column (after Level). Both display from existing stored fields.
+- Date Logged renders as "15 May 2026" via shared `formatDate` in `src/utils/format.ts`.
+- Residual rounds to nearest integer via `Math.round` to match dashboard and report display.
+- Description column narrowed with CSS truncation (`risk-desc-cell`, `risk-desc-text`). Full text shown on hover via `title` attribute.
+- Relabelled Owner to "Dept/Risk Owner" across: `RiskTable`, `RiskForm`, `RiskDetailModal`, `pages_RiskRegister` (filter and CSV note), `risks_ImportModal` (field list and preview header), `settings_LookupEditor`, `pages_Users` prose, `layout_Sidebar` pill, `layout_Topbar`, `pages_WorkspacePicker`.
+- CSV export header kept as "Owner" intentionally. `AUTO_MAP` already covers re-import.
+- Renamed "Decision Required" column header to "Decision".
+
+### Risk form and edit modal
+
+- Fixed clearing optional text fields on save. Form sent `undefined` for cleared fields, which `JSON.stringify` drops entirely, so `exclude_unset=True` on the backend read them as unchanged. Changed to `null` for all eleven clearable text fields. `RiskCreate` type widened to `string | null` for affected fields.
+- Swapped the heart icon on the Control Effectiveness section header to a cog (Lucide settings icon, inline SVG).
+
+### Display and UI
+
+- Owner to Admin relabel completed for the sidebar (`layout_Sidebar.tsx` line 116). Introduced shared `roleLabel` helper in `src/utils/roles.ts`.
+- Action plan numbering in `ActionPlanModal` fixed. Was rendering `sentence_num`, which has gaps when a summary sentence is omitted for missing data, so new workspaces saw a list starting at 2. Now renders list position via `idx + 1`. `sentence_num` still keys the owner assignment map.
+- Control Signal card `sr-intel` pill pinned to the card foot using `margin-top: auto` in `index.css`.
+- Sidebar sub-line now shows `organization` from workspace settings, falling back to `industry` when blank.
+- Currency now synced from settings on every fetch in `useSettings`. Previously only populated on settings save. `IncidentStatCards` hardcoded currency symbol replaced with `useSettingsStore`.
+- `formatExposure` and `formatMoneyCompact` helpers added to `src/utils/format.ts`. Both accept the workspace currency symbol as a parameter.
+- Distribution modal chart height raised (`min 320px`, `52px per row`). Shell `min-height` approach reverted after it caused dead whitespace below a short chart.
+- Risk Pressure and Risk Distribution modals raised to `max-height: 92vh`.
+
+### Get Started drawer
+
+- Rewrote the seven steps to match the PDF flow: Dashboard, Risk Config, Risk Matrix, Risk Appetite, Add Risk, Import Risks, Executive Report.
+- Settings steps deep-linked via `?tab=` query param. `pages_Settings.tsx` reads `?tab=` on mount and opens the matching tab.
+- Progress storage key bumped to `gs_steps_v2_{tenantId}` to discard stale progress from the old step ids.
+
+### Supabase staging environment
+
+- New Supabase project created for staging (previously both environments shared one project, competing for 15 session-mode connections).
+- Consolidated schema build script generated (`smartrisk_staging_schema_001_to_040.sql`), faithful replay of all forty migrations in revision order, with `alembic_version` stamp at head (040).
+- Storage: one bucket `workspace-logos` (public, 50 MB limit). Two policies: `public_select_workspace_logos` (SELECT, public), `authenticated_insert_workspace_logos` (INSERT, authenticated).
+
+### Orphaned logo cleanup
+
+- Fixed `routes_settings.py` never passing `old_logo_url` to `upload_logo`. The delete branch in `services_settings.py` had never executed. Route now reads current `logo_url` from DB and passes it so old files are deleted on replacement.
+- Added one-off cleanup script `backend/scripts/cleanup_orphan_logos.py`. Dry run by default, `--apply` to delete.
+- Added weekly scheduler job `job_orphan_logo_sweep` in `scheduler_jobs.py`. Runs at 03:00 UTC on Sundays. Caps at 200 files per run.
+
+### Dashboard stability
+
+- Fixed `_pct_delta` TypeError. `prev` arrives as `Decimal` from stored `SnapshotMonthly` rows (NUMERIC column). `curr` arrives as `float` from `compute_live_kpis`. Python refuses `float - Decimal`. Both operands now coerced to `float` at the boundary. `Decimal` imported in `services_snapshot.py`.
+- This was the permanent code path, not an edge case. `write_monthly_snapshot` always targets the prior month, so `get_snapshot_delta` always falls through to the live-compute branch once any snapshot exists. The crash surfaced on September 1 when the first snapshot was written.
+- Fixed blast radius: the thirteen dashboard queries run under `asyncio.gather`, so the single `TypeError` returned a 500 for the entire dashboard. `_run` now catches, logs the failing query name, and returns `None`. Empty fallbacks applied at the `DashboardResponse` construction site so one broken query degrades one card rather than the whole page.
+
+### Item 5 status
+
+- Residual formula (severity minus control effectiveness) parked. Partner reviewing. Current V2 formula is proportional: `residual = severity * (1 - control_effectiveness / 5)`. V1 used straight subtraction on a 0-100 scale, which does not survive the 1-5 scale change. Believed to be correct and deliberate but not confirmed.
+
+---
+
+**Status:** Bug review complete. All fourteen list items addressed except item 5 (parked). Ready to push and merge once staging QA confirms.
+
+**Next session starts with:**
+
+1. Read `SMARTRISK_V2_SETUP.md`, `SMARTRISK_V2_BUILD.md`, `SMARTRISK_V2_DECISIONS.md` in full
+2. Confirm item 5 with partner and apply residual fix if formula is wrong
+3. Complete the report PDF header relabel (Dept/Risk Owner, held back pending column width check)
+4. Confirm custom domain migration on Render (api.smartrisksheets.com for prod, api-staging.smartrisksheets.com for staging) to fix Safari and Brave cookie blocking
+5. Run full staging QA including: 15-minute session hold test, PIN gate re-test after token refresh, dashboard with real data, import with new fields, Get Started flow
+
+---
+
 **Important reminders:**
 
 - Docker must be running before starting. Run `docker compose ps` to confirm

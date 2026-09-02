@@ -1279,4 +1279,44 @@ Why: The distinction between owning a workspace and being a member of one is alr
 **Decision: Trial expiry banners include Request a Quote and Book a Custom Demo mailto CTAs (August 31, 2026)**
 Raised by: Users seeing the trial expiry banner had no in-app path to act on it. The existing text only informed; it did not convert.
 Chosen: Two pre-filled mailto links added to both the 7-day amber banner and the 2-day red banner in PageShell TrialBanner, and to the PlanExpired page. `MAILTO_QUOTE` and `MAILTO_DEMO` constants live in `src/utils/constants.ts`. Each mailto pre-fills subject and a structured body (organisation name, contact name, phone number fields). Clicking opens the user's default email client with the message ready to send to `info@smartrisksheets.com`.
+
+**Decision: Refresh token carries active_tenant_id (September 1, 2026)**
+Raised by: `refresh_access_token` took `rows[0]` from an unordered membership query because the refresh token carried no tenant. This silently moved multi-workspace users between tenants on every 15-minute refresh, and granted full workspace tokens to users still at the PIN gate or workspace picker.
+Chosen: `create_refresh_token` accepts an optional `active_tenant_id`. Every call site that issues a token after the user has cleared the PIN gate or the workspace picker now passes it. `refresh_access_token` matches the stored tenant rather than guessing. Falls back to a base token when no tenant is established, routing the user to the picker.
+Alternatives rejected: Letting the frontend post the desired tenant ID, which would allow a user sitting on the PIN screen to skip the gate by submitting `pending_tenant_id`.
+Why: The refresh token is server-signed, so it is proof that the gate was passed, not a client claim. Only the server decides what goes into it.
+
+**Decision: SameSite=None on refresh cookie (September 1, 2026)**
+Raised by: Refresh cookie was `SameSite=Lax`. The refresh call is a cross-site XHR POST from Vercel (smartrisksheets.com) to Render (onrender.com). The browser withheld the cookie, the refresh failed, and users were force-logged out every 15 minutes.
+Chosen: `SameSite=None; Secure`. `delete_cookie` on logout carries matching attributes.
+Full fix: Map both Render services to subdomains under `smartrisksheets.com` so all requests are same-site and first-party. Safari and Brave block third-party cookies outright regardless of SameSite, so cross-site is not a viable permanent topology. Migration to custom domains pending.
+Why: `None` is correct for both topologies (cross-site and same-site) so the cookie does not need to change again after the domain migration.
+
+**Decision: _run in services_dashboard.py catches all exceptions and returns None (September 1, 2026)**
+Raised by: A single `TypeError` in `_pct_delta` caused `asyncio.gather` to propagate the exception and return a 500 for the entire dashboard. One bad query in thirteen was taking down the whole page.
+Chosen: `_run` wraps each query in try/except, logs the failing function name, and returns `None`. Empty fallbacks are applied at the `DashboardResponse` construction site. Sub-schemas already declare defaults on all fields, so the contract is unchanged and the frontend receives a fully shaped object.
+Alternatives rejected: `asyncio.gather(return_exceptions=True)`, which pushes exception objects into the fourteen destructured variables and requires a null guard at every consumer.
+Why: A failed dashboard card should render empty, not 500 the whole page. The tradeoff is that failures are silent to the user, so Render logs must be watched. `logger.exception` with the function name provides traceability.
+
+**Decision: financial_exposure stays TEXT, display formatter prefixes currency symbol (September 1, 2026)**
+Raised by: Item 11 requested the currency symbol to appear automatically in front of the financial exposure value. The column is TEXT, not NUMERIC.
+Chosen: Display-only formatting via `formatExposure` in `src/utils/format.ts`. Prefixes the workspace currency symbol onto leading numeric portions only. Non-numeric values pass through unchanged.
+Production data check: Three distinct values found: `251000` (plain figure), `100,000 per day` (figure with rate), `Unknown` (deliberate non-answer). Two of three carry information a NUMERIC column cannot hold.
+Full fix deferred: A structured redesign with a numeric amount column plus a basis qualifier (one-off, per day, per month, per year, unknown) is the correct model. Deferred pending product decision on field shape and a backfill strategy for existing free-text values.
+Why: Converting to NUMERIC would lose "100,000 per day" and "Unknown". The display formatter is a no-migration, no-data-loss improvement that answers the immediate complaint.
+
+**Decision: Get Started steps rewritten to seven in setup order (September 1, 2026)**
+Raised by: The existing steps did not include Risk Appetite (a Stream A feature), included Generate AI Insights (a feature tour rather than setup), and did not deep-link to specific Settings tabs.
+Chosen: Seven steps in setup order: Dashboard, Risk Config, Risk Matrix, Risk Appetite, Add Risk, Import Risks, Executive Report. Settings steps link via `?tab=` query param. Settings page reads `?tab=` on mount and opens the matching tab. Progress storage key bumped to `gs_steps_v2_{tenantId}` to discard stale progress from old step ids.
+Why: Risk Appetite must be set before the first risk is logged, or the appetite column reads "No threshold" indefinitely. The previous order asked users to add a risk before configuring anything.
+
+**Decision: Supabase project separated into staging and production (September 1, 2026)**
+Raised by: Both Render services shared one Supabase project, competing for 15 session-mode connections. The dashboard fan-out opens 13 concurrent connections per request. Any simultaneous load from prod and staging would exhaust the pool. More critically, staging test data was landing in production tables and staging migrations were altering the production schema.
+Chosen: New Supabase project created for staging. Consolidated schema SQL script generated from migrations 001 to 040 with alembic_version stamp. Six environment values updated per environment: DATABASE_URL, SUPABASE_URL, SUPABASE_SERVICE_KEY, SUPABASE_ANON_KEY on Render, VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY on Vercel.
+Why: Correct long-term boundary. With each project on its own 15-connection pool, pool_size=10, max_overflow=5 is correctly sized and needs no change.
+
+**Decision: Workspace logo orphan cleanup via Storage API, not direct SQL delete (September 1, 2026)**
+Raised by: Supabase's `protect_delete()` trigger blocks direct DELETE on `storage.objects`. A SQL-based orphan sweep was not possible.
+Chosen: One-off cleanup script and weekly scheduler job both call the Storage API DELETE endpoint, the same call used by `_delete_logo_from_storage`. One object at a time rather than bulk, to avoid guessing at the bulk endpoint's current request shape.
+Root cause fixed: `routes_settings.py` never passed `old_logo_url` to `upload_logo`, so the delete branch in `services_settings.py` had never executed since launch.
 Why: The lowest-friction conversion path from inside a SaaS trial is a pre-filled email. No new page, no form, no backend. The user clicks, reviews the pre-filled message, and sends.

@@ -46,7 +46,7 @@ export default function RiskDetailModal({ open, risk, onClose, onEdit, onDelete,
 
         <div className="modal-hd">
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <h3 className="modal-title">{risk.description}</h3>
+            <h3 className="modal-title">{risk.id}</h3>
             <span className={`badge ${levelBadgeClass(risk.level_index)}`}>{risk.level ?? '—'}</span>
             <span style={{
               fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 4,
@@ -129,9 +129,16 @@ export default function RiskDetailModal({ open, risk, onClose, onEdit, onDelete,
           </div>
 
           {/* Optional fields */}
+          {risk.root_cause && (
+            <div className="sr-detail-section">
+              <div className="sr-detail-label">Root Cause</div>
+              <div className="sr-detail-value">{risk.root_cause}</div>
+            </div>
+          )}
+
           {risk.primary_impact && (
             <div className="sr-detail-section">
-              <div className="sr-detail-label">Primary Impact</div>
+              <div className="sr-detail-label">Business Impact</div>
               <div className="sr-detail-value">{risk.primary_impact}</div>
             </div>
           )}

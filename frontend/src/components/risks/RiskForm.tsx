@@ -196,7 +196,7 @@ export default function RiskForm({ editId, initial, submitLabel, loading, error,
             <input
               value={v.financial_exposure}
               onChange={f('financial_exposure')}
-              placeholder="e.g. ₦450M — analyst estimate, not derived from severity"
+              placeholder="e.g. 10000 sanction per day for non-compliance."
             />
           </div>
 
