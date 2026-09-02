@@ -301,7 +301,7 @@ def _build_month_buckets(
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def compute_exposure_index(ctx: ReportContext) -> dict:
-    risks = ctx.risks
+    risks = ctx.all_risks
     if not risks:
         return {
             "score": 0, "label": "Low", "health": 100,
@@ -348,7 +348,7 @@ def compute_exposure_index(ctx: ReportContext) -> dict:
 
 
 def compute_risk_snapshot(ctx: ReportContext) -> dict:
-    risks = ctx.risks
+    risks = ctx.all_risks
     residuals = [r.residual for r in risks if r.residual > 0]
     avg_residual = round(sum(residuals) / len(residuals)) if residuals else 0
 
@@ -529,7 +529,7 @@ def compute_exposure_trend(ctx: ReportContext) -> dict:
     trend_dir = "upward" if last > first else "downward" if last < first else "stable"
 
     cat_map: dict[str, int] = {}
-    for r in ctx.risks:
+    for r in ctx.all_risks:
         cat_map[r.category] = cat_map.get(r.category, 0) + 1
     top_cat = sorted(cat_map.items(), key=lambda x: x[1], reverse=True)
     key_driver = top_cat[0][0] if top_cat else "risk activity"
@@ -568,20 +568,16 @@ def compute_residual_risk_trend(ctx: ReportContext) -> dict:
 def compute_risk_distribution(ctx: ReportContext) -> dict:
     by_level: dict[str, int]    = {}
     by_category: dict[str, int] = {}
-    for r in ctx.risks:
+    for r in ctx.all_risks:
         lv = r.level or "Unknown"
         by_level[lv] = by_level.get(lv, 0) + 1
         by_category[r.category] = by_category.get(r.category, 0) + 1
 
-    tot   = len(ctx.risks) or 1
-    # Elevated is level_index >= max(band_count - 1, 2). Low is band 1. Everything
-    # between them is the middle group, which is empty on a 3-band matrix because
-    # elevated starts at band 2. Deriving the threshold here rather than assuming
-    # a fixed band layout keeps the three percentages summing to 100.
+    tot   = len(ctx.all_risks) or 1
     _bands   = _band_labels(ctx.matrix_config)
     _elev_ix = max(len(_bands) - 1, 2)
-    hi_ct = sum(1 for r in ctx.risks if r.level_index >= _elev_ix)
-    lo_ct = sum(1 for r in ctx.risks if r.level_index == 1)
+    hi_ct = sum(1 for r in ctx.all_risks if r.level_index >= _elev_ix)
+    lo_ct = sum(1 for r in ctx.all_risks if r.level_index == 1)
     me_ct = max(0, tot - hi_ct - lo_ct)
     hi_pct = round(hi_ct / tot * 100)
     me_pct = round(me_ct / tot * 100)
@@ -651,7 +647,7 @@ def compute_incident_trend(ctx: ReportContext) -> dict:
 
 
 def compute_top_risks(ctx: ReportContext) -> dict:
-    risks = sorted(ctx.risks, key=lambda r: (r.level_index, r.residual), reverse=True)[:10]
+    risks = sorted(ctx.all_risks, key=lambda r: (r.level_index, r.residual), reverse=True)[:10]
     return {
         "risks": [
             {
@@ -678,13 +674,14 @@ def compute_top_emerging_risks(ctx: ReportContext) -> dict:
         if _is_high(r)
         and (not ctx.date_from or (r.logged_at and ctx.date_from <= r.logged_at <= ctx.date_to))
     ]
-    risks = sorted(risks, key=lambda r: r.residual, reverse=True)[:10]
+    risks = sorted(risks, key=lambda r: (r.level_index, r.residual), reverse=True)[:10]
     return {
         "risks": [
             {
                 "id":          r.id,
                 "category":    r.category,
                 "desc":        r.desc[:120],
+                "owner":       r.owner,
                 "level":       r.level,
                 "level_index": r.level_index,
                 "residual":    round(r.residual),
@@ -720,7 +717,7 @@ def compute_major_incidents(ctx: ReportContext) -> dict:
 
 
 def compute_findings(ctx: ReportContext) -> dict:
-    risks     = ctx.risks
+    risks     = ctx.all_risks
     incidents = ctx.incidents
 
     high_count   = sum(1 for r in risks if _is_high(r))
@@ -817,14 +814,14 @@ def compute_recommendations(ctx: ReportContext) -> dict:
     fn = compute_findings(ctx)
 
     owner_map: dict[str, int] = {}
-    for r in [x for x in ctx.risks if _is_high(x)]:
+    for r in [x for x in ctx.all_risks if _is_high(x)]:
         o = r.owner or "Risk Manager"
         owner_map[o] = owner_map.get(o, 0) + 1
     top_owner = sorted(owner_map.items(), key=lambda x: x[1], reverse=True)
     top_owner_name = top_owner[0][0] if top_owner else "Risk Manager"
 
-    has_critical = any(r.level_index >= 4 for r in ctx.risks)
-    has_high     = any(_is_high(r) for r in ctx.risks)
+    has_critical = any(r.level_index >= 4 for r in ctx.all_risks)
+    has_high     = any(_is_high(r) for r in ctx.all_risks)
     priority = "Critical" if has_critical else "High" if has_high else "Medium"
     due      = "7 Days"   if priority == "Critical" else "14 Days" if priority == "High" else "30 Days"
 
@@ -905,7 +902,7 @@ def compute_conclusion(ctx: ReportContext) -> dict:
 
 
 def compute_risk_ownership(ctx: ReportContext) -> dict:
-    risks = ctx.risks
+    risks = ctx.all_risks
     if not risks:
         return {"top_owners": [], "concentration": 0, "all_high_count": 0, "narrative": ""}
 
@@ -1026,7 +1023,7 @@ def compute_incident_analytics(ctx: ReportContext) -> dict:
 
 
 def compute_executive_dashboard(ctx: ReportContext) -> dict:
-    risks = ctx.risks
+    risks = ctx.all_risks
     if not risks:
         return {
             "no_data": True, "kpis": [],
@@ -1307,7 +1304,6 @@ async def get_template(db: AsyncSession, tenant_id: UUID, template_id: str) -> d
         return None
     result = await db.get(ReportTemplate, uid)
     if result is None or str(result.tenant_id) != str(tenant_id):
-        return None
         return None
     return {
         "template_id": str(result.id),

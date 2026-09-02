@@ -1783,17 +1783,25 @@ def build_pdf(
         _bot_est     = 78 * mm
         _meta_gap    = max(10 * mm, _frame_h - _top_est - _bot_est)
 
+        # ── Logo element: scale proportionally to fit 44×22 mm bounding box ──
+        if logo_bytes:
+            _limg  = Image(io.BytesIO(logo_bytes))
+            _scale = min((44 * mm) / _limg.imageWidth, (22 * mm) / _limg.imageHeight)
+            _limg.drawWidth  = _limg.imageWidth  * _scale
+            _limg.drawHeight = _limg.imageHeight * _scale
+            _logo_el: Image | Paragraph = _limg
+        else:
+            _logo_el = Paragraph(brand_label, ParagraphStyle(
+                "corg", fontName="Helvetica-Bold", fontSize=15,
+                textColor=NAVY, spaceAfter=0,
+            ))
+
         # ── Cover body with navy left border ──────────────────────────────────
         cover_body = Table(
             [
                 # Top row: brand name + classification chip
                 [Table([[
-                    Image(io.BytesIO(logo_bytes), width=44 * mm, height=22 * mm)
-                    if logo_bytes else
-                    Paragraph(brand_label, ParagraphStyle(
-                        "corg", fontName="Helvetica-Bold", fontSize=15,
-                        textColor=NAVY, spaceAfter=0,
-                    )),
+                    _logo_el,
                     chip_para,
                 ]], colWidths=["70%", "30%"],
                 style=TableStyle([("VALIGN", (0,0),(-1,-1), "MIDDLE"),
