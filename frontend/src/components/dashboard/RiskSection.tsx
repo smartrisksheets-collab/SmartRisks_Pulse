@@ -467,19 +467,21 @@ export default function RiskSection({ data }: Props) {
               <div className="rs-signal-row">
                 {/* Signal 1: current health status label */}
                 <span className={`sr-delta ${hStatusCls}`}>{hLabel}</span>
-                {/* Signal 2: month-over-month % change pill */}
+                {/* Signal 2: month-over-month % change pill or no-change label */}
                 {snapshot_delta.has_data && snapshot_delta.health_delta !== null && (
-                  <span
-                    className={`sr-delta ${snapshot_delta.health_delta > 0 ? 'up' : 'down'}`}
-                    title={`Health is ${snapshot_delta.health_delta > 0 ? 'up' : 'down'} ${Math.abs(snapshot_delta.health_delta)}% ${snapshot_delta.period_label}`}
-                  >
-                    {snapshot_delta.health_delta > 0 ? '▲' : '▼'}&nbsp;{Math.abs(snapshot_delta.health_delta)}%
-                  </span>
+                  snapshot_delta.health_delta === 0
+                    ? <span className="sr-delta flat">No change</span>
+                    : <span
+                        className={`sr-delta ${snapshot_delta.health_delta > 0 ? 'up' : 'down'}`}
+                        title={`Health is ${snapshot_delta.health_delta > 0 ? 'up' : 'down'} ${Math.abs(snapshot_delta.health_delta)}% ${snapshot_delta.period_label}`}
+                      >
+                        {snapshot_delta.health_delta > 0 ? '▲' : '▼'}&nbsp;{Math.abs(snapshot_delta.health_delta)}%
+                      </span>
+                )}
+                {snapshot_delta.has_data && snapshot_delta.period_label && (
+                  <span className="dash-period">{snapshot_delta.period_label}</span>
                 )}
               </div>
-              {snapshot_delta.has_data && snapshot_delta.period_label && (
-                <span className="dash-period">{snapshot_delta.period_label}</span>
-              )}
             </div>
           </div>
 
