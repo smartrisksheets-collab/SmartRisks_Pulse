@@ -651,7 +651,7 @@ def compute_incident_trend(ctx: ReportContext) -> dict:
 
 
 def compute_top_risks(ctx: ReportContext) -> dict:
-    risks = sorted(ctx.risks, key=lambda r: r.residual, reverse=True)[:10]
+    risks = sorted(ctx.risks, key=lambda r: (r.level_index, r.residual), reverse=True)[:10]
     return {
         "risks": [
             {

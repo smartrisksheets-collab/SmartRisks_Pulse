@@ -96,7 +96,7 @@ export default function RiskTable({ risks, loading, onView, flashId, aiFlashIds,
             <th style={{ width: 70, textAlign: 'center' }}>Severity</th>
             <th style={{ width: 90 }}>Level</th>
             <th style={{ width: 80, textAlign: 'center' }}>Residual</th>
-            <th style={{ width: 120 }}>Financial Exposure</th>
+            <th style={{ width: 120 }}>Estimate</th>
             <th style={{ width: 100, background: 'rgba(1,184,142,.06)' }}>Appetite</th>
             <th style={{ width: 120 }}>Decision</th>
           </tr>

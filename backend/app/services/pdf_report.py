@@ -25,6 +25,7 @@ from reportlab.platypus import (
     Flowable,
     Frame,
     HRFlowable,
+    Image,
     NextPageTemplate,
     PageBreak,
     PageTemplate,
@@ -866,10 +867,11 @@ def _render_risk_table(label: str, risks: list[dict], intro: str | None,
         textColor=colors.HexColor("#333333"), alignment=TA_CENTER,
     )
 
-    headers = ["ID", "Description", "Level", "Residual", "Trend"]
+    headers = ["ID", "Dept / Risk Owner", "Description", "Level", "Residual", "Trend"]
     rows = [headers] + [
         [
             Paragraph(str(r.get("id", "")), _S["body"]),
+            Paragraph((r.get("owner") or "")[:50], _S["body"]),
             Paragraph((r.get("desc") or "")[:100], _S["body"]),
             _level_badge_cell(r.get("level", ""), r.get("level_index")),
             Paragraph(str(r.get("residual", "")), _res_s),
@@ -881,7 +883,7 @@ def _render_risk_table(label: str, risks: list[dict], intro: str | None,
         ]
         for r in risks
     ]
-    col_w = [22 * mm, 70 * mm, 24 * mm, 18 * mm, 14 * mm]
+    col_w = [22 * mm, 38 * mm, 50 * mm, 22 * mm, 16 * mm, 14 * mm]
     tbl = Table(rows, colWidths=col_w, repeatRows=1)
     tbl.setStyle(TableStyle([
         ("BACKGROUND",   (0, 0), (-1, 0), NAVY),
@@ -1655,6 +1657,7 @@ def build_pdf(
     date_to:     str | None = None,
     orientation: str = "portrait",
     org_name:    str = "",
+    logo_bytes:  bytes | None = None,
 ) -> bytes:
     """
     Builds and returns a PDF as bytes.
@@ -1776,7 +1779,7 @@ def build_pdf(
         # Remaining space is given to the gap so meta lands ~75% down the page.
         _ph          = (210 if is_landscape else 297) * mm
         _frame_h     = _ph - 18 * mm - 14 * mm
-        _top_est     = 90 * mm
+        _top_est     = 106 * mm if logo_bytes else 90 * mm
         _bot_est     = 78 * mm
         _meta_gap    = max(10 * mm, _frame_h - _top_est - _bot_est)
 
@@ -1785,6 +1788,8 @@ def build_pdf(
             [
                 # Top row: brand name + classification chip
                 [Table([[
+                    Image(io.BytesIO(logo_bytes), width=44 * mm, height=22 * mm)
+                    if logo_bytes else
                     Paragraph(brand_label, ParagraphStyle(
                         "corg", fontName="Helvetica-Bold", fontSize=15,
                         textColor=NAVY, spaceAfter=0,
