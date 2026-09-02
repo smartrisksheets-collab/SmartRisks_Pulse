@@ -125,8 +125,7 @@ export default function Login() {
 
         <p className="auth-eyebrow">Pulse Portal</p>
         <h2>
-          Welcome<br />
-          <span style={{ color: '#01b88e' }}>back.</span>
+          Welcome <span style={{ color: '#01b88e' }}>back.</span>
         </h2>
         <p className="auth-left-sub">
           Sign in to pick up right where your risk register left off.
