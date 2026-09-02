@@ -1510,7 +1510,7 @@ tr.row-flash { animation: rowFlash 2.2s ease; }
 }
 
 .auth-left h2 {
-  font-size: 34px; font-weight: 700; line-height: 1.2; margin-bottom: 8px;
+  font-size: 34px; font-weight: 700; line-height: 1.2; margin-bottom: 8px; white-space: nowrap;
 }
 
 .auth-left-sub { font-size: 14px; color: rgba(255,255,255,0.55); line-height: 1.6; margin-bottom: 32px; }
@@ -1551,11 +1551,10 @@ tr.row-flash { animation: rowFlash 2.2s ease; }
   text-transform: uppercase; color: #01b88e; margin-bottom: 10px;
 }
 
-.auth-form-wrap h1 { color: #1F2854; font-size: 32px; font-weight: 700; margin-bottom: 8px; }
+.auth-form-wrap h1 { color: #1F2854; font-size: 32px; font-weight: 700; margin-bottom: 8px; white-space: nowrap; }
 
 .auth-form-sub { color: #64748b; font-size: 15px; line-height: 1.6; margin-bottom: 32px; }
 
-.auth-field { margin-bottom: 20px; }
 
 .auth-field label {
   display: block; font-size: 14px; font-weight: 500;
@@ -3775,7 +3774,7 @@ tr.row-flash { animation: rowFlash 2.2s ease; }
 
 /* Card head signal column (Card 1 right side) */
 .rs-signal-col { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
-.rs-signal-row { display: flex; align-items: center; gap: 4px; }
+.rs-signal-row { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
 
 /* Gauge legend + donut legend */
 .rs-legend { display: flex; justify-content: center; gap: 14px; flex-wrap: wrap; }
