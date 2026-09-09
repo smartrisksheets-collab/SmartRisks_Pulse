@@ -54,6 +54,8 @@ export default function AcceptInvite() {
   const [confirmErr,  setConfirmErr]  = useState('');
   const [submitErr,   setSubmitErr]   = useState('');
   const [submitting,  setSubmitting]  = useState(false);
+  const [showPwd,     setShowPwd]     = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
 
   useEffect(() => {
     if (!token) return;
@@ -159,15 +161,23 @@ export default function AcceptInvite() {
               <label style={{ fontSize: 13, fontWeight: 600, color: '#1F2854', display: 'block', marginBottom: 6 }}>
                 Password
               </label>
-              <input
-                type="password"
-                placeholder="Minimum 8 characters"
-                value={password}
-                onChange={(e) => { setPassword(e.target.value); if (pwdErr) setPwdErr(''); }}
-                className={pwdErr ? 'invalid' : ''}
-                autoComplete="new-password"
-                style={{ width: '100%' }}
-              />
+              <div className="input-wrap">
+                <input
+                  type={showPwd ? 'text' : 'password'}
+                  placeholder="Minimum 8 characters"
+                  value={password}
+                  onChange={(e) => { setPassword(e.target.value); if (pwdErr) setPwdErr(''); }}
+                  className={pwdErr ? 'invalid' : ''}
+                  autoComplete="new-password"
+                  style={{ width: '100%' }}
+                />
+                <button type="button" className="input-eye" onClick={() => setShowPwd(v => !v)} aria-label="Toggle password visibility">
+                  {showPwd
+                    ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                    : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                  }
+                </button>
+              </div>
               {pwdErr && <p className="form-error">{pwdErr}</p>}
               <PasswordRules value={password} />
             </div>
@@ -176,15 +186,23 @@ export default function AcceptInvite() {
               <label style={{ fontSize: 13, fontWeight: 600, color: '#1F2854', display: 'block', marginBottom: 6 }}>
                 Confirm Password
               </label>
-              <input
-                type="password"
-                placeholder="Repeat your password"
-                value={confirm}
-                onChange={(e) => { setConfirm(e.target.value); if (confirmErr) setConfirmErr(''); }}
-                className={confirmErr ? 'invalid' : ''}
-                autoComplete="new-password"
-                style={{ width: '100%' }}
-              />
+              <div className="input-wrap">
+                <input
+                  type={showConfirm ? 'text' : 'password'}
+                  placeholder="Repeat your password"
+                  value={confirm}
+                  onChange={(e) => { setConfirm(e.target.value); if (confirmErr) setConfirmErr(''); }}
+                  className={confirmErr ? 'invalid' : ''}
+                  autoComplete="new-password"
+                  style={{ width: '100%' }}
+                />
+                <button type="button" className="input-eye" onClick={() => setShowConfirm(v => !v)} aria-label="Toggle confirm password visibility">
+                  {showConfirm
+                    ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                    : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                  }
+                </button>
+              </div>
               {confirmErr && <p className="form-error">{confirmErr}</p>}
             </div>
 
