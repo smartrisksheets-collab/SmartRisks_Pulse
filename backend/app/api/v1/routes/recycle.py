@@ -2,7 +2,8 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
+from app.core.rate_limit import limiter
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_db, get_active_tenant
@@ -12,7 +13,9 @@ router = APIRouter(prefix="/recycle", tags=["recycle"])
 
 
 @router.get("")
+@limiter.limit("60/minute")
 async def list_bin(
+    request: Request,
     item_type: str | None = Query(None),
     db: AsyncSession      = Depends(get_db),
     claims: dict          = Depends(get_active_tenant),
@@ -23,7 +26,9 @@ async def list_bin(
 
 
 @router.get("/count")
+@limiter.limit("60/minute")
 async def get_count(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     claims: dict     = Depends(get_active_tenant),
 ):
@@ -33,7 +38,9 @@ async def get_count(
 
 
 @router.post("/{bin_id}/restore")
+@limiter.limit("20/minute")
 async def restore_item(
+    request: Request,
     bin_id: UUID,
     db: AsyncSession = Depends(get_db),
     claims: dict     = Depends(get_active_tenant),
@@ -46,7 +53,9 @@ async def restore_item(
 
 
 @router.delete("/{bin_id}")
+@limiter.limit("10/minute")
 async def permanent_delete(
+    request: Request,
     bin_id: UUID,
     db: AsyncSession = Depends(get_db),
     claims: dict     = Depends(get_active_tenant),

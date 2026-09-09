@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.appetite_threshold import AppetiteThreshold
@@ -51,3 +51,18 @@ async def upsert_appetite(
     await db.flush()
     await db.refresh(row)
     return AppetiteThresholdResponse.model_validate(row)
+
+
+async def delete_appetite(
+    db: AsyncSession,
+    tenant_id: UUID,
+    category: str,
+) -> bool:
+    result = await db.execute(
+        delete(AppetiteThreshold).where(
+            AppetiteThreshold.tenant_id == tenant_id,
+            AppetiteThreshold.category == category,
+        )
+    )
+    await db.flush()
+    return result.rowcount > 0  # type: ignore[union-attr]

@@ -304,44 +304,9 @@ async def register(db: AsyncSession, email: str, password: str, name: str) -> di
             raise InvalidCredentialsError(
                 "This email is registered via an invite. Please use your invite link to set a password."
             )
-        if not verify_password(password, str(existing.password_hash)):
-            raise InvalidCredentialsError(
-                "An account with this email already exists. Please sign in instead."
-            )
-
-        # Password correct — log them in regardless of workspace membership.
-        # If they have existing workspaces they land on the picker and can
-        # create a new workspace from there. If they have none, onboarding continues.
-        workspaces_raw = (await db.execute(
-            select(WorkspaceMember, Tenant)
-            .join(Tenant, Tenant.id == WorkspaceMember.tenant_id)
-            .where(WorkspaceMember.account_id == existing.id)
-            .where(WorkspaceMember.status == "ACTIVE")
-        )).all()
-        workspaces = [
-            {
-                "tenant_id": str(m.tenant_id),
-                "name":      str(t.name    or ""),
-                "role":      str(m.role    or ""),
-                "plan":      str(t.plan    or ""),
-                "modules":   list(t.modules or []),
-            }
-            for m, t in workspaces_raw
-        ]
-        base_token = create_access_token({
-            "sub":        str(existing.id),
-            "email":      existing.email,
-            "workspaces": workspaces,
-        })
-        refresh = create_refresh_token(
-            str(existing.id), existing.token_version  # type: ignore[arg-type]
+        raise DuplicateResourceError(
+            "An account with this email already exists. Please sign in instead."
         )
-        return {
-            "access_token":        base_token,
-            "refresh_token":       refresh,
-            "workspaces":          workspaces,
-            "incomplete_onboarding": len(workspaces) == 0,
-        }
 
     account = Account(
         email=email.lower(),
@@ -363,13 +328,22 @@ async def register(db: AsyncSession, email: str, password: str, name: str) -> di
 async def google_auth(db: AsyncSession, access_token: str) -> dict:
     async with httpx.AsyncClient(timeout=10.0) as client:
         info_resp = await client.get(
-            "https://www.googleapis.com/oauth2/v3/userinfo",
-            headers={"Authorization": f"Bearer {access_token}"},
+            "https://oauth2.googleapis.com/tokeninfo",
+            params={"access_token": access_token},
         )
     if info_resp.status_code != 200:
         raise InvalidCredentialsError("Invalid Google token")
 
     info = info_resp.json()
+
+    if settings.GOOGLE_CLIENT_ID:
+        azp = str(info.get("azp", ""))
+        if azp != settings.GOOGLE_CLIENT_ID:
+            raise InvalidCredentialsError("Google token was not issued for this application")
+
+    if str(info.get("email_verified", "")).lower() != "true":
+        raise InvalidCredentialsError("Google account email is not verified")
+
     email = str(info.get("email", "")).lower()
     if not email:
         raise InvalidCredentialsError("Could not retrieve email from Google account")

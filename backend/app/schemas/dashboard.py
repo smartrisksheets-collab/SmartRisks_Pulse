@@ -92,6 +92,24 @@ class TopIncident(BaseModel):
     status: str | None = None
 
 
+class IncidentCategoryBreakdown(BaseModel):
+    category: str
+    count: int = 0
+    financial_total: float = 0.0
+
+
+class IncidentFeedEntry(BaseModel):
+    id: str
+    incident_id: str
+    incident_title: str | None = None
+    event_type: str
+    severity: str | None = None
+    category: str | None = None
+    status: str | None = None
+    old_status: str | None = None
+    created_at: str
+
+
 class DashboardResponse(BaseModel):
     kpis: KPISummary
     risks_by_level: dict[str, int]
@@ -104,7 +122,9 @@ class DashboardResponse(BaseModel):
     lifecycle: IncidentLifecycle
     avg_resolution: IncidentResolution
     activity_feed: list[ActivityEntry]
+    incident_feed: list[IncidentFeedEntry]
     top_open_incidents: list[TopIncident]
+    incidents_by_category: list[IncidentCategoryBreakdown]
     attention: list[str]
     snapshot_delta: SnapshotDelta
 

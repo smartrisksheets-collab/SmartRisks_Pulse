@@ -26,10 +26,17 @@ class Settings(BaseSettings):
     # App
     APP_ENV: str = "development"
     FRONTEND_URL: str = "http://localhost:5173"
+    ADMIN_FRONTEND_URL: str = "http://localhost:5174"
+
+    # Admin JWT (separate secret from main app)
+    ADMIN_JWT_SECRET: str
+    ADMIN_ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
 
     @property
     def allowed_origins(self) -> list[str]:
-        return [u.strip() for u in self.FRONTEND_URL.split(",") if u.strip()]
+        origins = [u.strip() for u in self.FRONTEND_URL.split(",") if u.strip()]
+        origins += [u.strip() for u in self.ADMIN_FRONTEND_URL.split(",") if u.strip()]
+        return origins
 
     # Billing
     TRIAL_DURATION_DAYS: int = 14
@@ -53,6 +60,14 @@ class Settings(BaseSettings):
 
     # Heartbeat
     PRESENCE_WINDOW_SECONDS: int = 110
+
+    # Trusted reverse proxy IPs for rate-limit key resolution.
+    # Comma-separated plain string. e.g. TRUSTED_PROXY_IPS=10.0.0.0/8
+    TRUSTED_PROXY_IPS: str = ""
+
+    @property
+    def trusted_proxy_list(self) -> list[str]:
+        return [ip.strip() for ip in self.TRUSTED_PROXY_IPS.split(",") if ip.strip()]
 
     # Defaults
     DEFAULT_CURRENCY: str = "₦"

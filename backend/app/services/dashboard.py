@@ -8,7 +8,7 @@ import asyncio
 from datetime import datetime, timezone, timedelta
 from uuid import UUID
 
-from sqlalchemy import select, func, case, text, cast, DateTime, literal_column
+from sqlalchemy import select, func, case, text, cast, DateTime, literal_column, nullslast
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import AsyncSessionLocal
@@ -28,6 +28,8 @@ from app.schemas.dashboard import (
     ActivityEntry,
     TopRisk,
     TopIncident,
+    IncidentCategoryBreakdown,
+    IncidentFeedEntry,
     SnapshotDelta,
 )
 from app.services.snapshot import get_snapshot_delta
@@ -39,6 +41,7 @@ _MONTH = literal_column("'month'")
 _DAYS_DEFAULT = 90
 _SLA_TARGET_DAYS = 5
 _ACTIVITY_LIMIT = 20
+_INCIDENT_FEED_LIMIT = 20
 _TOP_RISKS_LIMIT = 6
 _TREND_MONTHS = 6
 
@@ -81,20 +84,24 @@ async def get_dashboard(
         avg_resolution,
         activity_feed,
         snapshot_delta,
+        incidents_by_category,
+        incident_feed,
     ) = await asyncio.gather(
-        _run(_get_kpis,           tenant_id),
-        _run(_risks_by_level,     tenant_id),
-        _run(_risks_by_category,  tenant_id),
-        _run(_top_risks,          tenant_id),
-        _run(_top_open_incidents, tenant_id),
-        _run(_residual_trend,     tenant_id),
-        _run(_incident_velocity,  tenant_id, days),
-        _run(_incident_health,    tenant_id),
-        _run(_total_incidents,    tenant_id),
-        _run(_lifecycle,          tenant_id),
-        _run(_avg_resolution,     tenant_id),
-        _run(_activity_feed,      tenant_id),
-        _run(get_snapshot_delta,  tenant_id),
+        _run(_get_kpis,                  tenant_id),
+        _run(_risks_by_level,            tenant_id),
+        _run(_risks_by_category,         tenant_id),
+        _run(_top_risks,                 tenant_id),
+        _run(_top_open_incidents,        tenant_id),
+        _run(_residual_trend,            tenant_id),
+        _run(_incident_velocity,         tenant_id, days),
+        _run(_incident_health,           tenant_id),
+        _run(_total_incidents,           tenant_id),
+        _run(_lifecycle,                 tenant_id),
+        _run(_avg_resolution,            tenant_id),
+        _run(_activity_feed,             tenant_id),
+        _run(get_snapshot_delta,         tenant_id),
+        _run(_incidents_by_category,     tenant_id),
+        _run(_incident_feed,             tenant_id),
     )
 
     # _build_attention is synchronous and needs kpis + incident_health,
@@ -126,6 +133,8 @@ async def get_dashboard(
         lifecycle=lifecycle,
         avg_resolution=avg_resolution,
         activity_feed=activity_feed or [],
+        incident_feed=incident_feed or [],
+        incidents_by_category=incidents_by_category or [],
         attention=attention,
         snapshot_delta=snapshot_delta,
     )
@@ -413,6 +422,43 @@ async def _total_incidents(db: AsyncSession, tenant_id: UUID) -> TotalIncidentsS
     )
 
 
+async def _incidents_by_category(
+    db: AsyncSession,
+    tenant_id: UUID,
+) -> list[IncidentCategoryBreakdown]:
+    category_expr = func.coalesce(
+        Incident.category,
+        literal_column("'Other'")
+    ).label("category")
+
+    financial_total = func.sum(Incident.financial_impact).label("financial_total")
+
+    rows = (
+        await db.execute(
+            select(
+                category_expr,
+                func.count(Incident.id).label("cnt"),
+                financial_total,
+            )
+            .where(
+                Incident.tenant_id == tenant_id,
+                Incident.deleted_at.is_(None),
+            )
+            .group_by(category_expr)
+            .order_by(financial_total.desc().nulls_last())
+        )
+    ).all()
+
+    return [
+        IncidentCategoryBreakdown(
+            category=str(r.category),
+            count=int(r.cnt),
+            financial_total=float(r.financial_total or 0),
+        )
+        for r in rows
+    ]
+
+
 async def _lifecycle(db: AsyncSession, tenant_id: UUID) -> IncidentLifecycle:
     rows = (await db.execute(
         select(Incident.status, func.count(Incident.id).label("cnt"))
@@ -496,6 +542,57 @@ async def _activity_feed(
         )
         for r in rows
     ]
+
+
+async def _incident_feed(
+    db: AsyncSession,
+    tenant_id: UUID,
+) -> list[IncidentFeedEntry]:
+    rows = (await db.execute(
+        select(Incident)
+        .where(
+            Incident.tenant_id == tenant_id,
+            Incident.deleted_at.is_(None),
+        )
+        .order_by(Incident.updated_at.desc())
+        .limit(_INCIDENT_FEED_LIMIT)
+    )).scalars().all()
+
+    entries: list[IncidentFeedEntry] = []
+    for r in rows:
+        reported_at = r.reported_at
+        resolved_at = r.resolved_at
+        updated_at  = r.updated_at
+        status      = str(r.status or "Open")
+        severity    = str(r.severity or "")
+
+        # Derive event_type from the incident's state
+        if resolved_at is not None:
+            event_type = "incident_resolved"
+        elif status.lower() in ("in progress", "under review"):
+            event_type = "incident_in_progress"
+        elif severity.lower() in ("critical", "very high", "high"):
+            event_type = "incident_escalated"
+        else:
+            event_type = "incident_created"
+
+        # Use resolved_at for resolved events, updated_at otherwise
+        ts = resolved_at or updated_at or reported_at
+        created_at_str = ts.isoformat() if ts is not None else ""  # type: ignore[union-attr]
+
+        entries.append(IncidentFeedEntry(
+            id=str(r.id or ""),
+            incident_id=str(r.id or ""),
+            incident_title=str(r.title or "") or None,
+            event_type=event_type,
+            severity=severity or None,
+            category=str(r.category or "") or None,
+            status=status,
+            old_status=None,
+            created_at=created_at_str,
+        ))
+
+    return entries
 
 
 # ---------------------------------------------------------------------------

@@ -83,7 +83,7 @@ async def add_member(
             invited_by=invited_by,
             workspace_name=str(tenant.name or "SmartRisk"),
             role=payload.role,
-            invite_link=f"{settings.FRONTEND_URL}/accept-invite?token={invite_token}",
+            invite_link=f"{settings.FRONTEND_URL.split(',')[0].strip()}/accept-invite?token={invite_token}",
         )
     except Exception:
         logger.warning("Invite email failed | to=%s", payload.email)

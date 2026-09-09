@@ -1,7 +1,7 @@
 // src/hooks/useAppetite.ts
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { fetchAppetites, upsertAppetite } from '../services/appetite';
+import { fetchAppetites, upsertAppetite, deleteAppetite } from '../services/appetite';
 import type { AppetiteThresholdUpsert } from '../types/settings';
 
 const APPETITE_KEY = ['appetite'] as const;
@@ -23,5 +23,13 @@ export function useAppetite() {
     },
   });
 
-  return { query, save };
+  const remove = useMutation({
+    mutationFn: (category: string) => deleteAppetite(category),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: APPETITE_KEY });
+      qc.invalidateQueries({ queryKey: ['risks'] });
+    },
+  });
+
+  return { query, save, remove };
 }

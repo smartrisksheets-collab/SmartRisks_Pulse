@@ -11,7 +11,7 @@ import { validateEmail, validatePassword } from '../utils/validation';
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
 
 interface GoogleBtnProps {
-  onSuccess: (accessToken: string) => void;
+  onSuccess: (accessToken: string) => Promise<void>;
   onError: (msg: string) => void;
   loading: boolean;
 }
@@ -20,9 +20,12 @@ function GoogleSignInButton({ onSuccess, onError, loading }: GoogleBtnProps) {
   const [googlePending, setGooglePending] = useState(false);
 
   const login = useGoogleLogin({
-    onSuccess: (r) => {
-      onSuccess(r.access_token);
-      // loading takes over from here — parent sets its own loading state
+    onSuccess: async (r) => {
+      try {
+        await onSuccess(r.access_token);
+      } finally {
+        setGooglePending(false);
+      }
     },
     onError: () => {
       setGooglePending(false);

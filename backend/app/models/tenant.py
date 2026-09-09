@@ -31,6 +31,7 @@ class Tenant(Base):
     pin_hash = Column(String)
     pin_attempts = Column(Integer, nullable=False, server_default="0")
     pin_locked_until = Column(DateTime(timezone=True))
+    status = Column(String, nullable=False, server_default="ACTIVE")
     created_by = Column(PG_UUID(as_uuid=True), ForeignKey("accounts.id"), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

@@ -57,6 +57,18 @@ export interface VelocityPoint {
   resolved: number;
 }
 
+export interface IncidentFeedEntry {
+  id: string
+  incident_id: string
+  incident_title: string | null
+  event_type: string
+  severity: string | null
+  category: string | null
+  status: string | null
+  old_status: string | null
+  created_at: string
+}
+
 export interface ActivityEntry {
   id: string;
   risk_id: string | null;
@@ -88,12 +100,19 @@ export interface TopIncident {
   status: string | null;
 }
 
+export interface IncidentCategoryBreakdown {
+  category: string;
+  count: number;
+  financial_total: number;
+}
+
 export interface DashboardData {
   kpis: KPISummary;
   risks_by_level: Record<string, number>;
   risks_by_category: Record<string, number>;
   top_risks: TopRisk[];
   top_open_incidents: TopIncident[];
+  incidents_by_category: IncidentCategoryBreakdown[];
   residual_trend: TrendPoint[];
   incident_velocity: VelocityPoint[];
   incident_health: IncidentHealthSummary;
@@ -101,6 +120,7 @@ export interface DashboardData {
   lifecycle: IncidentLifecycle;
   avg_resolution: IncidentResolution;
   activity_feed: ActivityEntry[];
+  incident_feed: IncidentFeedEntry[];
   attention: string[];
     snapshot_delta: SnapshotDelta;
 }

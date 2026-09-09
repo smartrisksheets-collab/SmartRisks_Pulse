@@ -15,12 +15,65 @@ At the end of every session Claude outputs a fresh version of this file with all
  
 ---
  
-**Phase:** Stream B complete. External Submission System fully built and pushed to staging.
-**Status:** Session 20, August 31, 2026: Stream B fully built. Staging/production split configured. See session log below.
-**Next action:** Begin next session by reading SMARTRISK_V2_SETUP.md, SMARTRISK_V2_DECISIONS.md, then this file. First task: staging QA with tester across all Stream B surfaces (public form, submissions inbox, token manager, promotion flow). Second task: address any bugs found in staging QA.
+**Phase:** Admin Panel build complete (backend + frontend). Stream B staging QA deferred.
+**Status:** Session 21, September 8, 2026: Admin Panel fully built. Backend routes live. Admin React app scaffolded and all six pages written. Light theme applied. See session log below.
+**Next action:** Begin next session by reading SMARTRISK_V2_SETUP.md, SMARTRISK_V2_DECISIONS.md, then this file. First task: run seed_admin.py on staging to create both super admin accounts. Second task: wire admin app to staging backend and QA all six pages end to end. Third task: address any bugs found. Stream B staging QA (public form, submissions inbox, token manager, promotion flow) resumes after admin panel QA is complete.
  
 ---
- 
+
+### Session 21: September 8, 2026 — Admin Panel (Backend + Frontend)
+
+**Completed:**
+
+**Migrations (Supabase SQL run on both staging and prod databases):**
+- Migration 046: `admin_accounts` table with self-referencing `created_by`, role, status, last_login
+- Migration 047: `admin_audit_log` table with nullable `admin_id` (ON DELETE SET NULL), JSONB meta, two indexes
+- Migration 048: `api_error_log` table with nullable `tenant_id`, JSONB request_body, three indexes
+- Migration 049: `status TEXT NOT NULL DEFAULT 'ACTIVE'` column added to `tenants` table
+
+**Backend new files:**
+- `app/models/admin_account.py`: AdminAccount ORM model, self-referencing FK
+- `app/models/admin_audit_log.py`: AdminAuditLog ORM model, JSONB meta
+- `app/models/api_error_log.py`: ApiErrorLog ORM model, JSONB request_body
+- `app/core/admin_security.py`: create_admin_token and decode_admin_token using ADMIN_JWT_SECRET, type claim enforced on decode
+- `app/core/admin_deps.py`: get_current_admin and require_super_admin dependencies, get_db imported from app.core.dependencies
+- `app/middleware/error_log.py`: ErrorLogMiddleware captures 4xx/5xx, fire-and-forget via asyncio.create_task, scrubs sensitive fields before storing body
+- `app/schemas/admin.py`: full schema layer covering auth, admin accounts, workspaces, overview stats, user intelligence, error log, audit log
+- `app/services/admin_auth.py`: login, write_audit_log shared helper
+- `app/services/admin_panel.py`: get_overview_stats (2 queries, not 8), list_workspaces (one join query), update_workspace, list_platform_users, list_admin_accounts, create_admin_account, update_admin_account, list_errors, get_error_summary, list_admin_audit_log
+- `app/api/v1/routes/admin_auth.py`: POST /api/admin/auth/login, GET /api/admin/auth/me
+- `app/api/v1/routes/admin_overview.py`: GET /api/admin/overview/stats
+- `app/api/v1/routes/admin_workspaces.py`: GET /api/admin/workspaces, PATCH /api/admin/workspaces/{tenant_id}
+- `app/api/v1/routes/admin_accounts.py`: GET /api/admin/platform-users, GET/POST /api/admin/admin-accounts, PATCH /api/admin/admin-accounts/{id}
+- `app/api/v1/routes/admin_errors.py`: GET /api/admin/errors, GET /api/admin/errors/summary, GET /api/admin/audit-log
+- `seed_admin.py`: interactive multi-account seed script, queues all entries before DB write, duplicate check per email, minimum 12-char password
+
+**Backend modified files:**
+- `app/models/__init__.py`: AdminAccount, AdminAuditLog, ApiErrorLog registered
+- `app/core/config.py`: ADMIN_JWT_SECRET (required), ADMIN_FRONTEND_URL, ADMIN_ACCESS_TOKEN_EXPIRE_MINUTES (60) added, allowed_origins extended to include admin frontend
+- `app/main.py`: ErrorLogMiddleware imported and registered before TenantMiddleware (innermost), five admin routers imported from app.api.v1.routes and mounted under /api prefix
+
+**Admin frontend (new app at /admin/):**
+- Scaffolded via `npm create vite . -- --template react-ts`, ESLint selected
+- Additional packages: react-router-dom, @tanstack/react-query, zustand, axios, recharts
+- `admin/src/index.css`: full admin CSS with light theme tokens (--bg #f6f8fa, --card #ffffff, --sidebar #1F2854 fixed), sidebar text pinned to rgba-white fixed values independent of theme tokens, drawer, search bar, select, detail row, toggle, auth split layout classes
+- `admin/src/types/admin.ts`: all TypeScript types for admin panel
+- `admin/src/services/api.ts`: adminApi axios instance, Bearer token interceptor, 401 auto-clear, unwrap helper, adminAuthApi, overviewApi, workspacesApi, usersApi, errorsApi, adminAccountsApi, auditApi
+- `admin/src/store/adminAuthStore.ts`: Zustand store with persist middleware
+- `admin/src/components/layout/Sidebar.tsx`: nav sections (Platform, Observability, Admin), active state via NavLink, sign out button
+- `admin/src/components/layout/Shell.tsx`: token guard redirects to /login, Outlet renders pages
+- `admin/src/pages/Login.tsx`: split panel layout matching Pulse auth pattern, navy left panel with brand and feature points, light right panel with form, show/hide password toggle
+- `admin/src/pages/Overview.tsx`: platform stat cards, conversion and activation rate cards, hourly error bar chart (recharts), top error paths table, 60s auto-refresh
+- `admin/src/pages/Workspaces.tsx`: searchable filterable table, status badges, edit drawer with all editable fields, derived status logic, mutation invalidates overview query
+- `admin/src/pages/PlatformUsers.tsx`: platform accounts table, relative time display, ghost filter, ghost count in subtitle
+- `admin/src/pages/ApiErrors.tsx`: error summary stats, hourly chart, filterable log table, detail drawer showing scrubbed request body, 30s auto-refresh
+- `admin/src/pages/AdminAccounts.tsx`: admin account table, create/edit drawer, self-edit guards (cannot change own role or deactivate own account), "you" pill on current admin row
+- `admin/src/pages/AuditLog.tsx`: audit entries newest first, before/after diff in detail drawer with strikethrough old and highlighted new values, action badge with readable English labels
+
+**Status:** Complete
+
+---
+
 ## KNOWN ISSUES AND PENDING DECISIONS
 
 - Windows has a native Postgres installation on port 5432. Docker is mapped to port 5433 to avoid conflict. `DATABASE_URL` in `.env` must always use port 5433. Same applies to SQLTools connection in VS Code.
@@ -1558,6 +1611,50 @@ These items were deprioritised in this session to unblock Phase 7. They are NOT 
 
 ---
 
+---
+
+## Session: September 7, 2026 — Incident Severity Wiring, Unified Dashboard Rebuild, Insight Modals
+
+### Incident Severity & SLA — Wiring Gaps Closed
+
+- `src/pages/Incidents.tsx`: Hardcoded `SEVERITIES` constant removed. `useIncidentSeverity` imported. `severityLabels` derived from `config.data?.levels` sorted by `sort_order`. Feeds both the filter bar severity select and the `AddIncidentModal` `severities` prop. `CHANNELS` constant retained (no lookup backing exists).
+- `src/components/incidents/AddIncidentModal.tsx`: Inline `style={{ maxWidth: 600 }}` removed from modal wrapper. Modal now inherits `.modal` class width (`min(920px, 100%)`), matching Add Risk modal proportions.
+- `src/components/incidents/IncidentDetailDrawer.tsx`: Hardcoded `sevColor` function replaced with `useIncidentSeverity` hook. Badge color now resolved by exact label match against live `config.data?.levels`, falling back to `#64748b`. Handles custom severity labels correctly.
+- `src/components/settings/IncidentSeveritySettings.tsx`: `className="sla-unit"` added to the hours/days `<select>` in the SLA targets block. Previously rendered as an unstyled browser native element.
+- `src/index.css`: `.sla-unit` class added with matching padding, border, radius, and focus state to align with `.sla-notify select`.
+
+### Settings Taxonomy Rename and Tab Reorder
+
+- `src/pages/Settings.tsx`: "Risk Config" label changed to "Taxonomy". Tab id `tax` unchanged. `inc-sev` tab moved to immediately after `appetite` in the TABS array. Inline comment updated.
+
+### Dashboard — incidents_by_category Backend Field
+
+- `app/schemas/dashboard.py`: `IncidentCategoryBreakdown` Pydantic model added (`category`, `count`, `financial_total`). Field added to `DashboardResponse`.
+- `app/services/dashboard.py`: `nullslast` imported from sqlalchemy. `_incidents_by_category` async function added. Groups non-deleted incidents by `COALESCE(category, 'Other')`, counts per group, sums `financial_impact`, orders by `nullslast(SUM(financial_impact).desc())`. `float(r.financial_total or 0)` handles NULL in Python. Added as 14th parallel task in `asyncio.gather`. Result wired into `DashboardResponse` constructor. Fix: removed `COALESCE(..., 0)` with integer literal that caused `ProgrammingError` (NUMERIC/INTEGER type conflict in asyncpg).
+- `src/types/dashboard.ts`: `IncidentCategoryBreakdown` interface added. `incidents_by_category: IncidentCategoryBreakdown[]` field added to `DashboardData`.
+
+### Dashboard — UnifiedSection Rebuild (All 7 Blocks)
+
+- `src/components/dashboard/UnifiedSection.tsx`: Full rebuild against GAS `View_Dashboard.html` reference.
+  - Block 1 (Enterprise Risk Health): Composite score formula corrected to average of riskHealth and incHealth. Status labels corrected to all-caps (`HEALTHY/MONITORING/WATCH/CRITICAL`). Score rendered in dark navy (CSS default), semantic color on status text only. `uExposureChange` now shows directional `▼ -X.X vs last period` / `▲ +X.X vs last period` from `snapshot_delta.avg_residual`. Exposure driver line shows `top_risks[0]` description and ID, not a generic count. `uResidualRiskVal` uses `toFixed(0)`. `uIncHealthVal` appends `%`.
+  - Block 2 (Risk Pressure): Weighted composite formula (40% risk concentration + 35% open incident load + 25% SLA breach rate). Bar color thresholds corrected. Delta badge shows pressure label (High/Moderate/Low), not snapshot delta number. `uSlaBreach` shows `sla_pct + '%'`. Pressure score shows `/100`.
+  - Block 3 (Incident Performance): `im-resolve-primary/value/caption/bar/fill/insight` classes used. Bar fill gradient at ≤75%, amber at ≤100%, red beyond. SLA Compliance shows `(100 - sla_pct)%`. MTTR delta badge computed from live `mttr/slaDay` ratio. Resolve insight is computed narrative. `slaComplianceNum >= 80` replaces broken `Number(slaCompliance) >= 80` (was always NaN due to `%` suffix).
+  - Block 4 (Exposure Impact Drivers): Data source changed from `risks_by_category` counts to `incidents_by_category` financial totals. Bars use `danger/warn/good` CSS status classes. Value shows formatted financial or `Score N` fallback. Compact empty state text replaces large empty card.
+  - Block 5 (Exposure Trend): `im-wide` class added. Trend badge computed from last-3-point slope (requires both >25% relative and >2 absolute change). Y-axis domain is auto (was hardcoded `[0,25]`). Chart thinned: `strokeWidth=2`, dot radius 3, no axis line/tick lines, `strokeDasharray="2 4" vertical={false}`.
+  - Block 6 (Risk & Incident Distribution): `im-wide` class added. Second donut changed from Incident Velocity bar to Incident Categories donut using `incidents_by_category`. Both donuts use exactly `['#01b88e','#1F2854','#94a3b8']`, top 3 each. `DonutEmpty` module-level component provides height-consistent empty states.
+  - Block 7 (Executive Intelligence): Posture classification added (`stable/elevated/under pressure`). Full narrative includes posture word, SLA breach rate. `im-ai-card` uses border-top (corrected from border-left). Learn more link restored.
+
+### Dashboard — Insight Modals (4 modals, all wired)
+
+- `src/components/dashboard/UnifiedSection.tsx`: `useState`, `ReactNode` imported from React. `BarChart`, `Bar` added to recharts imports. `activeModal` state added. `InsightFooter` updated with `onClick` prop. Five module-level components: `UnifiedModal` (shell), `PressureModalContent`, `OperationsModalContent`, `ImpactModalContent`, `DistributionModalContent`. `pressureDistRows` computed (cross-join of risks and incidents by category). `causeCandidates` derived from `top_open_incidents` filtered to High/Very High severity. All four modal trigger buttons wired. Modals rendered at component return root below `dash-section`.
+- `src/index.css`: `u-modal-*` CSS block added before REPORT BUILDER section. Covers backdrop, box, wide variant, head, close button, body, KPI grid, KPI tile, section, section title, table, distribution tabs, distribution chart area, and responsive 2-column KPI grid at ≤600px.
+
+### Visual Refinements (CSS)
+
+- `src/index.css`: Multiple `im-*` class updates applied. Card radius 16→12px, shadow collapsed, gap 10→8px, min-height removed, hover lift 4→1px. Dashboard and grid gaps 20→14px / 16→12px. `im-ai-card` border moved left→top. `im-exposure-score` 36→42px. `im-pressure-bar` 6→4px pill. `dash-chart-wrap` 190→165px. `im-impact-row` converted from flex to 3-column grid with separator lines. New classes added: `im-hero`, `im-wide`, `im-delta.warn` (with dark mode), trend badge modifiers (`good/warn/bad`), `im-resolve-primary/value/caption/bar/fill/insight`, `im-impact-driver/meta/bar(.danger/.warn/.good)/value`.
+
+---
+
 ## NEXT SESSION STARTS WITH
 
 Read `SMARTRISK_V2_SETUP.md` first. Then read `SMARTRISK_V2_DECISIONS.md`. Then read this file.
@@ -1571,6 +1668,8 @@ Read `SMARTRISK_V2_SETUP.md` first. Then read `SMARTRISK_V2_DECISIONS.md`. Then 
 **Fourth task:** QA pass. Manual browser QA of all 20 PDF blocks with a fully populated workspace. Responsive check at 375px, 768px, 1024px, 1280px.
 
 **Pending:** GA4 integration. User to provide Measurement ID (G-XXXXXXXXXX). Add gtag script block to frontend/index.html when provided.
+
+**Unified Dashboard modals:** Four insight modals are now wired and functional. Next item on the dashboard: IncidentSection visual gap-fill vs GAS reference (previously deferred to Phase 6B).
 
 **Performance QA agenda (next session):**
 - EXPLAIN ANALYZE on dashboard, risk list, report data endpoints
@@ -2275,13 +2374,233 @@ Environment: RESEND_FROM_EMAIL updated on Render and local .env
 
 **Status:** Bug review complete. All fourteen list items addressed except item 5 (parked). Ready to push and merge once staging QA confirms.
 
+---
+
+## Session: Report Builder Polish + Risk Register Fixes (September 4, 2026)
+
+### Risk Register
+
+- `financial_exposure` placeholder updated to "e.g 10,000 sanction per day for non-compliance. Absolute figures only, no symbols, text or extra characters."
+- All data cells in `RiskTable` made bold (`fontWeight: 700`) — Date Logged, Description, Owner, Business Impact.
+- "Primary Impact" label renamed to "Business Impact" in `RiskDetailModal`.
+- Root Cause field added to `RiskDetailModal` (was missing from render, field exists on Risk model and type).
+- Business Impact column now truncates with ellipsis (`risk-impact-cell` / `risk-impact-text` CSS classes added to `index.css`). Max-width 140px. Full text on hover via `title` attribute.
+- Hover tooltips added to Appetite column (unset state: "Visit settings to set risk appetite.") and Decision column (no linked decision: "Edit risk to link a decision to the risk.") using existing `.tooltip-wrap[data-tip]` CSS pattern.
+- `RiskDetailModal` header changed to `risk.id`.
+
+### Password Reset Fix
+
+- `routes_auth.py` forgot-password route was passing `settings.FRONTEND_URL` (raw comma-separated string) as the reset link base. Fixed to `settings.allowed_origins[0]` which correctly splits and takes the first configured URL. Broken reset links on staging and prod are now resolved.
+
+### Import Route Fix
+
+- `POST /api/v1/risks/import` was returning 405 Method Not Allowed. The `bulk_import` service existed but no route was registered. Route added to `routes_risks.py` before the `/{risk_id}` dynamic path. `BulkImportResponse` added to schema imports.
+
+### Report Builder: PDF and Preview
+
+- PDF Top Risks table: "Dept / Risk Owner" column added between ID and Description. Column widths adjusted to fit 180mm content frame.
+- PDF Top Risks and Top Emerging Risks: sort changed from `residual` only to `(level_index, residual)` descending so Critical risks always surface above High/Medium regardless of residual score.
+- PDF Top Risks table: row limit capped at 5 rows at render time. Backend still returns 10 for AI prompt consistency.
+- PDF preview (`reports_ReportPreview.tsx`) Top Risks table updated to match: added Owner column between ID and Description.
+- `compute_top_emerging_risks` in `services_report.py`: added `owner` field to output dict. Was missing, causing `—` for all owners in the emerging risks table. Sort also fixed to `(level_index, residual)`.
+- Dead duplicate `return None` in `get_template` removed.
+
+### Report Builder: Imported Risks Invisible Bug
+
+- Root cause confirmed: `_apply_date_filter_risks` filters `ctx.risks` to only risks where `logged_at` falls within the report date range. Imported risks with historical CSV dates fell outside the window and vanished from every main block.
+- Fix: six register-state blocks switched from `ctx.risks` to `ctx.all_risks`: `compute_exposure_index`, `compute_risk_snapshot`, `compute_top_risks`, `compute_risk_distribution`, `compute_findings`, `compute_risk_ownership`, `compute_recommendations`, `compute_executive_dashboard`. Key driver line in `compute_exposure_trend` also switched.
+- Change-tracking blocks retained `ctx.risks` or their own date windows: `compute_key_risk_changes`, `compute_top_emerging_risks`, trend slice loops.
+
+### Report Builder: PDF Logo + Cover Page
+
+- `build_pdf` signature extended with `logo_bytes: bytes | None = None`.
+- `_fetch_logo_bytes(db, tenant_id)` helper added to `routes_reports.py`. Fetches logo via `httpx.AsyncClient` with 5s timeout. Best-effort, never blocks PDF generation.
+- Both export and email `build_pdf` call sites updated to pass `logo_bytes`.
+- Logo rendered on PDF cover page, replacing brand text label when present.
+- Logo proportional scaling: `Image` loaded without forced dimensions, natural `imageWidth`/`imageHeight` read, scale factor computed as `min(44mm / nw, 22mm / nh)`. Fixes stretching caused by forced 44x22mm box.
+- `_top_est` in cover gap calculation updated: `106mm` when logo present, `90mm` when not. Prevents cover body Table from overflowing frame and creating a blank page 2.
+- `Image` added to `reportlab.platypus` imports.
+
+### Report Builder: AI Narrative
+
+- Confirmed AI top-risks analysis appeared empty/generic because `compute_top_risks` was sorting by residual only, causing Medium risks to displace Critical ones in the AI prompt. Fixed by the sort change above.
+
+### Dashboard Signal Row
+
+- `dash-period` ("vs Aug 2026") moved inside `rs-signal-row` so it appears on the same line as the health label and delta pill.
+- Zero delta now renders "No change" (neutral `flat` pill) instead of red `▼ 0%`.
+
+### Login Page
+
+- "Welcome back." `<br />` tag removed from left panel h2. Now renders on a single line.
+
+---
+
+**Status:** Session complete. All items addressed.
+
 **Next session starts with:**
 
 1. Read `SMARTRISK_V2_SETUP.md`, `SMARTRISK_V2_BUILD.md`, `SMARTRISK_V2_DECISIONS.md` in full
-2. Confirm item 5 with partner and apply residual fix if formula is wrong
-3. Complete the report PDF header relabel (Dept/Risk Owner, held back pending column width check)
-4. Confirm custom domain migration on Render (api.smartrisksheets.com for prod, api-staging.smartrisksheets.com for staging) to fix Safari and Brave cookie blocking
-5. Run full staging QA including: 15-minute session hold test, PIN gate re-test after token refresh, dashboard with real data, import with new fields, Get Started flow
+2. Confirm item 5 (residual formula) with partner
+3. Confirm custom domain migration on Render to fix Safari and Brave cookie blocking
+4. Run full staging QA: 15-minute session hold, PIN gate re-test, dashboard with real data, import round-trip with imported risks appearing in report
+5. Audit module gating across all surfaces
+
+---
+
+## Session: September 5, 2026
+
+### Tier Restructure Decision
+
+- Incident-only tier scrapped. Two tiers only: risk-only and unified (risk + incident).
+- 14-day trial defaults to full unified access (`modules = ['risk', 'incident']`).
+- On expiry, user selects risk-only or unified. Conversion managed from admin panel (not yet built).
+- Existing workspaces updated via SQL: `UPDATE tenants SET modules = ARRAY['risk', 'incident'] WHERE modules = ARRAY['risk'];`
+- Admin/Founder panel V2 deferred to its own phase.
+
+### Phase A: Database Foundation (Incident Severity & SLA)
+
+- Migration 035: `linked_control TEXT`, `control_outcome TEXT`, `impact_confidence TEXT` added to incidents table.
+- Migration 036: `incident_severity_levels` table created. Columns: id, tenant_id, label, sort_order, color, criteria_text, created_at, updated_at.
+- Migration 037: `incident_sla_targets` table created. Columns: id, severity_id (FK cascade), target_value, target_unit, target_hours (normalized), notify_on_log, created_at, updated_at.
+- Migration 038: `incident_escalation_rules` table created. Columns: id, tenant_id (unique FK), auto_escalate_on_breach, escalate_to, flag_unowned_after_hours, created_at, updated_at.
+- Migration 039: `incident_severity_risk_band_map` table created. Columns: id, severity_id (FK cascade), risk_band_label, created_at.
+- All five raw SQL blocks run in Supabase editor first, then wrapped in Alembic migration files.
+- `models_incident.py`: three new columns added.
+- `models___init__.py`: four new model imports added.
+
+### Phase B: Backend — Incident Severity & SLA
+
+- `schemas_incident_severity.py`: all Pydantic schemas for severity config (SeverityLevelUpsert/Response, SlaTargetUpsert/Response, EscalationRuleUpsert/Response, BandMapResponse, IncidentSeverityConfigResponse, BreachPreviewItem/Response).
+- `services_incident_severity.py`: compute_breach (single shared breach function), get_sla_map, _seed_defaults, get_config (lazy seed), upsert_levels, delete_level (with reassignment logic), upsert_sla (normalizes target_hours on write), upsert_escalation, get_preview.
+- `routes_incident_severity.py`: GET /config, PUT /levels, DELETE /levels/{id}?reassign_to=, PUT /sla, PUT /escalation, GET /preview. Write routes require manage_settings + incident module. Read routes require incident module only.
+- `schemas_incident.py`: linked_control, control_outcome, impact_confidence added to IncidentCreate, IncidentUpdate, IncidentResponse.
+- `services_incident.py`: create_incident constructor extended with three linkage fields. get_stats updated to call compute_breach via get_sla_map. Falls back to hardcoded 5-day logic when no SLA config exists for the tenant.
+- `services_email.py`: send_escalation_alert function added (Resend, plain HTML, age display in hours/days).
+- `scheduler_jobs.py`: job_incident_escalation added. Hourly cron, per-tenant pass, detects SLA breaches via compute_breach, sends escalation email to workspace owner, logs unowned incidents past flag_unowned_after_hours threshold.
+- `app_main.py`: incident_severity router registered, job_incident_escalation imported and scheduled hourly.
+- Fix: `from app.api.v1.routes.incident_severity import router as incident_severity_router` is the correct import form. Module-level import (`from app.api.v1.routes import incident_severity as ...`) caused Pylance type error.
+
+### Phase C: Frontend — Incident Severity & SLA Settings Tab
+
+- `types_incident_severity.ts`: TypeScript types for all severity config shapes and breach preview.
+- `services_incident_severity.ts`: fetchSeverityConfig, fetchBreachPreview, upsertLevels, deleteSeverityLevel (with optional reassign_to query param), upsertSla, upsertEscalation.
+- `hooks_useIncidentSeverity.ts`: config query (5min stale), preview query (1min stale), saveConfig mutation (sequential: upsertLevels -> map IDs by index -> upsertSla -> upsertEscalation), deleteLevel mutation.
+- `settings_IncidentSeveritySettings.tsx`: two-column layout (sev-cfg-grid). Left: four numbered cards (severity levels with add/delete/color/criteria, SLA targets per level with value+unit+notify, escalation rule toggles, read-only reference mapping table). Right: live preview table with breach pills and two KPI mini cards. Sticky save bar at bottom. Lazy init from query data. Reassignment panel shown inline on 409 delete response.
+- `pages_Settings.tsx`: import added, `inc-sev` tab added to TABS array, tab panel added.
+- `src_index.css`: new CSS section for `sev-cfg-grid`, `sev-row`, `sev-color-input`, `sev-label-input`, `sev-criteria-input`, `sev-del-btn`, `sev-add-row`, `sla-row`, `sla-sev-name`, `sla-in`, `sla-num`, `sla-notify`, `sev-tog-row`, `sev-tog`, `sev-tog-knob`, `sev-reassign-panel`, `sev-map-table`, `sev-map-pill`, `sev-preview-table`, `sev-breach-pill`, `sev-within`, `sev-breach`, `sev-kpi-row`, `sev-kpi`, `sev-kpi-val`, `sev-kpi-lbl`, `sev-note`, `sev-savebar`.
+- Fix: existing workspaces had modules = ['risk'] and received 403 on all incident-severity routes. Fixed by SQL update in Supabase editor. JWT re-issued on workspace re-select.
+
+### Phase D: Frontend — Add Incident Modal and Detail Drawer Redesign
+
+- `types_incident.ts`: linked_control, control_outcome, impact_confidence added to Incident (response), IncidentCreate, and IncidentUpdate. Note: financial_impact in IncidentCreate is `?: string` (undefined only, not null). Linkage fields are `?: string | null`.
+- `incidents_AddIncidentModal.tsx`: new standalone modal component extracted from the inline drawer in pages_Incidents.tsx. Sections: When it happened (date + time), How it was reported (reporter, date, channel, email), Classification (category, severity), What happened (description, asset, owner, actions, business unit), Risk & Control Linkage panel (purple, optional: risk dropdown, risk preview card, control select from parsed risk.controls, control outcome select with hint), Impact (financial impact number input, confidence select). Risks fetched via listRisks (page_size 200) when modal is open. State resets via unmount/remount (no useEffect). Financial impact omitted from emptyForm (undefined, not null). Risk options use r.description, not r.title (title does not exist on Risk type).
+- `incidents_IncidentDetailDrawer.tsx`: extended with financial impact + impact confidence fields in Review Actions, linked risk/control read-only display with editable control outcome, auto-surfaced AI card (navy background with regenerate button when content exists, on-demand button when not), audit trail section (useAuditLog with module=Incident, client-side filtered by record_id, up to 8 entries). Save and mark-resolved patches extended with financialImpact, impactConfidence, controlOutcome using `|| undefined` (not null).
+- `pages_Incidents.tsx`: AddIncidentModal import added. Inline add incident drawer (100 lines) removed. handleAdd simplified to call create(payload) and close. addForm, addBusy, setAddForm, setAddBusy state removed. today variable removed. AddIncidentModal renders with open/onClose/onSubmit/members/categories/severities/channels props.
+- `src_index.css`: new CSS section for `modal-section-label`, `linkage-panel`, `linkage-badge`, `linkage-sub`, `risk-preview-card`, `risk-level-pill`, `linkage-outcome-hint`, `srs-ai-card`, `srs-ai-card-hd`, `srs-ai-card-title`, `srs-ai-card-badge`, `srs-ai-card-text`, `srs-ai-card-rec`, `srs-ai-card-footer`, `srs-ai-card-regen`, `srs-audit-list`, `srs-audit-item`, `srs-audit-dot`, `srs-audit-body`, `srs-audit-top`, `srs-audit-title`, `srs-audit-time`, `srs-audit-user`.
+
+### Phase D: Deferred Items
+
+- Related Incidents section in drawer: requires a pattern-detection backend endpoint (find incidents with similar category/description). No such endpoint exists. Deferred.
+- Evidence and Attachments file upload: requires a dedicated Supabase storage bucket for incident evidence, backend upload endpoint, and frontend drag-drop handler. The existing evidence_link text field is present as a stopgap. Deferred.
+
+---
+
+**Status:** Session complete. All items addressed.
+
+**Next session starts with:**
+
+1. Read `SMARTRISK_V2_SETUP.md`, `SMARTRISK_V2_BUILD.md`, `SMARTRISK_V2_DECISIONS.md` in full
+2. Phase E: Frameworks page full redesign to new mock layout (8 collapsible sections, version stamp, stat cards, live matrix and appetite data, incident escalation section, print capability)
+3. Confirm item 5 (residual formula) with partner
+4. Confirm custom domain migration on Render to fix Safari and Brave cookie blocking
+5. Operational intelligence feed design for unified dashboard (risk feed + incident feed with toggle)
+6. Incident onboarding steps addition to existing wizard flow
+
+---
+
+## Security Hardening Session (September 7, 2026)
+
+### Scope
+
+Full security audit and remediation of all identified vulnerabilities across the backend and frontend. No feature work. No migrations required. No new dependencies added.
+
+### Audit Findings (8 total, resolved in full)
+
+A full read of the following files was completed before any code was written:
+`core_security.py`, `services_auth.py`, `routes_auth.py`, `core_dependencies.py`, `middleware_tenant.py`, `core_rate_limit.py`, `core_config.py`, `routes_external.py`, `routes_submissions.py`, `utils_permissions.ts`, `schemas_auth.py`, `schemas_external.py`, `schemas_submission.py`, `app_main.py`, and all 11 unrated route files.
+
+### Fix 1: Password Complexity (Critical)
+
+- `schemas_auth.py`: Added `import re`, `field_validator` import, `_PW_RE` compiled regex, and shared `_validate_password` helper. Validator applied to `RegisterRequest.password`, `AcceptInviteRequest.password`, and `ResetPasswordRequest.password`. Enforces minimum 8 characters, one uppercase, one lowercase, one digit, one special character.
+
+### Fix 2: Proxy-aware Rate Limiter (Critical)
+
+- `core_config.py`: `TRUSTED_PROXY_IPS: str = ""` added with `trusted_proxy_list` property that splits on comma and strips whitespace. Avoids pydantic-settings JSON parse error when using plain `.env` syntax.
+- `core_rate_limit.py`: Full replacement. `get_remote_address` removed. Custom `_is_trusted` function uses `ipaddress.ip_address` and `ipaddress.ip_network(strict=False)` to match against each entry in `trusted_proxy_list`, supporting both exact IPs and CIDR ranges. Custom `_rate_limit_key` function only trusts `X-Forwarded-For` when the TCP connection originates from a trusted proxy IP. Falls back to raw `request.client.host` otherwise.
+- Render environment: `TRUSTED_PROXY_IPS=10.0.0.0/8` (Render internal network CIDR, handles IP changes automatically).
+- Local environment: `TRUSTED_PROXY_IPS=` (empty, no proxy, direct IP used).
+
+### Fix 3: attachment_url Validation (Critical)
+
+- `schemas_submission.py`: Added `from urllib.parse import urlparse` and `field_validator` to pydantic import. `_safe_url` validator on `PublicSubmitRequest.attachment_url` enforces `http` or `https` scheme and non-empty `netloc`. Rejects `javascript:`, `file://`, bare paths, and malformed strings.
+
+### Fix 4: Rate Limits on All Authenticated Routes (High)
+
+Added `Request` from fastapi and `from app.core.rate_limit import limiter` to all 11 route files. Added `@limiter.limit()` decorator and `request: Request` as first parameter to every handler. Rate limits assigned:
+
+| File | Handlers | Limits |
+|---|---|---|
+| `routes_audit.py` | list, clear, export CSV | 60, 5, 10 per minute |
+| `routes_brief.py` | preview, send-test | 10, 3 per minute |
+| `routes_recycle.py` | list, count, restore, delete | 60, 60, 20, 10 per minute |
+| `routes_settings.py` | get, update, set-pin, upload-logo, remove-pin | 60, 20, 10, 5, 10 per minute |
+| `routes_lookup.py` | get, usage, patch | 60, 60, 20 per minute |
+| `routes_notifications.py` | get-prefs, update-prefs | 60, 20 per minute |
+| `routes_presence.py` | heartbeat, active | 120, 60 per minute |
+| `routes_matrix.py` | get, update | 60, 10 per minute |
+| `routes_feedback.py` | submit | 10 per minute |
+| `routes_appetite.py` | get, upsert | 60, 10 per minute |
+| `routes_dashboard.py` | dashboard, run-snapshot, exec-insights | 60, 5, 5 per minute |
+
+Heartbeat at 120/minute accommodates multiple browser tabs per user. exec-insights and run-snapshot at 5/minute due to AI and heavy DB cost.
+
+### Fix 5: Google OAuth Audience Validation (High)
+
+- `schemas_auth.py`: `GoogleAuthRequest.id_token` renamed back to `access_token` after confirming `useGoogleLogin` from `@react-oauth/google` returns an OAuth2 access token, not a JWT ID token.
+- `services_auth.py`: `google_auth` now calls `https://oauth2.googleapis.com/tokeninfo?access_token=<token>` (not userinfo endpoint). Validates `azp` claim against `settings.GOOGLE_CLIENT_ID`. Checks `email_verified == "true"`. No new dependency, uses existing `httpx`.
+- `routes_auth.py`: Call site updated to `payload.access_token`.
+- `pages_Login.tsx`: API post body corrected to `{ access_token: accessToken }`.
+- Note: `tokeninfo?id_token=` path was attempted and caused 401 in testing. Corrected to `tokeninfo?access_token=` which is the correct endpoint for the implicit-flow access token returned by `useGoogleLogin`.
+
+### Fix 6: External Lookups Rate Limit (High)
+
+- `routes_external.py`: `@limiter.limit("30/minute")` and `request: Request` added to `get_public_lookups`. `Request` and `limiter` were already imported in this file.
+
+### Fix 7: External Email Validation (Medium)
+
+- `schemas_external.py`: Added `import re`, `field_validator` to pydantic import, shared `_validate_optional_email` helper using `_EMAIL_RE` regex. Validator applied to `ExternalRiskSubmit.submitter_email` and `ExternalIncidentSubmit.reporter_email`. Empty string is explicitly allowed (email is optional on external forms). Non-empty values must match `[^@\s]+@[^@\s]+\.[^@\s]+` and are normalised to lowercase.
+
+### Fix 8: Register/Login Conflation Oracle (Medium)
+
+- `services_auth.py`: Removed the password-match branch in the `register` function. When an existing account is found with `password_hash` set, `DuplicateResourceError` is raised unconditionally regardless of whether the submitted password is correct. Eliminates the credential oracle where a token response vs an error response revealed password correctness on the register endpoint.
+
+### Google Button Fix (UI Bug)
+
+- `pages_Login.tsx`: `GoogleBtnProps.onSuccess` type changed from `() => void` to `() => Promise<void>`. Child's `useGoogleLogin.onSuccess` handler changed to `async`, wraps `await onSuccess(...)` in try/finally, resets `googlePending = false` in finally. Fixes the bug where a failed backend call left the button permanently disabled until page refresh.
+
+---
+
+**Status:** Session complete. All 8 security findings resolved. Google button bug resolved. No incomplete items.
+
+**Next session starts with:**
+
+1. Read `SMARTRISK_V2_SETUP.md`, `SMARTRISK_V2_BUILD.md`, `SMARTRISK_V2_DECISIONS.md` in full
+2. Phase E: Frameworks page full redesign to new mock layout (8 collapsible sections, version stamp, stat cards, live matrix and appetite data, incident escalation section, print capability)
+3. Confirm item 5 (residual formula) with partner
+4. Confirm custom domain migration on Render to fix Safari and Brave cookie blocking
+5. Operational intelligence feed design for unified dashboard (risk feed + incident feed with toggle)
+6. Incident onboarding steps addition to existing wizard flow
 
 ---
 

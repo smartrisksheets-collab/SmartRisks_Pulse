@@ -5,7 +5,8 @@
 import logging
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
+from app.core.rate_limit import limiter
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_active_tenant, get_db, require_permission
@@ -18,7 +19,9 @@ router = APIRouter(prefix="/brief", tags=["brief"])
 
 
 @router.get("/preview")
+@limiter.limit("10/minute")
 async def preview_brief(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     claims: dict = Depends(require_permission("manage_risks")),
 ) -> dict:
@@ -33,7 +36,9 @@ async def preview_brief(
 
 
 @router.post("/send-test")
+@limiter.limit("3/minute")
 async def send_test_brief(
+    request: Request,
     body: SendTestBriefRequest,
     db: AsyncSession = Depends(get_db),
     claims: dict = Depends(require_permission("manage_settings")),

@@ -16,3 +16,11 @@ from app.models.appetite_threshold import AppetiteThreshold
 from app.models.submission_token import SubmissionToken
 from app.models.risk_submission import RiskSubmission
 from app.models.rate_limit_counter import RateLimitCounter
+from app.models.incident_severity_level import IncidentSeverityLevel
+from app.models.incident_sla_target import IncidentSlaTarget
+from app.models.incident_escalation_rule import IncidentEscalationRule
+from app.models.incident_severity_risk_band_map import IncidentSeverityRiskBandMap
+from app.models.admin_account import AdminAccount
+from app.models.admin_audit_log import AdminAuditLog
+from app.models.api_error_log import ApiErrorLog
+from app.models.payment import Payment

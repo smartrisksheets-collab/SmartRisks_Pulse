@@ -30,6 +30,9 @@ class IncidentCreate(BaseModel):
     affected_asset: str | None = None
     business_unit: str | None = None
     linked_risk_id: str | None = None
+    linked_control: str | None = None
+    control_outcome: str | None = None
+    impact_confidence: str | None = None
     immediate_actions: str | None = None
     evidence_link: str | None = None
     analyst_notes: str | None = None
@@ -138,6 +141,9 @@ class IncidentResponse(BaseModel):
     affected_asset: str | None
     business_unit: str | None
     linked_risk_id: str | None
+    linked_control: str | None
+    control_outcome: str | None
+    impact_confidence: str | None
     immediate_actions: str | None
     evidence_link: str | None
     analyst_notes: str | None
