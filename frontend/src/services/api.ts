@@ -100,7 +100,7 @@ api.interceptors.response.use(
     }
 
     const backendMessage = error.response?.data?.error ?? error.response?.data?.detail;
-    if (backendMessage) {
+    if (backendMessage && typeof backendMessage === 'string') {
       return Promise.reject(new Error(backendMessage));
     }
 

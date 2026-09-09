@@ -11,8 +11,30 @@ export function validateEmail(value: string): string {
 
 export function validatePassword(value: string): string {
   if (!value) return 'Password is required';
-  if (value.length < 8) return 'Password must be at least 8 characters';
+  if (value.length < 8) return 'At least 8 characters required';
+  if (!/[A-Z]/.test(value)) return 'Must include at least one uppercase letter';
+  if (!/[a-z]/.test(value)) return 'Must include at least one lowercase letter';
+  if (!/\d/.test(value)) return 'Must include at least one number';
+  if (!/[^a-zA-Z0-9]/.test(value)) return 'Must include at least one special character';
   return '';
+}
+
+export interface PasswordRuleState {
+  length: boolean;
+  upper: boolean;
+  lower: boolean;
+  digit: boolean;
+  special: boolean;
+}
+
+export function getPasswordRules(value: string): PasswordRuleState {
+  return {
+    length:  value.length >= 8,
+    upper:   /[A-Z]/.test(value),
+    lower:   /[a-z]/.test(value),
+    digit:   /\d/.test(value),
+    special: /[^a-zA-Z0-9]/.test(value),
+  };
 }
 
 export function validateConfirm(value: string, against: string): string {
