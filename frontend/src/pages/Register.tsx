@@ -7,7 +7,7 @@ import { useAuthStore } from '../store/authStore';
 import type { LoginResult } from '../types/auth';
 import {
   validateEmail, validatePassword, validateConfirm,
-  validateName, getPasswordStrength, type PasswordStrength,
+  validateName, getPasswordRules, type PasswordRuleState,
 } from '../utils/validation';
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
@@ -70,17 +70,24 @@ function GoogleSignInButton({ onSuccess, onError, loading }: GoogleBtnProps) {
   );
 }
 
-function StrengthBar({ s }: { s: PasswordStrength | '' }) {
-  const levels: PasswordStrength[] = ['weak', 'fair', 'strong'];
-  const idx = s ? levels.indexOf(s) : -1;
+const RULES: { key: keyof PasswordRuleState; label: string }[] = [
+  { key: 'length',  label: '8+ characters'         },
+  { key: 'upper',   label: 'One uppercase letter'   },
+  { key: 'lower',   label: 'One lowercase letter'   },
+  { key: 'digit',   label: 'One number'             },
+  { key: 'special', label: 'One special character'  },
+];
+
+function PasswordRules({ value }: { value: string }) {
+  if (!value) return null;
+  const rules = getPasswordRules(value);
   return (
-    <div className="pwd-strength">
-      <div className="pwd-strength-bars">
-        {levels.map((l, i) => (
-          <div key={l} className={`pwd-strength-bar${i <= idx ? ` filled ${s}` : ''}`} />
-        ))}
-      </div>
-      {s && <span className={`pwd-strength-label ${s}`}>{s.charAt(0).toUpperCase() + s.slice(1)}</span>}
+    <div className="pwd-rules">
+      {RULES.map(({ key, label }) => (
+        <span key={key} className={`pwd-rule${rules[key] ? ' met' : ''}`}>
+          {rules[key] ? '✓' : '·'} {label}
+        </span>
+      ))}
     </div>
   );
 }
@@ -101,7 +108,6 @@ export default function Register() {
   const [emailErr, setEmailErr]       = useState('');
   const [passwordErr, setPasswordErr] = useState('');
   const [confirmErr, setConfirmErr]   = useState('');
-  const [strength, setStrength]       = useState<PasswordStrength | ''>('');
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -257,7 +263,7 @@ export default function Register() {
                   id="password"
                   type={showPwd ? 'text' : 'password'}
                   value={password}
-                  onChange={(e) => { setPassword(e.target.value); setStrength(getPasswordStrength(e.target.value)); if (passwordErr) setPasswordErr(''); }}
+                  onChange={(e) => { setPassword(e.target.value); if (passwordErr) setPasswordErr(''); }}
                   onBlur={(e) => setPasswordErr(validatePassword(e.target.value))}
                   placeholder="At least 8 characters"
                   autoComplete="new-password"
@@ -271,7 +277,7 @@ export default function Register() {
                 </button>
               </div>
               {passwordErr && <p className="form-error">{passwordErr}</p>}
-              <StrengthBar s={strength} />
+              <PasswordRules value={password} />
             </div>
             <div className="auth-field">
               <label htmlFor="confirm">Confirm password</label>

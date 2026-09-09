@@ -4,6 +4,10 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../services/api';
 import { useAuthStore } from '../store/authStore';
+import {
+  validatePassword, validateConfirm,
+  getPasswordRules, type PasswordRuleState,
+} from '../utils/validation';
 
 interface ValidateResult {
   email:            string;
@@ -13,6 +17,28 @@ interface ValidateResult {
 }
 
 type Stage = 'loading' | 'invalid' | 'existing' | 'set_password' | 'done';
+
+const RULES: { key: keyof PasswordRuleState; label: string }[] = [
+  { key: 'length',  label: '8+ characters'        },
+  { key: 'upper',   label: 'One uppercase letter'  },
+  { key: 'lower',   label: 'One lowercase letter'  },
+  { key: 'digit',   label: 'One number'            },
+  { key: 'special', label: 'One special character' },
+];
+
+function PasswordRules({ value }: { value: string }) {
+  if (!value) return null;
+  const rules = getPasswordRules(value);
+  return (
+    <div className="pwd-rules">
+      {RULES.map(({ key, label }) => (
+        <span key={key} className={`pwd-rule${rules[key] ? ' met' : ''}`}>
+          {rules[key] ? '✓' : '·'} {label}
+        </span>
+      ))}
+    </div>
+  );
+}
 
 export default function AcceptInvite() {
   const navigate = useNavigate();
@@ -42,12 +68,11 @@ export default function AcceptInvite() {
   }, [token]);
 
   async function handleSubmit() {
-    let ok = true;
-    if (password.length < 8) { setPwdErr('Password must be at least 8 characters.'); ok = false; }
-    else setPwdErr('');
-    if (password !== confirm) { setConfirmErr('Passwords do not match.'); ok = false; }
-    else setConfirmErr('');
-    if (!ok) return;
+    const pErr = validatePassword(password);
+    const cErr = validateConfirm(confirm, password);
+    setPwdErr(pErr);
+    setConfirmErr(cErr);
+    if (pErr || cErr) return;
 
     setSubmitting(true);
     setSubmitErr('');
@@ -144,6 +169,7 @@ export default function AcceptInvite() {
                 style={{ width: '100%' }}
               />
               {pwdErr && <p className="form-error">{pwdErr}</p>}
+              <PasswordRules value={password} />
             </div>
 
             <div className="auth-field">
@@ -162,7 +188,7 @@ export default function AcceptInvite() {
               {confirmErr && <p className="form-error">{confirmErr}</p>}
             </div>
 
-            <div className="picker-actions" style={{ marginTop: 8 }}>
+            <div className="picker-actions" style={{ marginTop: 24 }}>
               <button
                 className="btn btn-navy"
                 style={{ width: '100%' }}
