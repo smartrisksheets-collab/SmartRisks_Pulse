@@ -8,7 +8,7 @@ from app.models.tenant import Tenant
 from app.models.workspace_member import WorkspaceMember
 from app.models.account import Account
 from app.models.audit_log import AuditLog
-from app.core.config import settings
+from datetime import date, timedelta
 from app.core.exceptions import WorkspaceLimitError, ResourceNotFoundError
 
 router = APIRouter(prefix="/workspaces", tags=["workspaces"])
@@ -20,6 +20,19 @@ async def list_workspaces(
     claims: dict = Depends(get_current_account),
 ):
     account_id = UUID(claims["sub"])
+
+    account = (await db.execute(
+        select(Account).where(Account.id == account_id)
+    )).scalar_one_or_none()
+
+    max_workspaces = int(account.max_workspaces) if account else 1  # type: ignore[arg-type]
+
+    owned_count = await db.scalar(
+        select(func.count()).select_from(Tenant).where(
+            Tenant.created_by == account_id
+        )
+    ) or 0
+
     result = await db.execute(
         select(Tenant, WorkspaceMember)
         .join(WorkspaceMember, WorkspaceMember.tenant_id == Tenant.id)
@@ -31,7 +44,11 @@ async def list_workspaces(
         {**WorkspaceResponse.model_validate(t).model_dump(), "role": str(m.role or "Analyst")}
         for t, m in rows
     ]
-    return {"data": data, "error": None, "meta": {}}
+    return {
+        "data": data,
+        "error": None,
+        "meta": {"owned": int(owned_count), "limit": max_workspaces},
+    }
 
 
 @router.post("")
@@ -42,13 +59,11 @@ async def create_workspace(
 ):
     account_id = UUID(claims["sub"])
 
-    paid_count = await db.scalar(
-        select(func.count()).select_from(Tenant).where(
-            Tenant.created_by == account_id,
-            Tenant.plan == "PAID",
-        )
-    )
-    limit = settings.MAX_WORKSPACES_PAID if paid_count > 0 else settings.MAX_WORKSPACES_TRIAL
+    account = (await db.execute(
+        select(Account).where(Account.id == account_id)
+    )).scalar_one_or_none()
+
+    limit = int(account.max_workspaces) if account else 1  # type: ignore[arg-type]
 
     owned_count = await db.scalar(
         select(func.count()).select_from(Tenant).where(
@@ -56,11 +71,17 @@ async def create_workspace(
         )
     )
     if owned_count >= limit:
-        raise WorkspaceLimitError(f"Your plan allows a maximum of {limit} owned workspace(s)")
+        raise WorkspaceLimitError(
+            f"Your plan allows a maximum of {limit} workspace(s). "
+            f"Contact support to increase your limit."
+        )
 
     ws_settings: dict = {}
     if payload.org_name:
         ws_settings["organization"] = payload.org_name
+
+    is_enterprise = int(account.max_workspaces) > 1 if account else False  # type: ignore[arg-type]
+    initial_expiry = date.today() + timedelta(days=365) if is_enterprise else None
 
     tenant = Tenant(
         name=payload.name,
@@ -72,6 +93,9 @@ async def create_workspace(
         currency_symbol=payload.currency or "₦",
         workspace_settings=ws_settings or None,
         created_by=account_id,
+        plan="PAID" if is_enterprise else "TRIAL",
+        payment_active=is_enterprise,  # type: ignore[assignment]
+        plan_expires_at=initial_expiry,  # type: ignore[assignment]
     )
     db.add(tenant)
     await db.flush()

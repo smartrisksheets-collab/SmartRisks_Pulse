@@ -47,7 +47,11 @@ export default function Sidebar() {
   const workspaceName = useAuthStore((s) =>
     s.workspaces.find((w) => w.tenant_id === s.claims?.active_tenant_id)?.name ?? 'SmartRisk'
   );
-  const logoUrl = useSettingsStore((s) => s.logoUrl);
+  const logoUrl      = useSettingsStore((s) => s.logoUrl);
+  const quota        = useAuthStore((s) => s.workspaceQuota);
+  const isOwner      = claims?.role === 'Owner';
+  const showQuota    = isOwner && quota !== null;
+  const canAddWorkspace = showQuota && quota!.owned < quota!.limit;
   const { query: settingsQuery } = useSettings();
   // Organization is the sub-line. Industry is only a fallback for workspaces
   // that have not filled in an organization name in Settings.
@@ -119,6 +123,17 @@ export default function Sidebar() {
               {roleLabel(claims?.role) || 'Analyst'} · {claims?.plan ?? 'Trial'}
             </span>
           </div>
+          {showQuota && (
+            <div className="sidebar-workspace-quota">
+              <span className="sidebar-quota-text">
+                {quota!.owned} of {quota!.limit} workspace{quota!.limit !== 1 ? 's' : ''}
+              </span>
+              {canAddWorkspace
+                ? <button className="sidebar-quota-add" onClick={() => navigate('/workspaces/create')}>+ Add workspace</button>
+                : <span className="sidebar-quota-full">Limit reached</span>
+              }
+            </div>
+          )}
           <div className="sidebar-copy">
             SmartRisk Pulse © {new Date().getFullYear()}
           </div>

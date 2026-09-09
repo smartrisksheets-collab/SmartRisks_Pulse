@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { usersApi } from '../services/api'
 import type { PlatformUser } from '../types/admin'
 
@@ -38,6 +38,76 @@ function GhostPill({ is_ghost }: { is_ghost: boolean }) {
   )
 }
 
+function WorkspaceLimitCell({ user }: { user: PlatformUser }) {
+  const qc = useQueryClient()
+  const [editing, setEditing] = useState(false)
+  const [value, setValue]     = useState(String(user.max_workspaces))
+  const [err, setErr]         = useState<string | null>(null)
+
+  const mutation = useMutation({
+    mutationFn: () => usersApi.updateWorkspaceLimit(user.id, Number(value)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin', 'platform-users'] })
+      setEditing(false)
+      setErr(null)
+    },
+    onError: (e: unknown) => {
+      const data = (e as { response?: { data?: { error?: string } } }).response?.data
+      setErr(data?.error ?? 'Failed to update.')
+    },
+  })
+
+  if (!editing) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ fontWeight: 700, color: '#1F2854' }}>{user.max_workspaces}</span>
+        <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+          ({user.workspace_count} used)
+        </span>
+        <button
+          className="a-btn a-btn-ghost"
+          style={{ padding: '3px 10px', fontSize: 11 }}
+          onClick={() => { setValue(String(user.max_workspaces)); setEditing(true) }}
+        >
+          Set
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+        <input
+          type="number"
+          min={1}
+          max={50}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          className="a-input"
+          style={{ width: 64, padding: '4px 8px', fontSize: 12 }}
+        />
+        <button
+          className="a-btn a-btn-primary"
+          style={{ padding: '4px 12px', fontSize: 12 }}
+          onClick={() => mutation.mutate()}
+          disabled={mutation.isPending || !value || Number(value) < 1}
+        >
+          {mutation.isPending ? '...' : 'Save'}
+        </button>
+        <button
+          className="a-btn a-btn-ghost"
+          style={{ padding: '4px 8px', fontSize: 12 }}
+          onClick={() => { setEditing(false); setErr(null) }}
+        >
+          Cancel
+        </button>
+      </div>
+      {err && <span style={{ fontSize: 11, color: 'var(--danger)' }}>{err}</span>}
+    </div>
+  )
+}
+
 function UserRow({ user }: { user: PlatformUser }) {
   return (
     <tr>
@@ -50,7 +120,7 @@ function UserRow({ user }: { user: PlatformUser }) {
           {user.email}
         </div>
       </td>
-      <td>{user.workspace_count}</td>
+      <td><WorkspaceLimitCell user={user} /></td>
       <td style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
         {formatRelative(user.last_login)}
       </td>
@@ -125,7 +195,7 @@ export default function PlatformUsers() {
             <thead>
               <tr>
                 <th>User</th>
-                <th>Workspaces</th>
+                <th>Workspace Limit</th>
                 <th>Last Login</th>
                 <th>Last Seen</th>
                 <th>Joined</th>

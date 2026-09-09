@@ -135,15 +135,18 @@ async def list_workspaces(db: AsyncSession) -> list[AdminWorkspaceListItem]:
             Tenant.max_risks,
             Tenant.trial_start_date,
             Tenant.created_at,
+            Account.email.label("owner_email"),
+            Account.name.label("owner_name"),
             func.count(func.distinct(WorkspaceMember.id)).label("member_count"),
             func.count(func.distinct(Risk.id)).label("risk_count"),
             func.count(func.distinct(Incident.id)).label("incident_count"),
             func.min(Risk.created_at).label("first_risk_at"),
         )
+        .outerjoin(Account, Account.id == Tenant.created_by)
         .outerjoin(WorkspaceMember, WorkspaceMember.tenant_id == Tenant.id)
         .outerjoin(Risk, Risk.tenant_id == Tenant.id)
         .outerjoin(Incident, Incident.tenant_id == Tenant.id)
-        .group_by(Tenant.id)
+        .group_by(Tenant.id, Account.email, Account.name)
         .order_by(Tenant.created_at.desc())
     )
 
@@ -175,6 +178,8 @@ async def list_workspaces(db: AsyncSession) -> list[AdminWorkspaceListItem]:
             incident_count=int(r.incident_count),
             first_risk_at=r.first_risk_at,
             created_at=r.created_at,
+            owner_email=str(r.owner_email) if r.owner_email else None,
+            owner_name=str(r.owner_name) if r.owner_name else None,
         ))
 
     return items
@@ -240,6 +245,7 @@ async def list_platform_users(db: AsyncSession) -> list[AdminUserListItem]:
             Account.last_login,
             Account.last_seen,
             Account.created_at,
+            Account.max_workspaces,
             func.count(func.distinct(WorkspaceMember.tenant_id)).label("workspace_count"),
             func.count(func.distinct(Risk.id)).label("total_risks"),
         )
@@ -257,11 +263,50 @@ async def list_platform_users(db: AsyncSession) -> list[AdminUserListItem]:
             last_login=r.last_login,
             last_seen=r.last_seen,
             workspace_count=int(r.workspace_count),
+            max_workspaces=int(r.max_workspaces),
             created_at=r.created_at,
             is_ghost=int(r.total_risks) == 0,
         )
         for r in rows
     ]
+
+
+async def update_account_workspace_limit(
+    db: AsyncSession,
+    account_id: str,
+    max_workspaces: int,
+) -> AdminUserListItem | None:
+    from uuid import UUID as _UUID
+    account = (await db.execute(
+        select(Account).where(Account.id == _UUID(account_id))
+    )).scalar_one_or_none()
+
+    if account is None:
+        return None
+
+    if max_workspaces < 1:
+        max_workspaces = 1
+
+    account.max_workspaces = max_workspaces  # type: ignore[assignment]
+    await db.flush()
+
+    owned_count = await db.scalar(
+        select(func.count()).select_from(Tenant).where(
+            Tenant.created_by == account.id
+        )
+    ) or 0
+
+    return AdminUserListItem(
+        id=str(account.id),
+        email=str(account.email),
+        name=str(account.name or ""),
+        last_login=account.last_login,  # type: ignore[arg-type]
+        last_seen=account.last_seen,    # type: ignore[arg-type]
+        workspace_count=int(owned_count),
+        max_workspaces=max_workspaces,
+        created_at=account.created_at,  # type: ignore[arg-type]
+        is_ghost=False,
+    )
 
 
 # ── Admin account management ──────────────────────────────────────────────────

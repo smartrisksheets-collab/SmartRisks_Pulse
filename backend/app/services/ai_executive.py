@@ -169,14 +169,20 @@ async def generate_exec_insight(
     owners = sorted([str(r) for r in owners_rows.scalars().all() if r])
 
     client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
-    message = await client.messages.create(
-        model='claude-haiku-4-5-20251001',
-        max_tokens=_MAX_TOKENS,
-        system=_SYSTEM,
-        messages=[{'role': 'user', 'content': json.dumps(inputs, indent=2)}],
-    )
+    try:
+        message = await client.messages.create(
+            model='claude-haiku-4-5-20251001',
+            max_tokens=_MAX_TOKENS,
+            system=_SYSTEM,
+            messages=[{'role': 'user', 'content': json.dumps(inputs, indent=2)}],
+        )
+        raw = message.content[0].text.strip()
+    except Exception as exc:
+        logger.error('ai_executive._call failed: %s', exc)
+        raise ValueError(
+            'Executive insight is temporarily unavailable. Please try again in a few moments.'
+        ) from exc
 
-    raw = message.content[0].text.strip()
     try:
         summary, action_items = _parse_response(raw)
     except Exception as exc:

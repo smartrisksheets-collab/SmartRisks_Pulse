@@ -8,6 +8,14 @@ from starlette.responses import Response
 from app.db.session import AsyncSessionLocal
 from app.models.api_error_log import ApiErrorLog
 
+# Routes where certain status codes are expected and not worth logging.
+# Format: (path_prefix, status_code) — any path starting with the prefix
+# that returns that exact status code is silently skipped.
+_SKIP: tuple[tuple[str, int], ...] = (
+    ("/api/v1/presence/", 401),
+    ("/api/v1/presence/", 403),
+)
+
 _SCRUB_KEYS: frozenset[str] = frozenset({
     "description", "controls", "mitigation_plan", "comments",
     "ai_insight", "root_cause", "title", "password", "pin",
@@ -44,6 +52,11 @@ class ErrorLogMiddleware(BaseHTTPMiddleware):
 
         if response.status_code < 400:
             return response
+
+        path = request.url.path
+        for skip_prefix, skip_code in _SKIP:
+            if path.startswith(skip_prefix) and response.status_code == skip_code:
+                return response
 
         tenant_id: str | None = getattr(request.state, "tenant_id", None)
         body = await _parse_body(request)

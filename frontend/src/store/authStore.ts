@@ -16,6 +16,8 @@ interface AuthState {
   workspaces: WorkspaceInfo[];
   setToken: (token: string) => void;
   setWorkspaces: (workspaces: WorkspaceInfo[]) => void;
+  workspaceQuota: { owned: number; limit: number } | null;
+  setWorkspaceQuota: (quota: { owned: number; limit: number }) => void;
   logout: () => void;
 }
 
@@ -25,8 +27,10 @@ export const useAuthStore = create<AuthState>()(
       token: null,
       claims: null,
       workspaces: [],
+      workspaceQuota: null,
       setToken: (token) => set({ token, claims: parseToken(token) }),
       setWorkspaces: (workspaces) => set({ workspaces }),
+      setWorkspaceQuota: (workspaceQuota) => set({ workspaceQuota }),
       logout: () => set({ token: null, claims: null, workspaces: [] }),
     }),
     {

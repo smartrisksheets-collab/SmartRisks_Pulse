@@ -48,6 +48,8 @@ export interface WorkspaceListItem {
   incident_count: number
   first_risk_at: string | null
   created_at: string
+  owner_email: string | null
+  owner_name: string | null
 }
 
 export interface PlatformUser {
@@ -57,6 +59,7 @@ export interface PlatformUser {
   last_login: string | null
   last_seen: string | null
   workspace_count: number
+  max_workspaces: number
   created_at: string
   is_ghost: boolean
 }

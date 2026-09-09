@@ -301,6 +301,16 @@ async def job_incident_escalation() -> None:
 
 # ── job: morning brief dispatch ────────────────────────────────────────────
 
+async def job_trial_cleanup() -> None:
+    from app.services.trial_cleanup import run_trial_cleanup
+    try:
+        async with AsyncSessionLocal() as db:
+            await run_trial_cleanup(db)
+        logger.info("job_trial_cleanup: complete")
+    except Exception:
+        logger.exception("job_trial_cleanup failed")
+
+
 async def job_brief_send() -> None:
     """
     Send the daily brief for all tenants whose configured brief_send_time

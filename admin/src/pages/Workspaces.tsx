@@ -234,6 +234,75 @@ function PaymentRow({
   )
 }
 
+function DeleteWorkspaceModal({
+  workspace,
+  onConfirm,
+  onClose,
+  loading,
+  error,
+}: {
+  workspace: WorkspaceListItem
+  onConfirm: () => void
+  onClose: () => void
+  loading: boolean
+  error: string | null
+}) {
+  return (
+    <div className="a-drawer-overlay" onClick={onClose} style={{ zIndex: 400 }}>
+      <div
+        className="a-modal-box"
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          position: 'fixed', top: '50%', left: '50%',
+          transform: 'translate(-50%,-50%)',
+          background: 'var(--card)', borderRadius: 14,
+          padding: 28, maxWidth: 440, width: '90%',
+          boxShadow: '0 20px 60px rgba(15,23,42,0.18)',
+          zIndex: 401,
+        }}
+      >
+        <div style={{ marginBottom: 16 }}>
+          <div className="a-page-title" style={{ fontSize: 15, marginBottom: 6 }}>
+            Delete Trial Workspace
+          </div>
+          <p style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.6, margin: 0 }}>
+            This will permanently delete <strong>{workspace.name}</strong> and all associated
+            data including risks, incidents, members, reports, and audit logs.
+            This action cannot be undone.
+          </p>
+        </div>
+        <div style={{
+          background: '#fef2f2', border: '1px solid #fecaca',
+          borderRadius: 8, padding: '10px 14px', marginBottom: 20,
+          fontSize: 12, color: '#dc2626', fontWeight: 600,
+        }}>
+          Only TRIAL workspaces can be deleted. Paid workspaces must be suspended.
+        </div>
+        {error && (
+          <div className="a-error-msg" style={{ marginBottom: 12, textAlign: 'left' }}>{error}</div>
+        )}
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button className="a-btn a-btn-ghost" onClick={onClose} disabled={loading}>
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={loading}
+            style={{
+              background: '#dc2626', color: '#fff', border: 'none',
+              borderRadius: 8, padding: '8px 20px', fontSize: 13,
+              fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer',
+              opacity: loading ? 0.6 : 1,
+            }}
+          >
+            {loading ? 'Deleting...' : 'Delete permanently'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 interface PaymentForm {
   amount: string
   currency: string
@@ -383,7 +452,18 @@ function WorkspaceDrawer({
             >
               <option value="TRIAL">TRIAL</option>
               <option value="PAID">PAID</option>
+              <option value="EXPIRED">EXPIRED</option>
             </select>
+            {form.plan === 'EXPIRED' && (
+              <div style={{
+                marginTop: 6, fontSize: 11, color: '#dc2626',
+                background: '#fef2f2', border: '1px solid #fecaca',
+                borderRadius: 6, padding: '6px 10px', lineHeight: 1.5,
+              }}>
+                Setting plan to EXPIRED will immediately lock all members out of this workspace.
+                Use Suspend status instead if you want a softer block.
+              </div>
+            )}
           </div>
 
           <div className="a-toggle-row">
@@ -611,7 +691,9 @@ export default function Workspaces() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL')
   const [drawerState, setDrawerState] = useState<DrawerState | null>(null)
-  const [saveError, setSaveError] = useState<string | null>(null)
+  const [saveError,    setSaveError]    = useState<string | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<WorkspaceListItem | null>(null)
+  const [deleteError,  setDeleteError]  = useState<string | null>(null)
 
   const { data: workspaces = [], isLoading } = useQuery({
     queryKey: ['admin', 'workspaces'],
@@ -632,10 +714,26 @@ export default function Workspaces() {
     },
   })
 
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => workspacesApi.delete(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin', 'workspaces'] })
+      qc.invalidateQueries({ queryKey: ['admin', 'overview'] })
+      setDeleteTarget(null)
+      setDeleteError(null)
+    },
+    onError: (err: unknown) => {
+      const data = (err as { response?: { data?: { error?: string } } }).response?.data
+      setDeleteError(data?.error ?? 'Failed to delete workspace.')
+    },
+  })
+
   const filtered = workspaces.filter((w) => {
     const matchSearch =
       w.name.toLowerCase().includes(search.toLowerCase()) ||
-      (w.industry ?? '').toLowerCase().includes(search.toLowerCase())
+      (w.industry ?? '').toLowerCase().includes(search.toLowerCase()) ||
+      (w.owner_email ?? '').toLowerCase().includes(search.toLowerCase()) ||
+      (w.owner_name ?? '').toLowerCase().includes(search.toLowerCase())
     const matchStatus = statusFilter === 'ALL' || w.status === statusFilter
     return matchSearch && matchStatus
   })
@@ -675,6 +773,7 @@ export default function Workspaces() {
             <thead>
               <tr>
                 <th>Workspace</th>
+                <th>Owner</th>
                 <th>Status</th>
                 <th>Plan</th>
                 <th>Members</th>
@@ -688,7 +787,7 @@ export default function Workspaces() {
             <tbody>
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={9} style={{ textAlign: 'center', color: 'var(--muted)', padding: 32 }}>
+                  <td colSpan={10} style={{ textAlign: 'center', color: 'var(--muted)', padding: 32 }}>
                     No workspaces match your filters.
                   </td>
                 </tr>
@@ -703,6 +802,12 @@ export default function Workspaces() {
                         </div>
                       )}
                     </td>
+                    <td>
+                      <div style={{ fontSize: 12, fontWeight: 600 }}>{w.owner_name ?? '—'}</div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
+                        {w.owner_email ?? ''}
+                      </div>
+                    </td>
                     <td><StatusBadge status={w.status} /></td>
                     <td style={{ color: 'var(--text-secondary)' }}>{w.plan}</td>
                     <td>{w.member_count}</td>
@@ -715,13 +820,28 @@ export default function Workspaces() {
                       {formatDate(w.plan_expires_at)}
                     </td>
                     <td>
-                      <button
-                        className="a-btn a-btn-ghost"
-                        style={{ padding: '5px 12px', fontSize: 12 }}
-                        onClick={() => setDrawerState(buildDrawerState(w))}
-                      >
-                        Edit
-                      </button>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button
+                          className="a-btn a-btn-ghost"
+                          style={{ padding: '5px 12px', fontSize: 12 }}
+                          onClick={() => setDrawerState(buildDrawerState(w))}
+                        >
+                          Edit
+                        </button>
+                        {w.plan === 'TRIAL' && (
+                          <button
+                            className="a-btn"
+                            style={{
+                              padding: '5px 12px', fontSize: 12,
+                              color: 'var(--danger)', border: '1px solid var(--danger)',
+                              background: 'none', borderRadius: 8,
+                            }}
+                            onClick={() => { setDeleteTarget(w); setDeleteError(null) }}
+                          >
+                            Delete
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -733,6 +853,16 @@ export default function Workspaces() {
 
       {saveError && (
         <div className="a-error-msg" style={{ marginTop: 12 }}>{saveError}</div>
+      )}
+
+      {deleteTarget && (
+        <DeleteWorkspaceModal
+          workspace={deleteTarget}
+          onConfirm={() => deleteMutation.mutate(deleteTarget.id)}
+          onClose={() => { setDeleteTarget(null); setDeleteError(null) }}
+          loading={deleteMutation.isPending}
+          error={deleteError}
+        />
       )}
 
       {drawerState && (

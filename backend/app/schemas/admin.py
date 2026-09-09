@@ -103,6 +103,8 @@ class AdminWorkspaceListItem(BaseModel):
     incident_count: int
     first_risk_at: datetime | None   # activation signal
     created_at: datetime
+    owner_email: str | None = None
+    owner_name: str | None = None
 
 
 class AdminWorkspaceUpdate(BaseModel):
@@ -119,8 +121,8 @@ class AdminWorkspaceUpdate(BaseModel):
     @field_validator("plan")
     @classmethod
     def _valid_plan(cls, v: str | None) -> str | None:
-        if v is not None and v not in {"TRIAL", "PAID"}:
-            raise ValueError("Plan must be TRIAL or PAID.")
+        if v is not None and v not in {"TRIAL", "PAID", "EXPIRED"}:
+            raise ValueError("Plan must be TRIAL, PAID, or EXPIRED.")
         return v
 
     @field_validator("workspace_status")
@@ -157,6 +159,10 @@ class AdminOverviewStats(BaseModel):
 
 # ── User intelligence ─────────────────────────────────────────────────────────
 
+class AccountWorkspaceLimitUpdate(BaseModel):
+    max_workspaces: int
+
+
 class AdminUserListItem(BaseModel):
     id: str
     email: str
@@ -164,6 +170,7 @@ class AdminUserListItem(BaseModel):
     last_login: datetime | None
     last_seen: datetime | None
     workspace_count: int
+    max_workspaces: int
     created_at: datetime
     is_ghost: bool       # signed up, never logged a risk in any workspace
 
