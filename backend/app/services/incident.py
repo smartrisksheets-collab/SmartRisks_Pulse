@@ -23,6 +23,7 @@ from app.schemas.incident import (
     IncidentResolution,
 )
 from app.services.recycle import soft_delete
+from app.services.incident_severity import compute_breach, get_sla_map
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -157,6 +158,9 @@ async def create_incident(
         affected_asset=payload.affected_asset,
         business_unit=payload.business_unit,
         linked_risk_id=payload.linked_risk_id,
+        linked_control=payload.linked_control,
+        control_outcome=payload.control_outcome,
+        impact_confidence=payload.impact_confidence,
         immediate_actions=payload.immediate_actions,
         evidence_link=payload.evidence_link,
         analyst_notes=payload.analyst_notes,
@@ -256,6 +260,8 @@ async def get_stats(db: AsyncSession, tenant_id: UUID) -> IncidentStatsResponse:
             Incident.reported_at,
             Incident.resolved_at,
             Incident.financial_impact,
+            Incident.created_at,
+            Incident.assigned_to,
         )
         .where(Incident.tenant_id == tenant_id)
         .where(Incident.deleted_at.is_(None))
@@ -265,7 +271,6 @@ async def get_stats(db: AsyncSession, tenant_id: UUID) -> IncidentStatsResponse:
 
     open_statuses = {'New', 'Open', 'In Progress', 'Under Review'}
     critical_severities = {'High', 'Very High'}
-    sla_days = 5
     today = date.today()
 
     open_count = sum(1 for r in rows if r.status in open_statuses)
@@ -274,13 +279,29 @@ async def get_stats(db: AsyncSession, tenant_id: UUID) -> IncidentStatsResponse:
     review_count = sum(1 for r in rows if r.status == 'Under Review')
     resolved_count = sum(1 for r in rows if r.status in ('Resolved', 'Closed'))
 
-    # SLA breach: open incident older than sla_days
-    breaches = sum(
-        1 for r in rows
-        if r.status in open_statuses
-        and r.reported_at
-        and (today - r.reported_at).days > sla_days
-    )
+    # SLA breach: use shared compute_breach against workspace SLA config.
+    # Falls back to 5-day hardcoded logic for tenants with no SLA config yet.
+    sla_map = await get_sla_map(db, tenant_id)
+    if sla_map:
+        now_utc = datetime.now(timezone.utc)
+        breaches = 0
+        for r in rows:
+            if r.status not in open_statuses or r.created_at is None:
+                continue
+            created = r.created_at
+            if hasattr(created, 'tzinfo') and created.tzinfo is None:
+                created = created.replace(tzinfo=timezone.utc)
+            age_hours = (now_utc - created).total_seconds() / 3600
+            target_h = sla_map.get(str(r.severity or ''))
+            if target_h is not None and compute_breach(age_hours, target_h):
+                breaches += 1
+    else:
+        breaches = sum(
+            1 for r in rows
+            if r.status in open_statuses
+            and r.reported_at
+            and (today - r.reported_at).days > 5
+        )
     sla_breach_pct = round(breaches / total * 100, 1) if total else 0.0
 
     health_pct = max(0, round(100 - sla_breach_pct))

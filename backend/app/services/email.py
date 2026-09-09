@@ -871,6 +871,38 @@ def send_reset_email(to: str, reset_link: str) -> None:
     logger.info("Reset email sent | to=%s", to)
 
 
+def send_escalation_alert(
+    to: str,
+    incident_id: str,
+    severity: str,
+    age_hours: float,
+    tenant_name: str,
+) -> None:
+    """Send SLA breach escalation notification via Resend."""
+    _init()
+    age_display = f"{int(age_hours)}h" if age_hours < 24 else f"{round(age_hours / 24, 1)}d"
+    html = (
+        f"<p>An incident in <strong>{_esc(tenant_name)}</strong> has breached its SLA target.</p>"
+        f"<table style='border-collapse:collapse;margin:12px 0;'>"
+        f"<tr><td style='padding:4px 12px 4px 0;color:#5a6b8c;font-size:13px;'>Incident</td>"
+        f"<td style='padding:4px 0;font-weight:700;font-size:13px;'>{_esc(incident_id)}</td></tr>"
+        f"<tr><td style='padding:4px 12px 4px 0;color:#5a6b8c;font-size:13px;'>Severity</td>"
+        f"<td style='padding:4px 0;font-size:13px;'>{_esc(severity)}</td></tr>"
+        f"<tr><td style='padding:4px 12px 4px 0;color:#5a6b8c;font-size:13px;'>Open for</td>"
+        f"<td style='padding:4px 0;font-size:13px;'>{_esc(age_display)}</td></tr>"
+        f"</table>"
+    )
+    try:
+        resend.Emails.send({
+            "from": "SmartRisk Pulse <noreply@smartrisksheets.com>",
+            "to": [to],
+            "subject": f"[SmartRisk] SLA Breach — {incident_id} ({severity})",
+            "html": html,
+        })
+    except Exception:
+        logger.warning("send_escalation_alert failed for incident=%s to=%s", incident_id, to)
+
+
 async def send_brief_email(
     to: str,
     bcc: list[str],
@@ -896,3 +928,60 @@ async def send_brief_email(
 
     resend.Emails.send(params)
     logger.info("Brief email sent | to=%s | subject=%s", to, subject)
+
+def send_payment_receipt_email(
+    to: str,
+    workspace_name: str,
+    amount: float,
+    currency: str,
+    paid_at: str,
+    receipt_no: str,
+    pdf_bytes: bytes,
+) -> None:
+    """
+    Sends a payment receipt email with the PDF attached.
+    """
+    import base64
+    _init()
+    if not settings.RESEND_FROM_EMAIL:
+        raise ValueError("RESEND_FROM_EMAIL is not configured")
+
+    amount_str = f"{currency} {amount:,.2f}"
+    html_body  = f"""
+    <div style="font-family:Inter,Arial,sans-serif;max-width:560px;margin:0 auto;background:#f6f8fa;padding:32px 0;">
+      <div style="background:#1F2854;padding:20px 32px;border-radius:10px 10px 0 0;">
+        <span style="font-size:18px;font-weight:800;color:#ffffff;">SmartRisk Pulse</span>
+        <span style="display:block;font-size:11px;font-weight:700;color:#01b88e;text-transform:uppercase;letter-spacing:0.08em;margin-top:3px;">Payment Receipt</span>
+      </div>
+      <div style="background:#ffffff;padding:32px;border-radius:0 0 10px 10px;border:1px solid #e2e8f0;border-top:none;">
+        <p style="font-size:13px;color:#64748b;margin:0 0 24px;">This receipt confirms the following payment recorded for <strong>{workspace_name}</strong>.</p>
+        <div style="background:#f1f5f9;border-radius:8px;padding:20px 24px;margin-bottom:24px;">
+          <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;">Amount Paid</div>
+          <div style="font-size:30px;font-weight:900;color:#1F2854;">{amount_str}</div>
+        </div>
+        <table style="width:100%;border-collapse:collapse;font-size:13px;">
+          <tr><td style="padding:8px 0;color:#64748b;border-bottom:1px solid #e2e8f0;">Receipt No.</td><td style="padding:8px 0;font-weight:600;color:#1F2854;text-align:right;border-bottom:1px solid #e2e8f0;">{receipt_no}</td></tr>
+          <tr><td style="padding:8px 0;color:#64748b;border-bottom:1px solid #e2e8f0;">Workspace</td><td style="padding:8px 0;font-weight:600;color:#1F2854;text-align:right;border-bottom:1px solid #e2e8f0;">{workspace_name}</td></tr>
+          <tr><td style="padding:8px 0;color:#64748b;">Payment Date</td><td style="padding:8px 0;font-weight:600;color:#1F2854;text-align:right;">{paid_at}</td></tr>
+        </table>
+        <p style="font-size:12px;color:#94a3b8;margin-top:28px;">The full receipt PDF is attached to this email. Keep it for your records.</p>
+      </div>
+      <p style="text-align:center;font-size:11px;color:#94a3b8;margin-top:20px;">SmartRisk Pulse &mdash; Confidential</p>
+    </div>
+    """
+
+    pdf_b64 = base64.b64encode(pdf_bytes).decode()
+    params: resend.Emails.SendParams = {
+        "from":        settings.RESEND_FROM_EMAIL,
+        "to":          [to],
+        "subject":     f"Payment Receipt — {workspace_name} ({amount_str})",
+        "html":        html_body,
+        "attachments": [
+            {
+                "filename": f"receipt-{receipt_no.lower()}.pdf",
+                "content":  pdf_b64,
+            }
+        ],
+    }
+    resend.Emails.send(params)
+    logger.info("Receipt email sent | to=%s | workspace=%s", to, workspace_name)

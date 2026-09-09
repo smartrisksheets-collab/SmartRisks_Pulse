@@ -1,5 +1,6 @@
 from uuid import UUID
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
+from app.core.rate_limit import limiter
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.dependencies import get_db, get_active_tenant
 from app.schemas.feedback import FeedbackCreate
@@ -9,7 +10,9 @@ router = APIRouter(prefix="/feedback", tags=["feedback"])
 
 
 @router.post("")
+@limiter.limit("10/minute")
 async def submit_feedback(
+    request: Request,
     payload: FeedbackCreate,
     claims: dict = Depends(get_active_tenant),
     db: AsyncSession = Depends(get_db),

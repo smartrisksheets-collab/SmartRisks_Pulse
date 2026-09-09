@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
+from app.core.rate_limit import limiter
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from app.core.dependencies import get_db, get_active_tenant
@@ -7,7 +8,9 @@ router = APIRouter(prefix="/presence", tags=["presence"])
 
 
 @router.post("/heartbeat")
+@limiter.limit("120/minute")
 async def heartbeat(
+    request: Request,
     claims: dict = Depends(get_active_tenant),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
@@ -28,7 +31,9 @@ async def heartbeat(
 
 
 @router.get("/active")
+@limiter.limit("60/minute")
 async def get_active(
+    request: Request,
     claims: dict = Depends(get_active_tenant),
     db: AsyncSession = Depends(get_db),
 ) -> dict:

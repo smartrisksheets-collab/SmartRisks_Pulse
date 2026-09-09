@@ -1206,6 +1206,73 @@ Why: The state always resolves to `undefined` in query params via `|| undefined`
 
 ---
 
+## Session 21: September 8, 2026 — Admin Panel Architecture and Build
+
+**Decision: Admin panel as separate static React app, not a protected route (September 8, 2026)**
+Raised by: Admin panel scope discussion. Question was whether admin lives inside the main Pulse app or separately.
+Chosen: Completely separate React app at admin.smartrisksheets.com. Admin routes on the existing FastAPI backend under /api/admin/, served by the same two Render services (staging and prod). Two new Render static site services added (admin staging, admin prod). No new backend service.
+Alternatives rejected: Protected route inside main Pulse app (admin surface in same JS bundle as customer app, single JWT compromise = admin access). Separate Render backend service (unnecessary overhead, same codebase handles it).
+Why: Admin and customer identity must never share the same attack surface. Separate deployment with separate auth chain eliminates the risk of a customer token being replayed against admin routes.
+
+**Decision: Two admin roles, not three (September 8, 2026)**
+Raised by: Initial proposal had super_admin, admin, and support. Team size is two people both needing full access.
+Chosen: super_admin (full access including admin account management) and admin (everything except admin account management). Role stored in admin_accounts table. Enforced by get_current_admin and require_super_admin FastAPI dependencies.
+Alternatives rejected: Three roles with support as read-only (unnecessary for current team size, adds complexity with no benefit). Single role (no ability to restrict a future third team member).
+Why: Minimum viable RBAC for a two-person team. Extensible when a third person joins.
+
+**Decision: Admin JWT uses separate ADMIN_JWT_SECRET env var (September 8, 2026)**
+Raised by: Main app JWT_SECRET could be used for admin tokens since the algorithm is the same.
+Chosen: ADMIN_JWT_SECRET is a required separate env var. Admin tokens carry type: "admin_access" claim checked on decode. A main app token signed with JWT_SECRET cannot be decoded by the admin dependency and vice versa.
+Alternatives rejected: Shared JWT_SECRET with role claim check (single secret compromise gives admin access).
+Why: Two independent secrets mean a compromised customer token cannot be replayed against admin routes under any circumstances.
+
+**Decision: Admin token expiry set to 60 minutes (September 8, 2026)**
+Raised by: Main app uses 15 minutes. Should admin be the same?
+Chosen: ADMIN_ACCESS_TOKEN_EXPIRE_MINUTES = 60. No refresh token for admin sessions.
+Alternatives rejected: 15 minutes (too short for low-traffic internal tool, frequent re-auth is friction with no security gain at this scale).
+Why: Admin panel is low-traffic, internally accessed, and not publicly reachable. 60-minute sessions are acceptable. No refresh token keeps the auth surface minimal.
+
+**Decision: Error log middleware uses asyncio.create_task, not blocking DB write (September 8, 2026)**
+Raised by: Pool analysis showed free tier Supabase is at risk of connection exhaustion if error log middleware holds connections during error bursts.
+Chosen: The DB write in ErrorLogMiddleware is wrapped in asyncio.create_task(_persist()). Response returns to client immediately. Connection is acquired and released in background. Failed writes are silently swallowed inside _persist try/except.
+Alternatives rejected: Blocking write (holds pool connection during every error, dangerous under burst conditions). Queue with worker (over-engineered for current scale).
+Why: Fire-and-forget pattern completely removes the middleware from the request/response critical path. Pool pressure during an error storm is the worst time to add DB load.
+
+**Decision: Pool size stays at pool_size=10, max_overflow=5 on Supabase free tier (September 8, 2026)**
+Raised by: Dashboard uses 14 parallel sessions via asyncio.gather. Admin panel adds additional load. Pool total is 15.
+Chosen: Keep pool unchanged on free tier. When upgraded to Supabase Pro, change pool_size to 20 and max_overflow to 10. No other changes needed.
+Alternatives rejected: Batching dashboard parallel queries into two rounds of 7 (would double dashboard response time, unacceptable for the most latency-sensitive page).
+Why: Dashboard parallel sessions were deliberately designed for speed. Serialising them defeats the design. The right fix is right-sizing the pool, not serialising queries. Deferred to Pro upgrade.
+
+**Decision: Overview stats consolidated from 8 queries to 2 (September 8, 2026)**
+Raised by: Initial service implementation used 8 separate await db.scalar() calls on one session, 8 round trips.
+Chosen: Single SELECT with multiple COUNT(*) FILTER (WHERE ...) aggregates returns all workspace counters in one query. Second query counts distinct activated tenants from the risks table (separate table, cannot be joined without inflating counts). Total: 2 round trips.
+Why: One DB round trip per logical question. Multiple scalar calls on one session is never acceptable when the same data can be returned in one aggregate query.
+
+**Decision: Admin route files co-located in app/api/v1/routes/, not a separate app/api/admin/ folder (September 8, 2026)**
+Raised by: ModuleNotFoundError on app.api.admin import. Folder did not exist.
+Chosen: Admin route files live at app/api/v1/routes/admin_auth.py, admin_overview.py etc. Imported as app.api.v1.routes.admin_auth. Mounted under /api prefix (not /api/v1/) so full paths are /api/admin/*.
+Alternatives rejected: Creating app/api/admin/ folder structure (requires __init__.py files, adds folder nesting with no architectural benefit).
+Why: Matches the existing project structure. Zero new folders needed. Import paths are consistent with every other route file.
+
+**Decision: Admin panel uses light theme matching Pulse, not dark (September 8, 2026)**
+Raised by: Initial admin CSS used a dark navy theme. SmartRisk Sheets is a white-theme product family.
+Chosen: Light theme tokens (--bg: #f6f8fa, --card: #ffffff, --surface: #f1f5f9, --text: #0f172a, --line: #e5e7eb). Sidebar stays navy #1F2854 as a fixed brand element, not a variable.
+Alternatives rejected: Dark theme (inconsistent with product family identity, customer confusion risk).
+Why: Brand consistency across products matters. The admin panel is still a SmartRisk product. The navy sidebar provides visual distinction between admin and customer context without a full dark theme.
+
+**Decision: Sidebar text and border colours pinned to fixed rgba-white values (September 8, 2026)**
+Raised by: Sidebar uses var(--text-secondary) and var(--muted) which resolve to dark values on light theme, invisible against navy sidebar background.
+Chosen: All sidebar internal colours use fixed rgba(255,255,255,X) values and #01b88e for active state. Not CSS variables. Sidebar border uses rgba(255,255,255,0.10).
+Why: The sidebar background is always navy regardless of theme. Its children must always be light-coloured. Using theme variables for sidebar text is a category error since the sidebar does not participate in the light/dark theme toggle.
+
+**Decision: Admin app scaffolded with npm create vite, versions not hardcoded (September 8, 2026)**
+Raised by: Package versions in package.json were written from training data (August 2025 cutoff) and could be stale as of September 2026.
+Chosen: Use npm create vite@latest . -- --template react-ts to scaffold. Additional packages installed with npm install (npm resolves current stable versions). No hardcoded versions from Claude output.
+Why: npm resolves current stable versions. Hardcoding versions from training data risks installing outdated packages with known vulnerabilities or breaking changes.
+
+---
+
 ## Session 20: August 31, 2026 — Stream B: External Submission System + Infrastructure
 
 **Decision: Tokenised public submission form, not workspace_id query param (August 31, 2026)**
@@ -1320,3 +1387,143 @@ Raised by: Supabase's `protect_delete()` trigger blocks direct DELETE on `storag
 Chosen: One-off cleanup script and weekly scheduler job both call the Storage API DELETE endpoint, the same call used by `_delete_logo_from_storage`. One object at a time rather than bulk, to avoid guessing at the bulk endpoint's current request shape.
 Root cause fixed: `routes_settings.py` never passed `old_logo_url` to `upload_logo`, so the delete branch in `services_settings.py` had never executed since launch.
 Why: The lowest-friction conversion path from inside a SaaS trial is a pre-filled email. No new page, no form, no backend. The user clicks, reviews the pre-filled message, and sends.
+
+**Decision: Workspace logo orphan cleanup via Storage API, not direct SQL delete (September 1, 2026)**
+Raised by: Supabase's `protect_delete()` trigger blocks direct DELETE on `storage.objects`. A SQL-based orphan sweep was not possible.
+Chosen: One-off cleanup script and weekly scheduler job both call the Storage API DELETE endpoint, the same call used by `_delete_logo_from_storage`. One object at a time rather than bulk, to avoid guessing at the bulk endpoint's current request shape.
+Root cause fixed: `routes_settings.py` never passed `old_logo_url` to `upload_logo`, so the delete branch in `services_settings.py` had never executed since launch.
+
+**Decision: Report register-state blocks use ctx.all_risks, change-tracking blocks retain date filter (September 4, 2026)**
+Raised by: Imported risks with historical CSV dates were invisible in every report block. `_apply_date_filter_risks` correctly limits `ctx.risks` to the reporting window, but blocks like Top Risks, Snapshot, and Ownership ask "what is the current state of the register," not "what was logged in this period."
+Chosen: Six register-state blocks switched to `ctx.all_risks`: `compute_exposure_index`, `compute_risk_snapshot`, `compute_top_risks`, `compute_risk_distribution`, `compute_findings`, `compute_risk_ownership`, `compute_recommendations`, `compute_executive_dashboard`. Change-tracking blocks (`compute_key_risk_changes`, `compute_top_emerging_risks`, trend slice loops) retain their existing date windows.
+Alternatives rejected: Removing the date filter entirely would break period comparison blocks. Adding a `source` filter to exclude imported risks was rejected as the wrong product decision.
+Why: A GRC report's top risks and ownership tables must reflect the full active register regardless of when each risk was entered. The date range controls "what changed in this period," not "what exists."
+
+**Decision: PDF Top Risks table capped at 5 rows, backend returns 10 (September 4, 2026)**
+Raised by: A 10-row table is too long for a board-level PDF cover section. User requested "top 3 or so."
+Chosen: `[:5]` slice applied in `_render_risk_table` at PDF render time. Backend `compute_top_risks` still returns 10 so the AI prompt (which takes its own `[:5]`) and the preview (which renders all) are unaffected.
+Why: The cap is a presentation decision, not a data decision. Keeping it at the render layer means the AI and preview remain consistent with the full dataset.
+
+**Decision: Password reset link uses settings.allowed_origins[0], not settings.FRONTEND_URL (September 4, 2026)**
+Raised by: `settings.FRONTEND_URL` is a comma-separated string when multiple frontend URLs are configured. Passing it raw to the reset link builder produced an invalid URL like `https://staging.example.com,https://app.example.com/reset-password?token=xxx`.
+Chosen: `settings.allowed_origins[0]` which already splits, strips, and returns a clean list. Index 0 is the primary frontend origin.
+Why: Minimal, correct, no new config needed.
+
+**Decision: Logo proportional scaling in PDF via natural imageWidth/imageHeight (September 4, 2026)**
+Raised by: Specifying both `width=44mm` and `height=22mm` in ReportLab `Image()` forces those exact pixel dimensions and distorts logos whose natural aspect ratio is not 2:1.
+Chosen: Load `Image` without forced dimensions, read `imageWidth` and `imageHeight`, compute `scale = min(44mm / nw, 22mm / nh)`, apply to both axes. No PIL required.
+Why: Proportional scaling is the correct default for logos. The bounding box (44x22mm) is a maximum, not a forced size.
+
+**Decision: Cover body _top_est adjusted per logo presence to prevent blank page 2 (September 4, 2026)**
+Raised by: The `_meta_gap` spacer calculation used `_top_est = 90mm` based on the brand text label (~6.4mm). The logo Image is 22mm tall, adding ~16mm to the top section and pushing total cover height ~16mm over the 265mm frame, causing the Table to split across two pages.
+Chosen: `_top_est = 106 * mm if logo_bytes else 90 * mm`. Gap recalculates correctly for both states.
+
+**Decision: Incident-only tier scrapped, trial defaults to full app (September 5, 2026)**
+Raised by: Product decision to simplify from three tiers (risk-only, incident-only, unified) to two (risk-only, unified). Incident access is only available as part of unified. 14-day trial gives full unified access so users see the complete product before choosing a paid tier.
+Chosen: `modules` ARRAY column controls tier access. No new plan string needed. Trial workspaces default to `['risk', 'incident']` via SQL update. On trial expiry, user selects risk-only (`['risk']`) or unified (`['risk', 'incident']`). Conversion managed from the admin panel (not yet built).
+SQL to update existing workspaces: `UPDATE tenants SET modules = ARRAY['risk', 'incident'] WHERE modules = ARRAY['risk'];`. Must be run per environment before incident module is accessible to existing workspaces.
+Why: The modules array already controls all route-level gating via `require_module`. No schema change needed. Incident-only had no production subscribers so no migration required.
+
+**Decision: Severity level deletion requires reassignment, not hard block (September 5, 2026)**
+Raised by: What happens to incidents referencing a severity level that is deleted?
+Chosen: Reassignment at the point of deletion. `DELETE /api/v1/incident-severity/levels/{id}` returns 409 (DuplicateResourceError) with incident count if incidents reference the level and no `reassign_to` query param is provided. Frontend shows inline reassignment UI. User picks a replacement level. Service atomically updates all referencing incidents then deletes the level. If only one level remains, deletion is blocked with 422 (ValidationError). Cascade on `incident_sla_targets` and `incident_severity_risk_band_map` handles child rows automatically.
+Why: A hard block is frustrating at scale. Reassignment is the pattern used by Stripe, Notion, and Linear for similar constraints. It gives the user agency while preserving data integrity. The FK to SLA targets cascades cleanly so no orphan rows are left.
+
+**Decision: linked_risk_id stays TEXT with soft reference semantics (September 5, 2026)**
+Raised by: Should linked_risk_id on incidents be a foreign key to the risks table?
+Chosen: TEXT column, no FK. The risks table has a composite PK (id TEXT, tenant_id UUID). A FK with ON DELETE SET NULL on a composite reference would set tenant_id to NULL, violating its NOT NULL constraint. Service does a scoped lookup: `WHERE risks.id = linked_risk_id AND risks.tenant_id = tenant_id`. If the risk was deleted the lookup returns null and the UI shows a graceful fallback. The historical risk ID is preserved as a record.
+Why: Same pattern as the existing linked_risk_id that was already on the incidents model before this session. A UUID surrogate key on risks would be the clean long-term solution but requires a migration and data backfill.
+
+**Decision: SLA breach is a single shared function, compute_breach (September 5, 2026)**
+Raised by: The PDF brief requires breach status to be computed from one place only. Dashboard KPI, settings live preview, and the escalation cron job must all agree on the same incident's breach status at all times.
+Chosen: `compute_breach(age_hours: float, target_hours: float) -> bool` in `app/services/incident_severity.py`. This is the only location where breach logic lives. Called from: `get_stats` in `services_incident.py` (dashboard SLA breach KPI), `get_preview` in `services_incident_severity.py` (settings live preview), `job_incident_escalation` in `scheduler_jobs.py` (cron). No other function computes breach independently.
+Why: The brief is explicit. Any divergence between the dashboard KPI and the settings preview produces user confusion and support requests.
+
+**Decision: SLA targets store target_hours as normalized internal column (September 5, 2026)**
+Raised by: The settings screen allows per-row unit selection (hours or days). The breach function must not branch on unit at query time.
+Chosen: `incident_sla_targets` has three columns: `target_value NUMERIC` (display value), `target_unit TEXT` (hours or days, display unit), `target_hours NUMERIC` (normalized, written on save: hours if unit=hours, value * 24 if unit=days). The breach function reads `target_hours` only. The settings screen reads `target_value` and `target_unit` for display.
+Why: Eliminates unit branching at every call site. Converting on write is one place. Reading is always the same column.
+
+**Decision: Incident severity config is lazy-seeded on first GET (September 5, 2026)**
+Raised by: New workspaces have no rows in incident_severity_levels. The settings tab would be empty on first open.
+Chosen: `get_config` in `services_incident_severity.py` checks row count on entry. If zero, it calls `_seed_defaults` which inserts four levels (Very High 24h, High 72h, Medium 5d, Low 10d) with SLA targets, default escalation rules, and reference band map, then proceeds. No change to workspace creation route.
+Why: Lazy seed is self-contained. It does not require touching workspace creation, which is already complex. Any workspace that opens the settings tab for the first time gets a working default.
+
+**Decision: AddIncidentModal reset via unmount/remount, not useEffect (September 5, 2026)**
+Raised by: Modal state needed to reset when the modal closes. A useEffect calling multiple setState on `[open]` was triggering React's cascading render warning.
+Chosen: Remove the useEffect entirely. The component already has `if (!open) return null` which causes it to unmount on close and remount fresh on open. All useState initializers run from scratch on remount.
+Why: React 19 pattern. useEffect calling synchronous setState inside the effect body is an anti-pattern when unmount/remount achieves the same result for free.
+
+**Decision: null vs undefined in IncidentCreate/IncidentUpdate optional fields (September 5, 2026)**
+Raised by: TypeScript errors when assigning null to fields typed as `?: string` (string | undefined).
+Chosen: Fields typed `?: string | null` (linked_risk_id, linked_control, control_outcome, impact_confidence) accept both null and undefined. Fields typed `?: string` (financial_impact, incident_dt) accept only undefined. When clearing these fields in save patches, use `|| undefined`, not `|| null`. The distinction is preserved in the type definitions.
+Why: `?: string` is shorthand for `string | undefined`. Passing null to it is a TypeScript error. Fields that may legitimately hold null as a meaningful value (cleared linkage) must be explicitly typed `?: string | null`.
+
+**Decision: Risk.title does not exist on the Risk TypeScript type (September 5, 2026)**
+Raised by: TypeScript error ts(2339) when referencing `r.title` in the AddIncidentModal risk dropdown.
+Chosen: Use `r.description?.slice(0, 60) ?? ''` for the display text in the risk option. The Risk entity uses `description` as its primary text field. `title` is a field on Incident, not Risk.
+Why: The Risk type was confirmed by reading types_risk.ts. No title field exists. Do not reference r.title on Risk objects in any component.
+
+**Decision: Admin/Founder panel V2 deferred to its own phase (September 5, 2026)**
+Raised by: Trial-to-paid conversion, module assignment, and workspace activation need a UI. The GAS Founder Panel handled this in V1.
+Chosen: Deferred. Plan and module changes for existing workspaces are currently done via direct SQL. The V2 admin panel (with Grafana-style analytics on top) is a planned future phase with its own scope. It is not blocking the incident module work.
+Why: No production subscribers needed module changes at this point. The SQL update is a one-line operation that Ceekay can run directly.
+
+**Decision: Password complexity enforced at Pydantic schema layer, not service layer (September 7, 2026)**
+Raised by: `RegisterRequest`, `AcceptInviteRequest`, and `ResetPasswordRequest` accepted any string as password with no length or character class requirements.
+Chosen: `field_validator` on each schema class, shared `_validate_password` helper, compiled `_PW_RE` regex at module level. Minimum 8 characters, one uppercase, one lowercase, one digit, one special character. Enforced on all three password-setting paths.
+Why: Schema-level validation rejects weak passwords before any service code or DB interaction runs, returning 422 with a human-readable reason. A shared helper prevents the three paths from drifting out of sync.
+
+**Decision: Rate limiter key function uses CIDR-aware trusted proxy list, not raw get_remote_address (September 7, 2026)**
+Raised by: `get_remote_address` reads `request.client.host`. Behind Render's load balancer, this is always the proxy IP, giving all users a shared rate limit bucket. An attacker connecting directly could also spoof `X-Forwarded-For` to rotate the key.
+Chosen: Custom `_rate_limit_key` in `core_rate_limit.py`. `X-Forwarded-For` is only trusted when the direct TCP connection originates from an IP that matches an entry in `TRUSTED_PROXY_IPS`. Each entry is matched via `ipaddress.ip_network(strict=False)` supporting both exact IPs and CIDR ranges. `TRUSTED_PROXY_IPS` is stored as a plain comma-separated string in `.env` (not JSON array) to avoid a pydantic-settings parse error. A `trusted_proxy_list` property on `Settings` performs the split at runtime.
+Render config: `TRUSTED_PROXY_IPS=10.0.0.0/8`. Local config: empty string or omitted.
+Why: CIDR matching handles Render's load balancer IP changing without requiring a config update. Restricting XFF trust to verified proxy origins prevents IP spoofing. No new dependency, `ipaddress` is stdlib.
+
+**Decision: attachment_url validated as HTTP/HTTPS URL at schema layer (September 7, 2026)**
+Raised by: `PublicSubmitRequest.attachment_url` was `str | None` with no format constraint. Any string including `javascript:`, `file://`, or internal service paths was stored and could be rendered in the triage UI or fetched by future backend processes.
+
+**Decision: Settings tab renamed from Risk Config to Taxonomy, Incident Severity & SLA moved after Risk Appetite (September 7, 2026)**
+Raised by: "Risk Config" label was too technical and did not reflect that the tab covers all lookup and taxonomy configuration. "Incident Severity & SLA" was at the bottom of the tab list, far from related threshold configuration.
+Chosen: Label changed to "Taxonomy" in `pages_Settings.tsx`. Tab id `tax` unchanged so any `?tab=tax` deep links continue to work. `inc-sev` tab moved to immediately after `appetite` in the TABS array. No backend change.
+Why: Taxonomy is more accurate and user-facing. Grouping Risk Appetite and Incident Severity & SLA together signals that both tabs control threshold configuration.
+
+**Decision: Severity dropdown in Add Incident modal and incidents filter bar driven by incident_severity_levels config, not hardcoded constant (September 7, 2026)**
+Raised by: `SEVERITIES = ['Low', 'Medium', 'High', 'Very High']` was a hardcoded module constant in `pages_Incidents.tsx`. When a workspace configures custom severity labels in Settings, the add modal and filter bar showed the hardcoded list, completely disconnected from the configured levels.
+Chosen: `useIncidentSeverity` imported into `pages_Incidents.tsx`. `severityLabels` derived from `config.data?.levels` sorted by `sort_order`, mapped to label strings. Feeds both the filter bar select and the `AddIncidentModal` `severities` prop. Cache is shared via the same TanStack Query key used by the settings tab.
+Why: `incident_severity_levels` is the single source of truth for severity labels. The hardcoded constant was a wiring gap, not a design decision.
+
+**Decision: incidents_by_category added as 14th parallel dashboard query (September 7, 2026)**
+Raised by: The Exposure Impact Drivers block and the Incident Categories donut in `UnifiedSection` required incidents grouped by category with financial totals. The existing dashboard response had only `total_incidents.financial_total` (an aggregate with no category split). A Python integer literal `0` passed to `COALESCE(SUM(financial_impact), 0)` caused a `ProgrammingError` because SQLAlchemy bound `0` as `INTEGER` while `financial_impact` is `NUMERIC`.
+Chosen: `_incidents_by_category` function added to `services/dashboard.py`. Groups non-deleted incidents by `COALESCE(category, 'Other')`, counts per group, sums `financial_impact`, orders by financial total using `nullslast(SUM(financial_impact).desc())` to avoid the NUMERIC/INTEGER type conflict. `float(r.financial_total or 0)` handles NULL in Python. Added as the 14th task in `asyncio.gather`. `IncidentCategoryBreakdown` Pydantic schema added to `schemas/dashboard.py`. `IncidentCategoryBreakdown` TypeScript interface added to `types/dashboard.ts`.
+Why: Parallel execution adds no latency beyond the existing 13 queries. Grouping in SQL is correct. `nullslast` is the right fix for ordering a nullable NUMERIC column without a type-conflicting coalesce.
+
+**Decision: Unified dashboard insight modals as module-level React components sharing parent computed data (September 7, 2026)**
+Raised by: Four insight modals (Pressure Analysis, Incident Performance, Exposure Impact Investigation, Distribution Detail) existed in GAS but had no V2 equivalent. The four "View insights →" and "Distribution Detail →" buttons rendered but had no onClick and no modal target.
+Chosen: Five module-level components added to `UnifiedSection.tsx`: `UnifiedModal` (generic backdrop/box/header shell), `PressureModalContent`, `OperationsModalContent`, `ImpactModalContent`, `DistributionModalContent`. `activeModal` state added to `UnifiedSection`. All modal content receives data as props from the parent's already-computed values, no extra API calls. `DistributionModalContent` holds its own `useState` for the Risk/Incident tab because it is module-level and may manage its own state. Distribution chart uses Recharts `BarChart` with `layout="vertical"` for horizontal category bars. `u-modal-*` CSS classes added to `src/index.css`.
+Why: Module-level components comply with the rule against component definitions inside component bodies. Passing computed props avoids duplicate computation and keeps all dashboard logic in one place. The `UnifiedModal` shell is reusable across all four modals without prop-drilling the close handler into each content component.
+Chosen: `field_validator` using `urllib.parse.urlparse`. Rejects any value where scheme is not `http` or `https`, or where `netloc` is empty. `None` passes through unchanged.
+Why: stdlib only, no new dependency. Rejects the full range of dangerous schemes at deserialization time with a 422 before any DB write.
+
+**Decision: All authenticated route files rate-limited with per-operation limits (September 7, 2026)**
+Raised by: 11 route files had no `@limiter.limit` decorators. An authenticated user with a valid token could hammer any of these endpoints, including AI-calling routes, without any server-side throttle.
+Chosen: `@limiter.limit` added to every handler in `routes_audit.py`, `routes_brief.py`, `routes_recycle.py`, `routes_settings.py`, `routes_lookup.py`, `routes_notifications.py`, `routes_presence.py`, `routes_matrix.py`, `routes_feedback.py`, `routes_appetite.py`, and `routes_dashboard.py`. Read endpoints: 60/minute. Standard writes: 10-20/minute. Destructive writes: 5-10/minute. AI-calling endpoints (exec-insights, run-snapshot, send-test brief): 3-5/minute. Presence heartbeat: 120/minute to accommodate multiple browser tabs per user.
+Why: Consistent with the existing pattern on `routes_auth.py` and `routes_risks.py`. AI endpoints are capped tightly to limit Anthropic API cost from a single compromised or abusive authenticated account.
+
+**Decision: Google OAuth validates via tokeninfo?access_token=, not userinfo endpoint (September 7, 2026)**
+Raised by: The original implementation called Google's userinfo endpoint with the access token. This returns user info for any valid Google token regardless of which OAuth client issued it. A token from any other Google-connected app for the same user would pass.
+Chosen: Call `https://oauth2.googleapis.com/tokeninfo?access_token=<token>`. This endpoint validates the token's authenticity and returns the `azp` (authorized party) claim, which is the OAuth2 client ID that minted the token. `azp` is validated against `settings.GOOGLE_CLIENT_ID`. `email_verified` must be `"true"`. No new dependency, uses existing `httpx`.
+Note: `tokeninfo?id_token=` was attempted first. `useGoogleLogin` from `@react-oauth/google` uses the implicit OAuth2 flow and returns an access token, not a JWT ID token. The id_token path returned 401 from Google. Corrected to `access_token` path which is the right endpoint for this token type.
+Why: Audience validation via `azp` ensures the token was issued specifically for this application. The userinfo endpoint has no such guarantee.
+
+**Decision: Register endpoint always raises 409 on existing email, password correctness is never revealed (September 7, 2026)**
+Raised by: The register function previously logged in a user if their email already existed and their submitted password was correct. A token response vs an error response on the register endpoint revealed whether a submitted password was correct for a given email, without going through the rate-limited login endpoint.
+Chosen: Remove the password-match branch entirely. When an account with `password_hash` exists for the submitted email, `DuplicateResourceError` (409) is raised unconditionally. The invite path (no `password_hash`) retains its specific message directing the user to their invite link.
+Why: Eliminates the credential oracle. The register endpoint's only valid outcome when the email exists is: tell the user to sign in. No authentication should occur through the register route.
+
+**Decision: GoogleSignInButton resets pending state by awaiting parent onSuccess callback (September 7, 2026)**
+Raised by: When the backend Google auth call failed, the Google button stayed permanently disabled until page refresh. `googlePending` was set to `true` on click and never reset because the child component did not await the parent's async `onSuccess` callback.
+Chosen: `onSuccess` prop type changed to `(token: string) => Promise<void>`. Child's `useGoogleLogin.onSuccess` made `async`. Wraps `await onSuccess(r.access_token)` in try/finally. `googlePending` is reset to `false` in the finally block, running after the parent's full async operation resolves or rejects.
+Why: The state controlling the button lives in the child. The only correct place to reset it is the child's own finally block, triggered after the parent's promise settles. Lifting state to the parent would require additional props and was unnecessary.
+
+Why: The cover_body is one large Table. Any overflow causes ReportLab to split it, creating a near-blank page 2 with only the metadata footer. The adjusted estimate brings total height back within the frame.

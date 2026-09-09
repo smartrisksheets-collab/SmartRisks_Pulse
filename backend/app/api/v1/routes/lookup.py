@@ -2,7 +2,8 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
+from app.core.rate_limit import limiter
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_db, get_active_tenant, require_permission
@@ -13,7 +14,9 @@ router = APIRouter(prefix="/lookups", tags=["lookups"])
 
 
 @router.get("")
+@limiter.limit("60/minute")
 async def get_lookups(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     claims: dict     = Depends(get_active_tenant),
 ):
@@ -23,7 +26,9 @@ async def get_lookups(
 
 
 @router.get("/usage")
+@limiter.limit("60/minute")
 async def check_usage(
+    request: Request,
     field: str = Query(...),
     value: str = Query(...),
     db: AsyncSession = Depends(get_db),
@@ -35,7 +40,9 @@ async def check_usage(
 
 
 @router.patch("")
+@limiter.limit("20/minute")
 async def patch_lookups(
+    request: Request,
     payload: LookupPatch,
     db: AsyncSession      = Depends(get_db),
     claims: dict          = Depends(require_permission("manage_settings")),

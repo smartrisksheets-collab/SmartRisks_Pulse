@@ -12,6 +12,7 @@ import LookupEditor from "../components/settings/LookupEditor";
 import NotificationPrefs from "../components/settings/NotificationPrefs";
 import MatrixSettings from "../components/settings/MatrixSettings";
 import AppetiteSettings from "../components/settings/AppetiteSettings";
+import IncidentSeveritySettings from "../components/settings/IncidentSeveritySettings";
 
 // ── AI Policy Builder — module-scope constants ───────────────────────────
 
@@ -814,14 +815,15 @@ function BillingTab() {
 
 // ── Tab definitions ──────────────────────────────────────────────────────
 const TABS = [
-  { id: "ws",     label: "Workspace",       icon: "building-2"  },
-  { id: "matrix", label: "Risk Matrix",     icon: "grid-2x2"    },
-  { id: "tax",      label: "Risk Config",        icon: "tags"        },
-  { id: "appetite", label: "Risk Appetite",       icon: "gauge"       },
-  { id: "roles",  label: "Users & Roles",   icon: "users"       },
-  { id: "ai",     label: "AI & Automation", icon: "sparkles"    },
-  { id: "brief",  label: "Risk Brief",      icon: "mail"        },
-  { id: "bill",   label: "Billing",         icon: "badge-check" },
+  { id: "ws",      label: "Workspace",             icon: "building-2"  },
+  { id: "matrix",  label: "Risk Matrix",           icon: "grid-2x2"    },
+  { id: "tax",     label: "Taxonomy",              icon: "tags"        },
+  { id: "appetite", label: "Risk Appetite",        icon: "gauge"       },
+  { id: "inc-sev", label: "Incident Severity & SLA", icon: "shield-alert" },
+  { id: "roles",   label: "Users & Roles",         icon: "users"       },
+  { id: "ai",      label: "AI & Automation",       icon: "sparkles"    },
+  { id: "brief",   label: "Risk Brief",            icon: "mail"        },
+  { id: "bill",    label: "Billing",               icon: "badge-check" },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
@@ -830,7 +832,7 @@ type TabId = (typeof TABS)[number]["id"];
 export default function Settings() {
   const { query } = useSettings();
   // Read the initial tab from ?tab= so Get Started can link straight to
-  // Risk Config, Risk Matrix or Risk Appetite. Falls back to Workspace.
+  // Taxonomy, Risk Matrix or Risk Appetite. Falls back to Workspace.
   const [searchParams] = useSearchParams();
   const requestedTab   = searchParams.get("tab");
   const initialTab     = TABS.some(t => t.id === requestedTab)
@@ -908,6 +910,9 @@ export default function Settings() {
           </div>
           <div className={`tab-panel${activeTab === "bill" ? " active" : ""}`}>
             <BillingTab />
+          </div>
+          <div className={`tab-panel${activeTab === "inc-sev" ? " active" : ""}`}>
+            <IncidentSeveritySettings />
           </div>
         </div>
       </div>

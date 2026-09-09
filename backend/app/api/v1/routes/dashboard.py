@@ -1,6 +1,7 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
+from app.core.rate_limit import limiter
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_active_tenant, get_db
@@ -18,7 +19,9 @@ router = APIRouter(tags=["dashboard"])
     response_model=None,
     summary="Main dashboard — KPIs, trends, snapshot delta, activity feed",
 )
+@limiter.limit("60/minute")
 async def dashboard_endpoint(
+    request: Request,
     days: int = Query(default=90, ge=1, le=365),
     claims: dict = Depends(get_active_tenant),
     db: AsyncSession = Depends(get_db),
@@ -37,7 +40,9 @@ async def dashboard_endpoint(
     "/snapshots/run",
     summary="Manually trigger a monthly snapshot for the current tenant",
 )
+@limiter.limit("5/minute")
 async def run_snapshot(
+    request: Request,
     claims: dict = Depends(get_active_tenant),
     db: AsyncSession = Depends(get_db),
 ):
@@ -62,7 +67,9 @@ async def run_snapshot(
     response_model=None,
     summary="Generate AI executive insights summary and 30-day action plan",
 )
+@limiter.limit("5/minute")
 async def exec_insights_endpoint(
+    request: Request,
     days: int = Query(default=90, ge=1, le=365),
     claims: dict = Depends(get_active_tenant),
     db: AsyncSession = Depends(get_db),

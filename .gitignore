@@ -11,6 +11,11 @@ frontend/node_modules/
 frontend/dist/
 frontend/.env
 
+# Admin
+admin/node_modules/
+admin/dist/
+admin/.env
+
 # Docker
 *.log
 

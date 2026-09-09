@@ -2,7 +2,8 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
+from app.core.rate_limit import limiter
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_active_tenant, get_db
@@ -13,7 +14,9 @@ router = APIRouter(prefix="/notifications", tags=["notifications"])
 
 
 @router.get("/prefs", response_model=dict)
+@limiter.limit("60/minute")
 async def get_prefs(
+    request: Request,
     claims: dict = Depends(get_active_tenant),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
@@ -24,7 +27,9 @@ async def get_prefs(
 
 
 @router.patch("/prefs", response_model=dict)
+@limiter.limit("20/minute")
 async def update_prefs(
+    request: Request,
     payload: NotificationPrefUpdate,
     claims: dict = Depends(get_active_tenant),
     db: AsyncSession = Depends(get_db),

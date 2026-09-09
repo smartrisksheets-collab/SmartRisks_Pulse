@@ -202,6 +202,103 @@ async def job_freshness_update() -> None:
             logger.exception("job_freshness_update failed for tenant=%s", tid)
 
 
+# ── job: incident SLA escalation ──────────────────────────────────────────
+
+async def job_incident_escalation() -> None:
+    """
+    Check SLA breaches and unowned incidents for all tenants.
+    Runs hourly. Sends escalation alerts via email.
+    Breach detection uses the shared compute_breach function from services.incident_severity.
+    """
+    from app.models.incident import Incident
+    from app.models.incident_escalation_rule import IncidentEscalationRule
+    from app.models.workspace_member import WorkspaceMember
+    from app.models.account import Account
+    from app.services.incident_severity import compute_breach, get_sla_map
+    from app.services.email import send_escalation_alert
+
+    now = datetime.now(timezone.utc)
+    open_statuses = {'New', 'Open', 'In Progress', 'Under Review'}
+
+    tenant_ids = await _get_all_tenant_ids()
+
+    for tid in tenant_ids:
+        try:
+            async with AsyncSessionLocal() as db:
+                async with db.begin():
+                    rule = (await db.execute(
+                        select(IncidentEscalationRule)
+                        .where(IncidentEscalationRule.tenant_id == tid)
+                    )).scalar_one_or_none()
+
+                    if rule is None:
+                        continue
+
+                    sla_map = await get_sla_map(db, tid)
+                    if not sla_map:
+                        continue
+
+                    incidents = (await db.execute(
+                        select(Incident)
+                        .where(Incident.tenant_id == tid)
+                        .where(Incident.deleted_at.is_(None))
+                        .where(Incident.status.in_(list(open_statuses)))
+                    )).scalars().all()
+
+                    tenant = await db.get(Tenant, tid)
+                    tenant_name = str(tenant.name or '') if tenant else str(tid)
+
+                    # Get owner email for escalation recipient
+                    owner_email_row = (await db.execute(
+                        select(Account.email)
+                        .join(WorkspaceMember, WorkspaceMember.account_id == Account.id)
+                        .where(WorkspaceMember.tenant_id == tid)
+                        .where(WorkspaceMember.role == 'Owner')
+                        .where(WorkspaceMember.status == 'ACTIVE')
+                        .limit(1)
+                    )).scalar_one_or_none()
+
+                    for inc in incidents:
+                        if inc.created_at is None:
+                            continue
+
+                        created = inc.created_at
+                        if hasattr(created, 'tzinfo') and created.tzinfo is None:
+                            created = created.replace(tzinfo=timezone.utc)
+
+                        age_hours = (now - created).total_seconds() / 3600
+                        severity_label = str(inc.severity or '')
+                        target_h = sla_map.get(severity_label)
+
+                        if (
+                            bool(rule.auto_escalate_on_breach)
+                            and target_h is not None
+                            and compute_breach(age_hours, target_h)
+                            and owner_email_row
+                        ):
+                            send_escalation_alert(
+                                to=str(owner_email_row),
+                                incident_id=str(inc.id or ''),
+                                severity=severity_label,
+                                age_hours=age_hours,
+                                tenant_name=tenant_name,
+                            )
+
+                        flag_hours = rule.flag_unowned_after_hours
+                        if (
+                            flag_hours is not None
+                            and not str(inc.assigned_to or '').strip()
+                            and age_hours >= float(flag_hours)  # type: ignore[arg-type]
+                        ):
+                            logger.info(
+                                'Unowned incident past threshold: tenant=%s incident=%s age=%.1fh',
+                                tid, inc.id, age_hours,
+                            )
+
+        except Exception:
+            logger.exception('job_incident_escalation failed for tenant=%s', tid)
+
+
 # ── job: morning brief dispatch ────────────────────────────────────────────
 
 async def job_brief_send() -> None:

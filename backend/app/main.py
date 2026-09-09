@@ -23,10 +23,18 @@ from app.core.exceptions import (
     ResourceNotFoundError,
 )
 from app.middleware.tenant import TenantMiddleware
+from app.middleware.error_log import ErrorLogMiddleware
+from app.api.v1.routes.admin_auth import router as admin_auth_router
+from app.api.v1.routes.admin_overview import router as admin_overview_router
+from app.api.v1.routes.admin_workspaces import router as admin_workspaces_router
+from app.api.v1.routes.admin_accounts import router as admin_accounts_router
+from app.api.v1.routes.admin_errors import router as admin_errors_router
+from app.api.v1.routes.admin_payments import router as admin_payments_router
 from app.api.v1.routes import (
     auth, workspaces, users, risks, recycle, incidents, lookup,
     dashboard, reports, settings as settings_router, notifications, external,
 )
+
 from app.api.v1.routes.brief import router as brief_router
 from app.api.v1.routes.matrix import router as matrix_router
 from app.api.v1.routes.audit import router as audit_router
@@ -34,7 +42,9 @@ from app.api.v1.routes.presence import router as presence_router
 from app.api.v1.routes.feedback import router as feedback_router
 from app.api.v1.routes.appetite import router as appetite_router
 from app.api.v1.routes.submissions import router as submissions_router
+from app.api.v1.routes.incident_severity import router as incident_severity_router
 from app.scheduler.jobs import (
+    job_incident_escalation,
     job_daily_snapshot,
     job_monthly_snapshot,
     job_recycle_purge,
@@ -59,7 +69,8 @@ async def lifespan(_app: FastAPI):
     # Freshness recompute — 06:00 UTC
     scheduler.add_job(job_freshness_update, "cron", hour=6,  minute=0,  id="freshness_update")
     # Brief dispatch — every hour 07:00 to 10:00 UTC; each job checks per-tenant send time
-    scheduler.add_job(job_brief_send,       "cron", hour="7-10", minute=0, id="brief_send")
+    scheduler.add_job(job_brief_send,        "cron", hour="7-10", minute=0,  id="brief_send")
+    scheduler.add_job(job_incident_escalation, "cron", minute=0,              id="incident_escalation")
 
     scheduler.start()
     yield
@@ -77,6 +88,7 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+app.add_middleware(ErrorLogMiddleware)
 app.add_middleware(TenantMiddleware)
 app.add_middleware(
     CORSMiddleware,
@@ -137,7 +149,16 @@ app.include_router(presence_router,        prefix="/api/v1")
 app.include_router(matrix_router,          prefix="/api/v1")
 app.include_router(feedback_router,        prefix="/api/v1")
 app.include_router(appetite_router,        prefix="/api/v1")
+app.include_router(incident_severity_router, prefix="/api/v1")
 app.include_router(submissions_router,     prefix="/api/v1")
+
+app.include_router(admin_auth_router,       prefix="/api")
+app.include_router(admin_overview_router,   prefix="/api")
+app.include_router(admin_workspaces_router, prefix="/api")
+app.include_router(admin_accounts_router,   prefix="/api")
+app.include_router(admin_errors_router,     prefix="/api")
+app.include_router(admin_payments_router,   prefix="/api")
+
 
 @app.get("/api/health")
 async def health():

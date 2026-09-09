@@ -10,7 +10,8 @@ import io
 from datetime import datetime, timezone, timedelta
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
+from app.core.rate_limit import limiter
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -68,7 +69,9 @@ def _row_to_dict(row: AuditLog) -> dict:
 
 
 @router.get("")
+@limiter.limit("60/minute")
 async def list_audit(
+    request: Request,
     module:     str | None = Query(None),
     action:     str | None = Query(None),
     user_email: str | None = Query(None),
@@ -99,7 +102,9 @@ async def list_audit(
 
 
 @router.delete("")
+@limiter.limit("5/minute")
 async def clear_audit(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     claims: dict     = Depends(require_permission("manage_users")),
 ) -> dict:
@@ -118,7 +123,9 @@ async def clear_audit(
 
 
 @router.get("/export.csv")
+@limiter.limit("10/minute")
 async def export_audit_csv(
+    request: Request,
     module:     str | None = Query(None),
     action:     str | None = Query(None),
     user_email: str | None = Query(None),

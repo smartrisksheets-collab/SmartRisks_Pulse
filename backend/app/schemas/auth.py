@@ -1,4 +1,18 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
+import re
+
+_PW_RE = re.compile(
+    r'^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$'
+)
+
+def _validate_password(v: str) -> str:
+    if not _PW_RE.match(v):
+        raise ValueError(
+            "Password must be at least 8 characters and include "
+            "an uppercase letter, a lowercase letter, a number, "
+            "and a special character."
+        )
+    return v
 
 
 class LoginRequest(BaseModel):
@@ -14,6 +28,11 @@ class RegisterRequest(BaseModel):
     name: str
     email: EmailStr
     password: str
+
+    @field_validator("password")
+    @classmethod
+    def _strong(cls, v: str) -> str:
+        return _validate_password(v)
 
 
 class PINVerifyRequest(BaseModel):
@@ -47,6 +66,11 @@ class AcceptInviteRequest(BaseModel):
     token:    str
     password: str
 
+    @field_validator("password")
+    @classmethod
+    def _strong(cls, v: str) -> str:
+        return _validate_password(v)
+
 
 class ForgotPasswordRequest(BaseModel):
     email: EmailStr
@@ -55,6 +79,11 @@ class ForgotPasswordRequest(BaseModel):
 class ResetPasswordRequest(BaseModel):
     token:    str
     password: str
+
+    @field_validator("password")
+    @classmethod
+    def _strong(cls, v: str) -> str:
+        return _validate_password(v)
 
 
 class GoogleAuthRequest(BaseModel):

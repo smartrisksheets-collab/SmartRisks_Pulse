@@ -21,7 +21,10 @@ export interface Incident {
   impact_summary: string | null;
   affected_asset: string | null;
   business_unit: string | null;
-  linked_risk_id: string | null;
+  linked_risk_id:    string | null;
+  linked_control:    string | null;
+  control_outcome:   string | null;
+  impact_confidence: string | null;
   immediate_actions: string | null;
   evidence_link: string | null;
   analyst_notes: string | null;
@@ -59,8 +62,11 @@ export interface IncidentCreate {
   impact_summary?: string;
   affected_asset?: string;
   business_unit?: string;
-  linked_risk_id?: string;
-  immediate_actions?: string;
+  linked_risk_id?:    string | null;
+  linked_control?:    string | null;
+  control_outcome?:   string | null;
+  impact_confidence?: string | null;
+  immediate_actions?: string | null;
   evidence_link?: string;
   analyst_notes?: string;
   containment_date?: string;

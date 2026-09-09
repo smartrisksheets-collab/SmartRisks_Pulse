@@ -5,7 +5,8 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field, EmailStr
+from urllib.parse import urlparse
+from pydantic import BaseModel, Field, EmailStr, field_validator
 
 
 # ── Token management ──────────────────────────────────────────────────────────
@@ -52,6 +53,16 @@ class PublicSubmitRequest(BaseModel):
     attachment_url:     str | None = None
     # Honeypot — must be empty on legitimate submissions
     website:            str | None = Field(None, exclude=True)
+
+    @field_validator("attachment_url")
+    @classmethod
+    def _safe_url(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        parsed = urlparse(v)
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            raise ValueError("attachment_url must be a valid HTTP or HTTPS URL")
+        return v
 
 
 class PublicSubmitResponse(BaseModel):

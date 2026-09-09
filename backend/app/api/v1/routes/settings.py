@@ -2,7 +2,8 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, UploadFile
+from fastapi import APIRouter, Depends, File, Request, UploadFile
+from app.core.rate_limit import limiter
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_active_tenant, get_db
@@ -13,7 +14,9 @@ router = APIRouter(prefix="/settings", tags=["settings"])
 
 
 @router.get("", response_model=dict)
+@limiter.limit("60/minute")
 async def get_settings(
+    request: Request,
     claims: dict = Depends(get_active_tenant),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
@@ -23,7 +26,9 @@ async def get_settings(
 
 
 @router.patch("", response_model=dict)
+@limiter.limit("20/minute")
 async def update_settings(
+    request: Request,
     payload: SettingsUpdate,
     claims: dict = Depends(get_active_tenant),
     db: AsyncSession = Depends(get_db),
@@ -34,7 +39,9 @@ async def update_settings(
 
 
 @router.post("/pin", response_model=dict)
+@limiter.limit("10/minute")
 async def set_pin(
+    request: Request,
     payload: PINSet,
     claims: dict = Depends(get_active_tenant),
     db: AsyncSession = Depends(get_db),
@@ -45,7 +52,9 @@ async def set_pin(
 
 
 @router.post("/logo", response_model=dict)
+@limiter.limit("5/minute")
 async def upload_logo(
+    request: Request,
     file: UploadFile = File(...),
     claims: dict = Depends(get_active_tenant),
     db: AsyncSession = Depends(get_db),
@@ -62,7 +71,9 @@ async def upload_logo(
 
 
 @router.delete("/pin", response_model=dict)
+@limiter.limit("10/minute")
 async def remove_pin(
+    request: Request,
     claims: dict = Depends(get_active_tenant),
     db: AsyncSession = Depends(get_db),
 ) -> dict:

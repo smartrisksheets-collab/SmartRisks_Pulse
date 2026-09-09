@@ -53,7 +53,9 @@ async def submit_incident(
 
 
 @router.get("/external/lookups/{tenant_id}")
+@limiter.limit("30/minute")
 async def get_public_lookups(
+    request:   Request,
     tenant_id: UUID,
     key:       str = "",
     db:        AsyncSession = Depends(get_db),

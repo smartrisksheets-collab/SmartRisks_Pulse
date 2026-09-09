@@ -1,7 +1,17 @@
 # app/schemas/external.py
 from __future__ import annotations
 from datetime import datetime
-from pydantic import BaseModel, Field
+import re
+from pydantic import BaseModel, Field, field_validator
+
+_EMAIL_RE = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+
+def _validate_optional_email(v: str) -> str:
+    if not v:
+        return v
+    if not _EMAIL_RE.match(v):
+        raise ValueError("must be a valid email address")
+    return v.lower().strip()
 
 
 # ── Public submission schemas ─────────────────────────────────────────────────
@@ -9,6 +19,11 @@ from pydantic import BaseModel, Field
 class ExternalRiskSubmit(BaseModel):
     submitter_name:  str = Field(..., min_length=1)
     submitter_email: str = ""
+
+    @field_validator("submitter_email")
+    @classmethod
+    def _email(cls, v: str) -> str:
+        return _validate_optional_email(v)
     department:      str = ""
     category:        str = Field(..., min_length=1)
     description:     str = Field(..., min_length=1)
@@ -23,6 +38,11 @@ class ExternalRiskSubmit(BaseModel):
 class ExternalIncidentSubmit(BaseModel):
     reported_by:      str = Field(..., min_length=1)
     reporter_email:   str = ""
+
+    @field_validator("reporter_email")
+    @classmethod
+    def _email(cls, v: str) -> str:
+        return _validate_optional_email(v)
     date_reported:    str = ""
     channel:          str = ""
     description:      str = Field(..., min_length=1)

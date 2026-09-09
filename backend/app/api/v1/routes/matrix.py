@@ -1,6 +1,7 @@
 # app/api/v1/routes/matrix.py
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
+from app.core.rate_limit import limiter
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_db, get_active_tenant, require_permission
@@ -13,7 +14,9 @@ router = APIRouter(prefix="/matrix-config", tags=["matrix"])
 
 
 @router.get("", response_model=dict)
+@limiter.limit("60/minute")
 async def get_matrix_config(
+    request: Request,
     claims: dict = Depends(get_active_tenant),
     db:     AsyncSession = Depends(get_db),
 ):
@@ -23,7 +26,9 @@ async def get_matrix_config(
 
 
 @router.put("", response_model=dict)
+@limiter.limit("10/minute")
 async def update_matrix_config(
+    request: Request,
     payload: MatrixConfigUpdate,
     claims:  dict = Depends(get_active_tenant),
     db:      AsyncSession = Depends(get_db),

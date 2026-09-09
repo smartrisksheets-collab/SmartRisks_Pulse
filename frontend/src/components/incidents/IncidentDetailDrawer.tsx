@@ -3,6 +3,8 @@
 import { useState, useCallback } from 'react';
 import { X, Sparkles } from 'lucide-react';
 import { useCanDo } from '../../utils/permissions';
+import { useAuditLog } from '../../hooks/useAudit';
+import { useIncidentSeverity } from '../../hooks/useIncidentSeverity';
 import type { Incident, IncidentUpdate } from '../../types/incident';
 import * as incidentsApi from '../../services/incidents';
 
@@ -17,15 +19,13 @@ interface Props {
 const REVIEW_STATUSES = ['Triaged', 'Investigating', 'Pending Evidence', 'Remediating', 'Validated'];
 const STATUSES = ['New', 'Open', 'In Progress', 'Under Review', 'Resolved', 'Closed'];
 
-function sevColor(severity: string | null): string {
-  const s = (severity ?? '').toLowerCase();
-  if (s.includes('very')) return '#dc2626';
-  if (s === 'high')       return '#f59e0b';
-  if (s === 'medium')     return '#01b88e';
-  return '#64748b';
-}
 
 export default function IncidentDetailDrawer({ incident, members, onClose, onSaved, onDeleted }: Props) {
+  const { config: sevConfig } = useIncidentSeverity();
+  const sevBadgeColor = sevConfig.data?.levels.find(
+    l => l.label === incident.severity
+  )?.color ?? '#64748b';
+
   const canReview = useCanDo('review_resolve');
   const canAI     = useCanDo('generate_ai');
   const [status, setStatus]             = useState(incident.status ?? 'New');
@@ -39,7 +39,15 @@ export default function IncidentDetailDrawer({ incident, members, onClose, onSav
   const [saving, setSaving]             = useState(false);
   const [deleting, setDeleting]         = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [drawerError, setDrawerError]     = useState<string | null>(null);
+  const [drawerError,       setDrawerError]       = useState<string | null>(null);
+  const [financialImpact,   setFinancialImpact]   = useState(String(incident.financial_impact ?? ''));
+  const [impactConfidence,  setImpactConfidence]  = useState(incident.impact_confidence ?? 'Unknown');
+  const [controlOutcome,    setControlOutcome]    = useState(incident.control_outcome ?? '');
+
+  const { data: auditData } = useAuditLog({ module: 'Incident', page_size: 50 });
+  const incidentAudit = (auditData?.data ?? [])
+    .filter(e => e.record_id === incident.id)
+    .slice(0, 8);
 
   const showError = useCallback((msg: string) => {
     setDrawerError(msg);
@@ -51,7 +59,16 @@ export default function IncidentDetailDrawer({ incident, members, onClose, onSav
   async function handleSave() {
     setSaving(true);
     try {
-      const patch: IncidentUpdate = { status, assigned_to: assignedTo, review_status: reviewStatus, risk_impacted: riskImpacted, resolution_summary: resolution };
+      const patch: IncidentUpdate = {
+        status,
+        assigned_to:       assignedTo,
+        review_status:     reviewStatus,
+        risk_impacted:     riskImpacted,
+        resolution_summary: resolution,
+        financial_impact:  financialImpact  || undefined,
+        impact_confidence: impactConfidence || undefined,
+        control_outcome:   controlOutcome   || undefined,
+      };
       const updated = await incidentsApi.updateIncident(incident.id, patch);
       onSaved(updated);
     } catch (e) {
@@ -64,7 +81,16 @@ export default function IncidentDetailDrawer({ incident, members, onClose, onSav
   async function handleMarkResolved() {
     setSaving(true);
     try {
-      const patch: IncidentUpdate = { status: 'Resolved', assigned_to: assignedTo, review_status: reviewStatus, risk_impacted: riskImpacted, resolution_summary: resolution };
+      const patch: IncidentUpdate = {
+        status:            'Resolved',
+        assigned_to:       assignedTo,
+        review_status:     reviewStatus,
+        risk_impacted:     riskImpacted,
+        resolution_summary: resolution,
+        financial_impact:  financialImpact  || undefined,
+        impact_confidence: impactConfidence || undefined,
+        control_outcome:   controlOutcome   || undefined,
+      };
       const updated = await incidentsApi.updateIncident(incident.id, patch);
       onSaved(updated);
     } catch (e) {
@@ -115,7 +141,7 @@ export default function IncidentDetailDrawer({ incident, members, onClose, onSav
             <button className="srs-icon-btn" onClick={onClose} type="button"><X size={18} /></button>
           </div>
           <div className="srs-badges-row">
-            <span className="srs-badge" style={{ borderColor: sevColor(incident.severity), color: sevColor(incident.severity) }}>
+            <span className="srs-badge" style={{ borderColor: sevBadgeColor, color: sevBadgeColor }}>
               {incident.severity ?? 'Medium'}
             </span>
             <div className="srs-field-inline">
@@ -177,6 +203,60 @@ export default function IncidentDetailDrawer({ incident, members, onClose, onSav
                 ))}
               </div>
             </div>
+            <div className="srs-row2" style={{ marginBottom: 12 }}>
+              <div>
+                <label className="srs-label" htmlFor="drw-fin-impact">Financial Impact</label>
+                <input
+                  id="drw-fin-impact"
+                  type="number"
+                  min={0}
+                  className="srs-select"
+                  style={{ width: '100%' }}
+                  placeholder="0"
+                  value={financialImpact}
+                  onChange={e => setFinancialImpact(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="srs-label" htmlFor="drw-confidence">Impact Confidence</label>
+                <select
+                  id="drw-confidence"
+                  className="srs-select"
+                  style={{ width: '100%' }}
+                  value={impactConfidence}
+                  onChange={e => setImpactConfidence(e.target.value)}
+                >
+                  {['Unknown', 'Estimated', 'Confirmed'].map(o => <option key={o}>{o}</option>)}
+                </select>
+              </div>
+            </div>
+            {incident.linked_risk_id && (
+              <div style={{ marginBottom: 12 }}>
+                <label className="srs-label">Linked Risk</label>
+                <div className="srs-v" style={{ marginTop: 4 }}>{incident.linked_risk_id}</div>
+                {incident.linked_control && (
+                  <div className="srs-v" style={{ marginTop: 2, fontSize: 12 }}>
+                    Control: {incident.linked_control}
+                  </div>
+                )}
+                <div style={{ marginTop: 8 }}>
+                  <label className="srs-label" htmlFor="drw-outcome">Control Outcome</label>
+                  <select
+                    id="drw-outcome"
+                    className="srs-select"
+                    style={{ width: '100%' }}
+                    value={controlOutcome}
+                    onChange={e => setControlOutcome(e.target.value)}
+                  >
+                    <option value="">— Select outcome —</option>
+                    {['Control failed', 'Control partially worked', 'Control was bypassed',
+                      'Control was not applicable', 'No control existed'].map(o => (
+                      <option key={o}>{o}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
             <div>
               <label className="srs-label" htmlFor="drw-resolution">Resolution Summary</label>
               <textarea id="drw-resolution" className="srs-textarea" rows={4} style={{ width: '100%', boxSizing: 'border-box' }} placeholder="Enter resolution details…" value={resolution} onChange={e => setResolution(e.target.value)} />
@@ -184,32 +264,72 @@ export default function IncidentDetailDrawer({ incident, members, onClose, onSav
           </section>
           )}
 
-          {/* AI Section */}
-          <section className="srs-card">
-            <div className="srs-card-hd">Suggest Corrective Actions</div>
-            <div className="srs-ai-actions">
-              <button className="btn btn-ai" type="button" onClick={handleGenerateAI} disabled={aiLoading || !canAI}>
-                <Sparkles size={14} style={{ marginRight: 6 }} />
-                {aiLoading ? 'Working…' : 'Generate AI Analysis'}
-              </button>
-            </div>
-            {(aiImpact || aiActions) && (
-              <div className="srs-ai-output">
-                {aiImpact && (
-                  <>
-                    <div className="srs-ai-label">AI Impact Summary</div>
-                    <div className="srs-ai-text">{aiImpact}</div>
-                  </>
-                )}
-                {aiActions && (
-                  <>
-                    <div className="srs-ai-label" style={{ marginTop: 10 }}>AI Corrective Actions</div>
-                    <div className="srs-ai-text">{aiActions}</div>
-                  </>
-                )}
+          {/* AI Analysis — auto-surfaced if generated, on-demand otherwise */}
+          {(aiImpact || aiActions) ? (
+            <div className="srs-ai-card">
+              <div className="srs-ai-card-hd">
+                <span className="srs-ai-card-title">AI Analysis</span>
+                <span className="srs-ai-card-badge">Auto-generated</span>
               </div>
-            )}
-          </section>
+              {aiImpact && (
+                <div className="srs-ai-card-text">{aiImpact}</div>
+              )}
+              {aiActions && (
+                <div className="srs-ai-card-rec"><strong>Recommended: </strong>{aiActions}</div>
+              )}
+              {canAI && (
+                <div className="srs-ai-card-footer">
+                  <button
+                    className="srs-ai-card-regen"
+                    type="button"
+                    onClick={handleGenerateAI}
+                    disabled={aiLoading}
+                  >
+                    <Sparkles size={12} style={{ marginRight: 5 }} />
+                    {aiLoading ? 'Working…' : 'Regenerate'}
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <section className="srs-card">
+              <div className="srs-card-hd">AI Analysis</div>
+              <div className="srs-ai-actions">
+                <button
+                  className="btn btn-ai"
+                  type="button"
+                  onClick={handleGenerateAI}
+                  disabled={aiLoading || !canAI}
+                >
+                  <Sparkles size={14} style={{ marginRight: 6 }} />
+                  {aiLoading ? 'Working…' : 'Generate AI Analysis'}
+                </button>
+              </div>
+            </section>
+          )}
+
+          {/* Audit Trail */}
+          {incidentAudit.length > 0 && (
+            <section className="srs-card">
+              <div className="srs-card-hd">Audit Trail</div>
+              <ul className="srs-audit-list">
+                {incidentAudit.map(entry => (
+                  <li key={entry.id} className="srs-audit-item">
+                    <div className="srs-audit-dot">✎</div>
+                    <div className="srs-audit-body">
+                      <div className="srs-audit-top">
+                        <span className="srs-audit-title">{entry.summary}</span>
+                        <span className="srs-audit-time">
+                          {new Date(entry.timestamp).toLocaleDateString()}
+                        </span>
+                      </div>
+                      <div className="srs-audit-user">{entry.user_email}</div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
 
         </div>
 
