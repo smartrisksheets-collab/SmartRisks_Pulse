@@ -47,11 +47,16 @@ export const workspacesApi = {
     adminApi.get('/api/admin/workspaces').then(unwrap<import('../types/admin').WorkspaceListItem[]>),
   update: (id: string, data: Record<string, unknown>) =>
     adminApi.patch(`/api/admin/workspaces/${id}`, data).then(unwrap<{ message: string }>),
+  delete: (id: string) =>
+    adminApi.delete(`/api/admin/workspaces/${id}`).then(unwrap<{ deleted: boolean }>),
 }
 
 export const usersApi = {
   list: () =>
     adminApi.get('/api/admin/platform-users').then(unwrap<import('../types/admin').PlatformUser[]>),
+  updateWorkspaceLimit: (accountId: string, maxWorkspaces: number) =>
+    adminApi.patch(`/api/admin/platform-users/${accountId}/workspace-limit`, { max_workspaces: maxWorkspaces })
+      .then(unwrap<import('../types/admin').PlatformUser>),
 }
 
 export const errorsApi = {

@@ -1913,6 +1913,20 @@ tr.row-flash { animation: rowFlash 2.2s ease; }
   margin-bottom: 16px;
 }
 
+.auth-info-banner {
+  display: flex; flex-direction: column; gap: 8px;
+  font-size: 13px; color: #1F2854;
+  padding: 12px 14px; background: #eef8f5;
+  border: 1px solid #01b88e; border-radius: 8px;
+  margin-bottom: 16px; line-height: 1.5;
+}
+
+.auth-info-link {
+  background: none; border: none; padding: 0;
+  font-size: 13px; font-weight: 700; color: #01b88e;
+  cursor: pointer; text-align: left; text-decoration: underline;
+}
+
 .auth-google-btn {
   width: 100%; padding: 14px 16px; border-radius: 10px;
   border: 2px solid #e2e8f0; background: #fff;
@@ -4613,6 +4627,41 @@ tr.row-flash { animation: rowFlash 2.2s ease; }
 
 @media (max-width: 900px) {
   .mx-grid { grid-template-columns: 1fr; }
+}
+
+/* ── Sidebar workspace quota ── */
+.sidebar-workspace-quota {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: rgba(1,184,142,0.07);
+  border-radius: 8px;
+  margin-bottom: 6px;
+}
+
+.sidebar-quota-text {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--primary);
+}
+
+.sidebar-quota-add {
+  background: none;
+  border: none;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--primary);
+  cursor: pointer;
+  padding: 0;
+}
+
+.sidebar-quota-add:hover { text-decoration: underline; }
+
+.sidebar-quota-full {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
 }
 
 /* ============================================================

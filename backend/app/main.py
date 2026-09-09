@@ -51,6 +51,7 @@ from app.scheduler.jobs import (
     job_freshness_update,
     job_brief_send,
     job_orphan_logo_sweep,
+    job_trial_cleanup,
 )
 
 
@@ -71,6 +72,7 @@ async def lifespan(_app: FastAPI):
     # Brief dispatch — every hour 07:00 to 10:00 UTC; each job checks per-tenant send time
     scheduler.add_job(job_brief_send,        "cron", hour="7-10", minute=0,  id="brief_send")
     scheduler.add_job(job_incident_escalation, "cron", minute=0,              id="incident_escalation")
+    scheduler.add_job(job_trial_cleanup,        "cron", hour=5, minute=0,      id="trial_cleanup")
 
     scheduler.start()
     yield
@@ -108,6 +110,7 @@ _EXCEPTION_MAP = {
     ResourceNotFoundError: 404,
     DuplicateResourceError: 409,
     ValidationError: 422,
+    ValueError: 422,
     ServerError: 500,
     QuotaExceededError: 429,
     WorkspaceLimitError: 429,

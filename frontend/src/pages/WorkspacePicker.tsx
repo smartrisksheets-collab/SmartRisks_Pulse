@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { apiGet, apiPost } from '../services/api';
+import api, { apiPost } from '../services/api';
 import { useAuthStore } from '../store/authStore';
 import type { WorkspaceInfo } from '../types/auth';
 import type { ModuleKey, PlanStage, UserRole } from '../types/api';
@@ -8,17 +8,21 @@ import { roleLabel } from '../utils/roles';
 
 export default function WorkspacePicker() {
   const navigate = useNavigate();
-  const { workspaces, setToken, setWorkspaces } = useAuthStore();
+  const { workspaces, setToken, setWorkspaces, setWorkspaceQuota } = useAuthStore();
   const [selected, setSelected] = useState<string | null>(null);
   const [loading, setLoading]   = useState(false);
   const [fetching, setFetching] = useState(true);
   const [error, setError]       = useState('');
 
   useEffect(() => {
-    apiGet<{ id: string; name: string; plan: string; modules: string[]; role: string }[]>(
-      '/api/v1/workspaces'
-    )
-      .then((list) => {
+    api.get<{
+      data: { id: string; name: string; plan: string; modules: string[]; role: string }[];
+      meta: { owned: number; limit: number };
+      error: null;
+    }>('/api/v1/workspaces')
+      .then((res) => {
+        const list = res.data.data;
+        const meta = res.data.meta;
         const mapped: WorkspaceInfo[] = list.map((w) => ({
           tenant_id: w.id,
           name:      w.name,
@@ -27,12 +31,19 @@ export default function WorkspacePicker() {
           modules:   (w.modules ?? [])     as ModuleKey[],
         }));
         setWorkspaces(mapped);
+        if (meta?.owned !== undefined) {
+          setWorkspaceQuota({ owned: meta.owned, limit: meta.limit });
+        }
       })
       .catch(() => { /* show what is in store if fetch fails */ })
       .finally(() => setFetching(false));
-  }, [setWorkspaces]);
+  }, [setWorkspaces, setWorkspaceQuota]);
 
-  const isTrial = workspaces.some(ws => ws.plan === 'TRIAL');
+  const { workspaceQuota } = useAuthStore();
+  const atLimit = workspaceQuota !== null && workspaceQuota.owned >= workspaceQuota.limit;
+  const limitTip = atLimit
+    ? `You have used ${workspaceQuota!.owned} of ${workspaceQuota!.limit} workspaces. Contact support to increase your limit.`
+    : undefined;
 
   async function handleOpen() {
     if (!selected) return;
@@ -96,12 +107,12 @@ export default function WorkspacePicker() {
         <div className="picker-actions">
           <span
             className="tooltip-wrap"
-            data-tip={isTrial ? 'You are on a trial plan. Upgrade to add more workspaces.' : undefined}
+            data-tip={limitTip}
           >
             <button
               className="btn btn-ghost"
               onClick={() => navigate('/workspaces/create')}
-              disabled={isTrial}
+              disabled={atLimit}
             >
               + New workspace
             </button>

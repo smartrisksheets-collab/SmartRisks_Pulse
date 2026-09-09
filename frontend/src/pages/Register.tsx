@@ -101,7 +101,8 @@ export default function Register() {
   const [password, setPassword]   = useState('');
   const [confirm, setConfirm]     = useState('');
   const [loading, setLoading]     = useState(false);
-  const [error, setError]         = useState('');
+  const [error, setError]           = useState('');
+  const [existingAccount, setExistingAccount] = useState(false);
   const [showPwd, setShowPwd]     = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [nameErr, setNameErr]         = useState('');
@@ -130,9 +131,16 @@ export default function Register() {
       const result = await apiPost<LoginResult>('/api/v1/auth/register', { name, email, password });
       setToken(result.access_token);
       if (result.requires_workspace_select) navigate('/workspaces');
+      else if (result.workspaces && result.workspaces.length > 0) navigate('/');
       else navigate('/workspaces/create');
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Registration failed. Please try again.');
+      const msg = err instanceof Error ? err.message : '';
+      if (msg.toLowerCase().includes('already') || msg.toLowerCase().includes('duplicate') || msg.toLowerCase().includes('registered')) {
+        setExistingAccount(true);
+        setError('');
+      } else {
+        setError(msg || 'Registration failed. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
@@ -203,6 +211,18 @@ export default function Register() {
           </p>
 
           {error && <div className="auth-error">{error}</div>}
+          {existingAccount && (
+            <div className="auth-info-banner">
+              <strong>Account already exists.</strong> Sign in to access your workspaces or add a new one.
+              <button
+                type="button"
+                className="auth-info-link"
+                onClick={() => navigate(`/login?email=${encodeURIComponent(email)}`)}
+              >
+                Sign in instead
+              </button>
+            </div>
+          )}
 
           <form onSubmit={handleSubmit}>
             {GOOGLE_CLIENT_ID && (
@@ -216,6 +236,7 @@ export default function Register() {
                       const result = await apiPost<LoginResult>('/api/v1/auth/google', { access_token: accessToken });
                       setToken(result.access_token);
                       if (result.requires_workspace_select) navigate('/workspaces');
+                      else if (result.workspaces && result.workspaces.length > 0) navigate('/');
                       else navigate('/workspaces/create');
                     } catch (err: unknown) {
                       setError(err instanceof Error ? err.message : 'Google sign-in failed.');

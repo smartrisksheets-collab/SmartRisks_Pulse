@@ -83,13 +83,19 @@ def _build_actions_prompt(inc: Incident) -> str:
 
 async def _call_api(system: str, prompt: str, model: str) -> str:
     client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
-    message = await client.messages.create(
-        model=model,
-        max_tokens=_MAX_TOKENS,
-        system=system,
-        messages=[{'role': 'user', 'content': prompt}],
-    )
-    return _enforce_word_count(message.content[0].text.strip())
+    try:
+        message = await client.messages.create(
+            model=model,
+            max_tokens=_MAX_TOKENS,
+            system=system,
+            messages=[{'role': 'user', 'content': prompt}],
+        )
+        return _enforce_word_count(message.content[0].text.strip())
+    except Exception as exc:
+        logger.error('ai_incident._call_api failed: %s', exc)
+        raise ValueError(
+            'AI analysis is temporarily unavailable. Please try again in a few moments.'
+        ) from exc
 
 
 # ── Public API ────────────────────────────────────────────────────────────────

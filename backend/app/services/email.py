@@ -985,3 +985,71 @@ def send_payment_receipt_email(
     }
     resend.Emails.send(params)
     logger.info("Receipt email sent | to=%s | workspace=%s", to, workspace_name)
+
+def send_trial_expiry_reminder(
+    to: str,
+    workspace_name: str,
+    days_remaining: int,
+    reminder_num: int,
+) -> None:
+    _init()
+    if not settings.RESEND_FROM_EMAIL:
+        raise ValueError("RESEND_FROM_EMAIL is not configured")
+
+    if days_remaining <= 0:
+        subject = f"Your SmartRisk trial for {workspace_name} has expired"
+        urgency = "Your trial period has ended."
+        body_line = (
+            "Your workspace and all its data will be permanently deleted in "
+            f"<strong>{30 - (reminder_num - 1) * 9}</strong> days unless you upgrade."
+        )
+    else:
+        subject = f"Action required: {workspace_name} will be deleted in {days_remaining} day{'s' if days_remaining != 1 else ''}"
+        urgency = f"Only {days_remaining} day{'s' if days_remaining != 1 else ''} remaining."
+        body_line = (
+            "After this period your workspace and all associated data, including risks, "
+            "incidents, reports, and audit logs, will be permanently and irreversibly deleted."
+        )
+
+    urgency_color = "#dc2626" if days_remaining <= 2 else "#f59e0b" if days_remaining <= 7 else "#1F2854"
+
+    html_body = f"""
+    <div style="font-family:Inter,Arial,sans-serif;max-width:560px;margin:0 auto;background:#f6f8fa;padding:32px 0;">
+      <div style="background:#1F2854;padding:20px 32px;border-radius:10px 10px 0 0;">
+        <span style="font-size:18px;font-weight:800;color:#ffffff;">SmartRisk Pulse</span>
+        <span style="display:block;font-size:11px;font-weight:700;color:#01b88e;text-transform:uppercase;letter-spacing:0.08em;margin-top:3px;">Trial Notice</span>
+      </div>
+      <div style="background:#ffffff;padding:32px;border-radius:0 0 10px 10px;border:1px solid #e2e8f0;border-top:none;">
+        <p style="font-size:22px;font-weight:800;color:{urgency_color};margin:0 0 8px;">{urgency}</p>
+        <p style="font-size:14px;color:#334155;margin:0 0 20px;">
+          Your SmartRisk Pulse trial for <strong>{workspace_name}</strong> has expired.
+        </p>
+        <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:16px 20px;margin-bottom:24px;">
+          <p style="font-size:13px;color:#dc2626;margin:0;">{body_line}</p>
+        </div>
+        <p style="font-size:13px;color:#64748b;margin:0 0 24px;">
+          To keep your workspace active, contact us to upgrade your plan. Your data is safe until the deletion date.
+        </p>
+        <a href="mailto:support@smartrisksheets.com"
+           style="display:inline-block;background:#01b88e;color:#fff;font-weight:700;font-size:14px;
+                  padding:12px 28px;border-radius:8px;text-decoration:none;">
+          Contact support to upgrade
+        </a>
+        <p style="font-size:11px;color:#94a3b8;margin-top:28px;">
+          "This is reminder {reminder_num} of 4. If you believe this is an error, reply to this email."
+        </p>
+      </div>
+    </div>
+    """
+
+    params: resend.Emails.SendParams = {
+        "from":    settings.RESEND_FROM_EMAIL,
+        "to":      [to],
+        "subject": subject,
+        "html":    html_body,
+    }
+    resend.Emails.send(params)
+    logger.info(
+        "Trial expiry reminder sent | to=%s | workspace=%s | reminder=%d | days_remaining=%d",
+        to, workspace_name, reminder_num, days_remaining,
+    )
