@@ -182,15 +182,27 @@ async def verify_pin_and_issue_token(db: AsyncSession, claims: dict, pin: str) -
     member, tenant = row
 
     if tenant.pin_locked_until and tenant.pin_locked_until > datetime.now(timezone.utc):
-        raise InvalidPINError("PIN is locked. Try again in 15 minutes.")
+        remaining_secs = int((tenant.pin_locked_until - datetime.now(timezone.utc)).total_seconds())
+        remaining_mins = max(1, (remaining_secs + 59) // 60)
+        raise InvalidPINError(
+            f"This workspace is locked. Try again in "
+            f"{remaining_mins} minute{'s' if remaining_mins != 1 else ''}."
+        )
 
-    if not verify_pin(pin, tenant.pin_hash):
+    if not verify_pin(pin, str(tenant.pin_hash or "")):
         tenant.pin_attempts = (tenant.pin_attempts or 0) + 1
-        if tenant.pin_attempts >= 5:
+        if int(tenant.pin_attempts) >= 5:  # type: ignore[arg-type]
             tenant.pin_locked_until = datetime.now(timezone.utc) + timedelta(minutes=15)
             tenant.pin_attempts = 0
+            await db.flush()
+            raise InvalidPINError(
+                "Incorrect PIN. This workspace is now locked for 15 minutes."
+            )
+        remaining = 5 - int(tenant.pin_attempts)  # type: ignore[arg-type]
         await db.flush()
-        raise InvalidPINError("Incorrect PIN")
+        raise InvalidPINError(
+            f"Incorrect PIN. {remaining} attempt{'s' if remaining != 1 else ''} remaining before lockout."
+        )
 
     tenant.pin_attempts = 0
     tenant.pin_locked_until = None

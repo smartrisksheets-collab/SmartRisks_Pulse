@@ -22,6 +22,8 @@ import type {
   IncidentAnalyticsData,
   ExecutiveDashboardData,
   KeyRiskMovementsData,
+  RiskHeatMapData,
+  MethodologyData
 } from '../../types/report';
 
 // ── Shared helpers ─────────────────────────────────────────────────────────────
@@ -399,17 +401,66 @@ function FindingSection({ items, label, color }: { items: string[]; label: strin
 }
 
 function FindingsBlock({ data }: { data: FindingsData }) {
+  const hasSections = (
+    data.positive_signals?.length ||
+    data.key_risks?.length ||
+    data.areas_for_attention?.length ||
+    data.assurance_gaps?.length ||
+    data.governance_gaps?.length
+  );
   return (
     <>
-      <FindingSection items={data.positive_signals || []}    label="Positive Signals"           color="#10b981" />
-      <FindingSection items={data.key_risks || []}            label="Key Risks"                  color="#ef4444" />
-      <FindingSection items={data.areas_for_attention || []} label="Areas Requiring Attention"   color="#f59e0b" />
-      {!data.positive_signals?.length && !data.key_risks?.length && !data.areas_for_attention?.length && (
-        (data.findings || []).map((f, i) => (
-          <div key={i} style={{ fontSize: 12, padding: '4px 0', borderBottom: '1px solid #f1f5f9' }}>● {f}</div>
-        ))
-      )}
+      <FindingSection items={data.positive_signals    || []} label="Positive Signals"          color="#10b981" />
+      <FindingSection items={data.key_risks            || []} label="Key Risks"                 color="#ef4444" />
+      <FindingSection items={data.areas_for_attention  || []} label="Areas Requiring Attention" color="#f59e0b" />
+      <FindingSection items={data.assurance_gaps       || []} label="Assurance Gaps"            color="#f59e0b" />
+      <FindingSection items={data.governance_gaps      || []} label="Governance Gaps"           color="#ef4444" />
+      {!hasSections && (data.findings || []).map((f, i) => (
+        <div key={i} style={{ fontSize: 12, padding: '4px 0', borderBottom: '1px solid #f1f5f9' }}>● {f}</div>
+      ))}
     </>
+  );
+}
+
+function RiskHeatMapBlock({ data }: { data: RiskHeatMapData }) {
+  return (
+    <div style={{ fontSize: 12, color: '#64748b' }}>
+      <div style={{ marginBottom: 8, color: '#1F2854', fontWeight: 600 }}>
+        {data.total_placed} of {data.active_risks} risks placed on a {data.likelihood_scale} × {data.impact_scale} grid
+      </div>
+      {data.unplaced > 0 && (
+        <div style={{ color: '#f59e0b', marginBottom: 8 }}>
+          ⚠ {data.unplaced} risk{data.unplaced > 1 ? 's' : ''} not placed — no likelihood or impact score recorded
+        </div>
+      )}
+      <div style={{ color: '#94a3b8', fontStyle: 'italic' }}>
+        Full heat map renders in the exported PDF.
+      </div>
+    </div>
+  );
+}
+
+function MetaRow({ label, value, warn }: { label: string; value: string; warn?: boolean }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #f1f5f9', fontSize: 12 }}>
+      <span style={{ color: '#64748b' }}>{label}</span>
+      <span style={{ color: warn ? '#f59e0b' : '#1F2854', fontWeight: 500 }}>{value}</span>
+    </div>
+  );
+}
+
+function MethodologyBlock({ data }: { data: MethodologyData }) {
+  return (
+    <div>
+      <MetaRow label="Active risks"       value={String(data.active_risks)} />
+      <MetaRow label="Snapshots"          value={String(data.snapshot_count)} />
+      <MetaRow label="Trend analysis"     value={data.allow_trends     ? 'Enabled' : 'Suppressed (< 2 snapshots)'} warn={!data.allow_trends} />
+      <MetaRow label="Percentage framing" value={data.allow_percentages ? 'Enabled' : 'Suppressed (< 5 risks)'}    warn={!data.allow_percentages} />
+      <MetaRow label="Incidents module"   value={data.incidents_enabled ? 'Enabled' : 'Not enabled'}               warn={!data.incidents_enabled} />
+      <MetaRow label="Residual model"     value={data.residual_matches_engine ? 'Matches Pulse engine' : 'Mismatch detected'} warn={!data.residual_matches_engine} />
+      <MetaRow label="Controls untested"  value={String(data.controls_untested)} warn={data.controls_untested > 0} />
+      <MetaRow label="Unasserted"         value={String(data.unasserted)}         warn={data.unasserted > 0} />
+    </div>
   );
 }
 
@@ -628,6 +679,8 @@ export default function ReportPreview({ blockKey, blockData, aiData, onEdit }: P
     case 'incident-analytics':  return <IncidentAnalyticsBlock data={data as IncidentAnalyticsData} onEdit={onEdit} />;
     case 'executive-dashboard': return <ExecutiveDashboardBlock data={data as ExecutiveDashboardData} ai={ai} onEdit={onEdit} />;
     case 'key-risk-movements':  return <KeyRiskMovementsBlock   data={data as KeyRiskMovementsData} />;
+    case 'risk-heat-map':       return <RiskHeatMapBlock        data={data as RiskHeatMapData} />;
+    case 'methodology':         return <MethodologyBlock        data={data as MethodologyData} />;
     default:                    return <p style={{ fontSize: 12, color: '#94a3b8' }}>Unknown block.</p>;
   }
 }

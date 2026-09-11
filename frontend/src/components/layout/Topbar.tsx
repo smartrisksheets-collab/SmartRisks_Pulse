@@ -22,7 +22,8 @@ interface TopbarProps { title?: string; }
 
 export default function Topbar({ title = 'Dashboard' }: TopbarProps) {
   const { setMobSidebarOpen, theme, setTheme } = useUIStore();
-  const { claims, workspaces } = useAuthStore();
+  const { claims, workspaces, workspaceQuota } = useAuthStore();
+  const atLimit = workspaceQuota !== null && workspaceQuota.owned >= workspaceQuota.limit;
   const { logout } = useAuth();
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -159,11 +160,15 @@ export default function Topbar({ title = 'Dashboard' }: TopbarProps) {
               </span>
               <span
                 className="tooltip-wrap tooltip-wrap--inline"
-                data-tip={isTrial ? 'Trial plan. Upgrade.' : undefined}
+                data-tip={
+                  isTrial ? 'Trial plan. Upgrade.' :
+                  atLimit  ? `Workspace limit reached (${workspaceQuota!.owned} of ${workspaceQuota!.limit}).` :
+                  undefined
+                }
               >
                 <button
                   className="topbar-dropdown-item"
-                  disabled={isTrial}
+                  disabled={isTrial || atLimit}
                   onClick={() => { setWsOpen(false); navigate('/workspaces/create'); }}
                 >
                   + Add workspace

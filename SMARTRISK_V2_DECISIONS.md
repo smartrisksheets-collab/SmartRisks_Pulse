@@ -1526,4 +1526,95 @@ Raised by: When the backend Google auth call failed, the Google button stayed pe
 Chosen: `onSuccess` prop type changed to `(token: string) => Promise<void>`. Child's `useGoogleLogin.onSuccess` made `async`. Wraps `await onSuccess(r.access_token)` in try/finally. `googlePending` is reset to `false` in the finally block, running after the parent's full async operation resolves or rejects.
 Why: The state controlling the button lives in the child. The only correct place to reset it is the child's own finally block, triggered after the parent's promise settles. Lifting state to the parent would require additional props and was unnecessary.
 
+---
+
+**Decision: Invite link broken by comma-separated FRONTEND_URL (September 10, 2026)**
+Raised by: FRONTEND_URL was set to a comma-separated string for staging and production Render deployment. `services_user.py` used `settings.FRONTEND_URL` directly to build the invite link, producing a malformed URL containing the raw comma-separated string.
+Chosen: `settings.FRONTEND_URL.split(',')[0].strip()` at the point of use in `services_user.py` line 86.
+Why: The first URL is always the canonical production URL. `allowed_origins` already splits correctly for CORS. The invite link needs only one URL. One line, one file, no config change.
+
+**Decision: Admin panel six bugs fixed in one session (September 10, 2026)**
+Raised by: Audit of admin panel after delivery revealed six confirmed lapses: error summary all-time rather than 24h, 422 errors showing as [object Object], formatDate duplicated in three files, no topbar rendered in shell, no server-side token revalidation on load, flat UI identity.
+Chosen: (1) All four queries in `get_error_summary` now include `.where(ApiErrorLog.created_at >= since)`. (2) `extractApiError` helper reads `response.data.error` then `response.data.detail` array then falls back to generic string. (3) Shared `admin/src/utils/format.ts` with `formatDate` and `formatDateLong`, local copies removed from three pages. (4) Shell renders topbar with page title from static pathname map and admin name from auth store. (5) Shell calls `adminAuthApi.me()` on mount and clears store on rejection. (6) `admin_src_index.css` updated: table headers navy weight 900, KPI numbers navy weight 900, card and page titles navy weight 800, radius 14px, shadow deepened.
+Why: Each fix confirmed by reading the source file in session. No guesses.
+
+**Decision: Payments module built admin-only, workspace-level billing (September 10, 2026)**
+Raised by: No payment history, no receipts, and no billing records existed in V2.
+Chosen: `payments` table (migration 050), `Payment` model, schemas, service, and routes. Recording a payment atomically sets `payment_active=True`, `payment_date`, `plan_expires_at` (12 months from paid date), and `plan=PAID` on the tenant in the same flush. Suspended workspaces blocked from receiving payments (403). Admin panel workspace drawer gets Settings and Payments tabs. Payment rows support inline edit and send-receipt. PDF receipt generated with ReportLab, SmartRisk logo fetched from public URL via httpx, dispatched via Resend as FastAPI BackgroundTask so HTTP response returns immediately. `recorded_by` on receipt always shows "SmartRisk Pulse", not the admin name.
+Why: BackgroundTask costs nothing, requires no infrastructure, and the only failure mode is a missed receipt that the admin can resend. Admin-only first keeps scope contained.
+
+**Decision: Operational Feed added to Unified Dashboard (September 10, 2026)**
+Raised by: Dashboard had no real-time event narrative. ActivityFeed was risk-only.
+Chosen: `IncidentFeedEntry` schema and type. `_incident_feed` as 15th parallel task in `asyncio.gather`. Derives synthetic event types from incident state: resolved, in-progress, escalated, created. `dashboard_OperationalFeed.tsx` new component with Risk/Incident toggle. Risk tab delegates to existing `ActivityFeed`. Mounted in `UnifiedSection` before AI card. `of-*` CSS classes in `src/index.css`.
+Why: No migration. Incident feed derives from the incidents table at read time. 15th gather task adds no meaningful latency.
+
+**Decision: Risk Appetite guide panel and threshold delete added (September 10, 2026)**
+Raised by: AppetiteSettings had no guidance for new users and no way to remove a threshold.
+Chosen: Collapsible `GuidePanel` with 5-step methodology, dynamic unset count in step 5. `DELETE /api/v1/appetite/{category}` route. `remove` mutation in `useAppetite` hook. `DeleteConfirmModal` matching `risks_DeleteModal.tsx` structure exactly. Remove button only on rows with an existing threshold. `apt-guide-*` and `apt-del-btn` CSS classes added.
+Why: Guide collapsed by default to avoid disrupting returning users. Delete is permanent with no recycle bin since appetite thresholds are configuration not data.
+
+**Decision: AI Anthropic calls wrapped in try/except on all unprotected surfaces (September 10, 2026)**
+Raised by: `services_ai_incident.py` `_call_api` had no try/except. `services_ai_executive.py` API call had no try/except, only the parser was wrapped. Both surfaces propagated Anthropic timeouts and rate limit errors as unhandled exceptions, surfacing as 500.
+Chosen: try/except added to both. `ValueError` raised on failure with a human-readable message. `ValueError` mapped to 422 in `_EXCEPTION_MAP` in `app_main.py` so the message reaches the client instead of the generic 500 handler.
+Why: AI calls are the most likely source of 5xx errors in production. A timeout or rate limit should give the user a recoverable message, not a crash.
+
+**Decision: Error log middleware skip list for noisy expected-failure endpoints (September 10, 2026)**
+Raised by: `/api/v1/presence/heartbeat`, `/api/v1/submissions/triage/count`, `/api/v1/incident-severity/preview`, and `/api/v1/incident-severity/config` all fired 401 or 403 on token expiry or module mismatch. These poll on interval and generated dozens of error log DB writes per hour with zero diagnostic value.
+Chosen: `_SKIP` tuple of `(path_prefix, status_code)` pairs in `middleware_error_log.py`. Any path starting with the prefix that returns the matching status is returned immediately before the DB write. 401 and 403 skipped for all four endpoint groups. Genuine 5xx on any of these still logs.
+Why: Each endpoint is expected to return 401/403 under normal product conditions (expired token, wrong module). Logging them is noise that grows with active users and burns DB connections.
+
+**Decision: Incident Severity settings shows upgrade card for non-incident workspaces (September 10, 2026)**
+Raised by: Risk-only workspaces saw a generic "Failed to load incident severity configuration" error on the settings tab.
+Chosen: `useAuthStore` check for `incident` in `claims.modules` before the error check. If not present, render a branded upgrade card pointing to `mailto:info@smartrisksheets.com`. The card also renders on API error since the error is caused by the missing module.
+Why: A generic error message on a tab a risk-only user can navigate to is a poor experience. The upgrade card is informative and actionable.
+
+**Decision: Password validation rules checklist replaces strength bar (September 10, 2026)**
+Raised by: The strength bar scored entropy while the backend validator checked specific character classes. A user could see "Strong" from the bar and receive a 422 from the backend. The [object Object] bug in `services_api.ts` also meant 422 detail was never surfaced.
+Chosen: `validatePassword` in `utils_validation.ts` now checks all five backend rules (length, uppercase, lowercase, digit, special character). `getPasswordRules` returns a live rule state for the checklist. `PasswordRules` module-level component replaces `StrengthBar`. Applied to `/register` and `/accept-invite`. `src/index.css` pwd-strength classes replaced with pwd-rules and pwd-rule classes. `services_api.ts` 422 handler now checks `typeof backendMessage === 'string'` before creating Error, preventing array-to-string coercion.
+Why: Checklist tells the user exactly which rule is unmet before submission. Eliminates the gap between what the UI signals and what the backend enforces.
+
+**Decision: Register page duplicate email shows upgrade banner not error (September 10, 2026)**
+Raised by: A 409 from the register endpoint showed a generic error string. The correct UX for an existing account is a prompt to sign in.
+Chosen: Catch block inspects the error message for "already", "duplicate", or "registered". On match, sets `existingAccount` state which renders a teal banner with a "Sign in instead" link pre-filled with the typed email. Separate from the generic error state.
+Why: A banner with a direct action is more useful than an error string. The sign-in link removes all friction for the user.
+
+**Decision: Google OAuth redirect on register checks workspaces.length (September 10, 2026)**
+Raised by: An existing user clicking "Continue with Google" on /register was redirected to /workspaces/create because the page only checked `requires_workspace_select`, not whether the user already had workspaces.
+Chosen: `result.workspaces && result.workspaces.length > 0` check added before the create redirect. Existing users with one workspace go to `/`, new accounts go to `/workspaces/create`.
+Why: `workspaces: []` from the backend is the reliable signal for a brand new account. No backend change needed.
+
+**Decision: Workspace quota surfaced in sidebar and workspace picker (September 10, 2026)**
+Raised by: Users had no visibility into how many workspaces they could own or how many they had used. The "New workspace" button was gated on plan being TRIAL, which was wrong after the max_workspaces change.
+Chosen: `GET /api/v1/workspaces` response meta extended with `owned` and `limit`. `WorkspacePicker` uses raw `api.get` (not `apiGet`) to access meta and populates `workspaceQuota` in `authStore`. Sidebar renders quota pill for Owners only when quota is loaded. `canAddWorkspace` gates the sidebar add button. WorkspacePicker "New workspace" button gated on `atLimit` from quota, not `isTrial`.
+Why: `apiGet` strips the envelope and returns only `res.data.data`, discarding meta. Raw `api.get` is the correct call when meta is needed alongside data.
+
+**Decision: max_workspaces column on accounts, workspace creation enforces account limit (September 10, 2026)**
+Raised by: Workspace creation limit was derived from plan config constants. No per-account flexibility existed. Enterprise consultants needing more than 3 workspaces had no supported path.
+Chosen: Migration 051 adds `max_workspaces INTEGER NOT NULL DEFAULT 1` to accounts. Workspace creation reads `account.max_workspaces` directly. Admin panel Platform Users page gets `WorkspaceLimitCell` inline editor. `PATCH /api/admin/platform-users/{account_id}/workspace-limit` route. Default is 1 (trial and standard), admin sets higher for enterprise.
+Why: Per-account limit is flexible without requiring a new plan tier or code change. Admin sets the number to whatever is commercially agreed.
+
+**Decision: Enterprise accounts create PAID workspaces by default, with initial plan_expires_at (September 10, 2026)**
+Raised by: Accounts with max_workspaces above 1 were commercially approved for enterprise. New workspaces created by these accounts still appeared as TRIAL.
+Chosen: `is_enterprise = account.max_workspaces > 1`. If true, new tenant gets `plan=PAID`, `payment_active=True`, `plan_expires_at = date.today() + 365 days`. First payment recording overwrites plan_expires_at with the exact paid date plus 12 months.
+Why: An enterprise-approved account creating a workspace should not see a trial UI. The initial 365-day expiry is a placeholder that prevents NULL in the admin table until the first payment is recorded.
+
+**Decision: CASCADE ON DELETE added to all tenant FK constraints (migration 052) (September 10, 2026)**
+Raised by: 12 tables had `REFERENCES tenants(id)` without `ON DELETE CASCADE`. A direct tenant DELETE raised FK constraint violations, making automated trial cleanup and admin workspace deletion impossible without manual ordering.
+Chosen: Migration 052 drops and recreates all 12 FK constraints with `ON DELETE CASCADE`. `payments` and `report_templates` already had cascade. Migration is 12 separate `ALTER TABLE` statements, one per table, each in its own `op.execute()`.
+Why: Cascade is the correct behaviour for child data owned by a tenant. When a tenant is deleted, all its data should be deleted atomically. Without cascade, every deletion path requires manual ordering or risks leaving orphan rows.
+
+**Decision: Trial cleanup job uses 30-day grace period, 4 reminder emails (September 10, 2026)**
+Raised by: 14-day grace was discussed initially. 30 days was chosen as more appropriate for a B2B risk management product where customers may be on leave or waiting on budget approval. Industry standard is 30 days.
+Chosen: `_REMINDER_DAYS` at days 1, 14, 25, 29. `_DELETE_AFTER_DAYS = 30`. Reminders tracked via audit_log with `action = "TRIAL_EXPIRY_REMINDER"` and marker in summary to prevent duplicates on scheduler retry. Job runs daily at 05:00 UTC.
+Why: 30 days gives genuine time to respond. 4 reminders escalate from informational to urgent. Audit log tracking avoids duplicate sends without requiring a new table.
+
+**Decision: PAID workspaces never touched by trial cleanup, never degrade to TRIAL (September 10, 2026)**
+Raised by: Question raised whether paid workspaces with an expired plan_expires_at would fall back to TRIAL behaviour or be caught by the cleanup job.
+Confirmed: Trial cleanup query filters `Tenant.plan == "TRIAL"` explicitly. PAID workspaces are never in scope. The expiry gate in `core_dependencies.py` only fires for `plan == "EXPIRED"` (manually set by admin) or `plan == "TRIAL"` with an expired trial date. A PAID workspace with an expired plan_expires_at continues to work until the admin explicitly sets plan to EXPIRED or SUSPENDED. No code downgrades PAID to TRIAL. Admin panel now shows EXPIRED as a selectable plan option with an inline warning about immediate lockout.
+
+**Decision: Workspace owner identity added to admin workspace list (September 10, 2026)**
+Raised by: Admin workspace table showed no information about which account owned each workspace. Search had no way to filter by account.
+Chosen: `list_workspaces` query in `services_admin_panel.py` adds `.outerjoin(Account, Account.id == Tenant.created_by)` and selects `Account.email.label("owner_email")` and `Account.name.label("owner_name")`. GROUP BY extended to include Account columns. `owner_email` and `owner_name` added to `AdminWorkspaceListItem` schema and TypeScript type. Owner column added to workspace table in admin. Search filter extended to match on owner_email and owner_name.
+Why: Owner identity is essential for support and commercial operations. The join is on `Tenant.created_by`, not on WorkspaceMember, which is the correct source of the owning account.
+
 Why: The cover_body is one large Table. Any overflow causes ReportLab to split it, creating a near-blank page 2 with only the metadata footer. The adjusted estimate brings total height back within the frame.

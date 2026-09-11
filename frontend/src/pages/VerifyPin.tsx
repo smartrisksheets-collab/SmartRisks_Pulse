@@ -14,6 +14,7 @@ export default function VerifyPin() {
   const [error, setError]   = useState('');
   const [ok, setOk]         = useState('');
   const [loading, setLoading] = useState(false);
+  const [isError, setIsError] = useState(false);
 
   if (claims?.active_tenant_id) return <Navigate to="/" replace />;
   if (!claims?.pending_tenant_id) return <Navigate to="/workspaces" replace />;
@@ -29,6 +30,7 @@ export default function VerifyPin() {
   }
 
   function handleInput(i: number, e: React.ChangeEvent<HTMLInputElement>) {
+    setIsError(false);
     const digit = e.target.value.replace(/\D/g, '').slice(-1);
     e.target.value = digit;
     update(i, digit);
@@ -69,6 +71,7 @@ export default function VerifyPin() {
       navigate('/');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Incorrect PIN. Please try again.');
+      setIsError(true);
       setDigits(Array(6).fill(''));
       inputRefs.current.forEach((el) => { if (el) el.value = ''; });
       inputRefs.current[0]?.focus();
@@ -91,7 +94,7 @@ export default function VerifyPin() {
               type="password"
               inputMode="numeric"
               maxLength={1}
-              className={`pin-box${d ? ' filled' : ''}`}
+              className={`pin-box${d ? ' filled' : ''}${isError ? ' err' : ''}`}
               ref={(el) => { inputRefs.current[i] = el; }}
               onChange={(e) => handleInput(i, e)}
               onKeyDown={(e) => handleKeyDown(i, e)}

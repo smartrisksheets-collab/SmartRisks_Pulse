@@ -22,7 +22,9 @@ export type BlockKey =
   | 'risk-ownership'
   | 'incident-analytics'
   | 'executive-dashboard'
-  | 'key-risk-movements';
+  | 'key-risk-movements'
+  | 'risk-heat-map'
+  | 'methodology';
 
 // ── Block data shapes (mirrors Python service output) ─────────────────────────
 
@@ -121,20 +123,24 @@ export interface MajorIncidentsData {
 }
 
 export interface FindingsData {
-  positive_signals: string[];
-  key_risks: string[];
+  positive_signals:    string[];
+  key_risks:           string[];
   areas_for_attention: string[];
-  findings: string[];
-  narrative: string;
+  assurance_gaps?:     string[];
+  governance_gaps?:    string[];
+  findings:            string[];
+  narrative:           string;
 }
 
 export interface Recommendation {
-  title: string;
-  priority: string;
-  owner: string;
-  due: string;
-  outcome: string;
-  body: string;
+  title:                string;
+  priority:             string;
+  owner:                string;
+  due:                  string;
+  outcome?:             string;
+  trigger?:             string;
+  completion_criterion?: string;
+  body:                 string;
 }
 
 export interface RecommendationsData {
@@ -205,6 +211,39 @@ export interface KeyRiskMovementsData {
   narrative: string;
 }
 
+export interface HeatMapCell {
+  likelihood: number;
+  impact:     number;
+  severity:   number;
+  band_index: number;
+  risks:      { id: string; short_id: string; category: string }[];
+}
+
+export interface RiskHeatMapData {
+  grid:             HeatMapCell[][];
+  likelihood_scale: number;
+  impact_scale:     number;
+  band_labels:      string[];
+  total_placed:     number;
+  unplaced:         number;
+  active_risks:     number;
+}
+
+export interface MethodologyData {
+  snapshot_count:          number;
+  allow_trends:            boolean;
+  allow_percentages:       boolean;
+  incidents_enabled:       boolean;
+  active_risks:            number;
+  residual_matches_engine: boolean;
+  supplied_is_subtractive: boolean;
+  avg_residual:            number;
+  avg_residual_pulse:      number;
+  pulse_residuals:         { id: string; supplied: number; pulse: number; diff: number; status: string }[];
+  controls_untested:       number;
+  unasserted:              number;
+}
+
 export type BlockData =
   | ExposureIndexData
   | RiskSnapshotData
@@ -222,7 +261,9 @@ export type BlockData =
   | RiskOwnershipData
   | IncidentAnalyticsData
   | ExecutiveDashboardData
-  | KeyRiskMovementsData;
+  | KeyRiskMovementsData
+  | RiskHeatMapData
+  | MethodologyData;
 
 export type BlockDataMap = Record<string, BlockData>;
 
@@ -316,4 +357,6 @@ export const BLOCK_LABELS: Record<BlockKey, string> = {
   'incident-analytics':   'Incident Analytics',
   'executive-dashboard':  'Executive Dashboard',
   'key-risk-movements':   'Key Risk Movements',
+  'risk-heat-map':        'Risk Heat Map',
+  'methodology':          'Methodology',
 };

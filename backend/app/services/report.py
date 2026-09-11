@@ -27,7 +27,9 @@ from app.models.risk import Risk
 from app.models.incident import Incident
 from app.models.snapshot import SnapshotMonthly
 from app.models.risk_history import RiskHistory
+from app.models.appetite_threshold import AppetiteThreshold
 from app.models.matrix_config import MatrixConfig
+from app.models.tenant import Tenant
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -85,6 +87,24 @@ def _level_index_color(level_index: int) -> str:
     return _LEVEL_INDEX_COLORS.get(level_index, "#10b981")
 
 
+# ── Appetite status helper ─────────────────────────────────────────────────────
+
+_NEAR_APPETITE_RATIO = 0.80  # confirmed 2026-09-11: Near = residual >= threshold * 0.80
+
+def _compute_appetite_status(residual: float, threshold: int | None) -> str | None:
+    """Returns 'Exceeds', 'Near', or 'Within' against the configured threshold.
+    Returns None when no threshold is configured for the risk's category."""
+    if threshold is None:
+        return None
+    if threshold == 0:
+        return "Exceeds" if residual > 0 else "Within"
+    if residual > threshold:
+        return "Exceeds"
+    if residual >= threshold * _NEAR_APPETITE_RATIO:
+        return "Near"
+    return "Within"
+
+
 def _normalize_category(raw: str | None) -> str:
     if not raw:
         return "Uncategorised"
@@ -124,6 +144,7 @@ def _days_since(d: date | datetime | None) -> int:
 
 @dataclass
 class RiskRow:
+    # ── Core fields ───────────────────────────────────────────────────────────
     id:               str
     category:         str
     desc:             str
@@ -138,6 +159,19 @@ class RiskRow:
     control_effectiveness: int
     logged_at:             date | None
     last_reviewed_at:      date | None
+    # ── Scoring inputs (needed by facts layer for Pulse engine) ───────────────
+    likelihood:   int
+    impact_score: int
+    severity_raw: float
+    controls:     str
+    # ── Governance fields ─────────────────────────────────────────────────────
+    appetite_status:      str | None   # computed: Exceeds / Near / Within / None
+    linked_decision:      str
+    linked_decision_at:   date | None  # migration 029
+    financial_exposure:   str
+    # ── Assurance fields ──────────────────────────────────────────────────────
+    control_last_tested:      date | None
+    control_assertion_source: str
 
 
 @dataclass
@@ -161,33 +195,59 @@ class ReportContext:
     all_incidents: list[IncidentRow]    # unfiltered
     date_from:     date | None
     date_to:       date
-    snapshots:     list[SnapshotMonthly]  = field(default_factory=list)
-    matrix_config: MatrixConfig | None   = field(default=None)
+    snapshots:         list[SnapshotMonthly]  = field(default_factory=list)
+    matrix_config:     MatrixConfig | None    = field(default=None)
+    incidents_enabled: bool                   = field(default=True)
 
 
 # ── DB data fetch ──────────────────────────────────────────────────────────────
 
 async def _fetch_risks(db: AsyncSession, tenant_id: UUID) -> list[RiskRow]:
+    _thresh_result = await db.execute(
+        select(AppetiteThreshold).where(AppetiteThreshold.tenant_id == tenant_id)
+    )
+    _thresholds: dict[str, int] = {
+        _normalize_category(str(row.category)):  int(row.threshold)  # type: ignore[arg-type]
+        for row in _thresh_result.scalars()
+    }
+
     result = await db.execute(
         select(Risk).where(Risk.tenant_id == tenant_id, Risk.deleted_at.is_(None))
     )
     rows = []
     for r in result.scalars():
+        _category = _normalize_category(str(r.category or "") or None)
+        _residual  = _to_float(r.residual)  # type: ignore[arg-type]
         rows.append(RiskRow(
             id=str(r.id or ""),
-            category=_normalize_category(str(r.category or "") or None),
+            category=_category,
             desc=str(r.description or "")[:200],
             owner=str(r.owner or ""),
             level=str(r.level or ""),
-            level_index=int(r.level_index or 1),   # type: ignore[arg-type]
+            level_index=int(r.level_index or 1),                          # type: ignore[arg-type]
             is_elevated=bool(r.is_elevated or False),
             treatment=str(r.treatment or ""),
-            residual=_to_float(r.residual),  # type: ignore[arg-type]
+            residual=_residual,
             movement=str(r.movement or "Stable"),
-            score_delta=_to_float(r.score_delta),  # type: ignore[arg-type]
-            control_effectiveness=int(r.control_effectiveness or 0),  # type: ignore[arg-type]
-            logged_at=_parse_date(r.logged_at),  # type: ignore[arg-type]
-            last_reviewed_at=_parse_date(r.last_reviewed_at),  # type: ignore[arg-type]
+            score_delta=_to_float(r.score_delta),                         # type: ignore[arg-type]
+            control_effectiveness=int(r.control_effectiveness or 0),      # type: ignore[arg-type]
+            logged_at=_parse_date(r.logged_at),                           # type: ignore[arg-type]
+            last_reviewed_at=_parse_date(r.last_reviewed_at),             # type: ignore[arg-type]
+            # scoring inputs
+            likelihood=int(r.likelihood or 0),                            # type: ignore[arg-type]
+            impact_score=int(r.impact_score or 0),                        # type: ignore[arg-type]
+            severity_raw=_to_float(r.severity),                           # type: ignore[arg-type]
+            controls=str(r.controls or ""),
+            # governance
+            appetite_status=_compute_appetite_status(
+                _residual, _thresholds.get(_category)
+            ),
+            linked_decision=str(r.linked_decision or ""),
+            linked_decision_at=_parse_date(r.linked_decision_at),         # type: ignore[arg-type]
+            financial_exposure=str(r.financial_exposure or ""),
+            # assurance
+            control_last_tested=_parse_date(r.control_last_tested),       # type: ignore[arg-type]
+            control_assertion_source=str(r.control_assertion_source or ""),
         ))
     return rows
 
@@ -254,6 +314,10 @@ async def build_context(
     )
     matrix_config = _mc_row.scalars().first()
 
+    _tenant = await db.get(Tenant, tenant_id)
+    _modules: list[str] = list(_tenant.modules or []) if _tenant else ["risk", "incident"]
+    incidents_enabled = "incident" in _modules
+
     risks     = _apply_date_filter_risks(all_risks, date_from, date_to)
     incidents = _apply_date_filter_incidents(all_incidents, date_from, date_to)
 
@@ -267,7 +331,34 @@ async def build_context(
         date_to=date_to,
         snapshots=snapshots,
         matrix_config=matrix_config,
+        incidents_enabled=incidents_enabled,
     )
+
+
+# ── Incident suppressed sentinel ───────────────────────────────────────────────
+
+_INCIDENT_SUPPRESSED: dict = {
+    "status":      "suppressed",
+    "reason":      "Incident module not enabled for this workspace.",
+    "requirement": "Upgrade to a plan that includes the Incidents module.",
+}
+
+
+_TREND_SUPPRESSED: dict = {
+    "status":      "suppressed",
+    "reason":      "Trend analysis requires at least two reporting snapshots. This report contains one snapshot.",
+    "requirement": "A second reporting snapshot. Trend indicators are suppressed throughout until prior snapshot data exists.",
+}
+
+
+def _allow_trends(ctx: ReportContext) -> bool:
+    """Central trend guard. Mirrors ReportFacts.allow_trends."""
+    return len(ctx.snapshots) >= 2
+
+
+def _allow_percentages(ctx: ReportContext) -> bool:
+    """Central percentage guard. Mirrors ReportFacts.allow_percentages."""
+    return len(ctx.all_risks) >= 5
 
 
 # ── Month bucket helper ────────────────────────────────────────────────────────
@@ -437,6 +528,8 @@ def compute_key_risk_changes(ctx: ReportContext) -> dict:
 
 
 def compute_incident_stability(ctx: ReportContext) -> dict:
+    if not ctx.incidents_enabled:
+        return _INCIDENT_SUPPRESSED
     incidents = ctx.incidents
     if not incidents:
         return {"total": 0, "open": 0, "closed": 0, "mttr_days": None, "by_severity": {}}
@@ -467,17 +560,9 @@ def compute_incident_stability(ctx: ReportContext) -> dict:
     top_sev = sorted(by_severity.items(), key=lambda x: x[1], reverse=True)
     area = top_sev[0][0] if top_sev else "General"
 
-    sorted_inc = sorted(incidents, key=lambda i: i.reported_at or date.min)
-    half = len(sorted_inc) // 2
-    trend = (
-        "an increase" if len(sorted_inc[half:]) > len(sorted_inc[:half]) else
-        "a decrease"  if len(sorted_inc[half:]) < len(sorted_inc[:half]) else
-        "stability"
-    )
     mttr_note = f" Average resolution time is {mttr_days} days." if mttr_days else ""
     narrative = (
-        f"A total of {len(incidents)} incidents were recorded during the reporting period, "
-        f"representing {trend} compared to the previous cycle. "
+        f"A total of {len(incidents)} incidents were recorded during the reporting period. "
         f"Incident activity was most concentrated in {area}.{mttr_note}"
     )
     return {
@@ -515,6 +600,8 @@ def compute_executive_commentary(_ctx: ReportContext) -> dict:
 
 
 def compute_exposure_trend(ctx: ReportContext) -> dict:
+    if not _allow_trends(ctx):
+        return _TREND_SUPPRESSED
     buckets = _build_month_buckets(ctx.date_from, ctx.date_to)
     points = []
     for b in buckets:
@@ -542,6 +629,8 @@ def compute_exposure_trend(ctx: ReportContext) -> dict:
 
 
 def compute_residual_risk_trend(ctx: ReportContext) -> dict:
+    if not _allow_trends(ctx):
+        return _TREND_SUPPRESSED
     buckets = _build_month_buckets(ctx.date_from, ctx.date_to)
     points = []
     for b in buckets:
@@ -603,12 +692,19 @@ def compute_risk_distribution(ctx: ReportContext) -> dict:
     else:
         band_labels = ["Low", "Medium", "High", "Critical"]
         _low_lbl, _mid_lbl = "Low", "Medium"
-    narrative = (
-        f"The current risk distribution shows {hi_pct}% elevated, {me_pct}% {_mid_lbl.lower()}-risk, "
-        f"and {lo_pct}% {_low_lbl.lower()}-risk items. This indicates a {profile} exposure profile."
-    )
-    if hi_pct > 25:
-        narrative += " The proportion of elevated-risk items is high and increases overall exposure."
+    if _allow_percentages(ctx):
+        narrative = (
+            f"The current risk distribution shows {hi_pct}% elevated, {me_pct}% {_mid_lbl.lower()}-risk, "
+            f"and {lo_pct}% {_low_lbl.lower()}-risk items. This indicates a {profile} exposure profile."
+        )
+        if hi_pct > 25:
+            narrative += " The proportion of elevated-risk items is high and increases overall exposure."
+    else:
+        narrative = (
+            f"The current risk distribution shows {hi_ct} elevated, {me_ct} {_mid_lbl.lower()}-risk, "
+            f"and {lo_ct} {_low_lbl.lower()}-risk items across {tot} total. "
+            f"This indicates a {profile} exposure profile."
+        )
 
     return {
         "by_level":    by_level,
@@ -619,6 +715,8 @@ def compute_risk_distribution(ctx: ReportContext) -> dict:
 
 
 def compute_incident_trend(ctx: ReportContext) -> dict:
+    if not ctx.incidents_enabled:
+        return _INCIDENT_SUPPRESSED
     buckets = _build_month_buckets(ctx.date_from, ctx.date_to)
     points = []
     for b in buckets:
@@ -647,24 +745,29 @@ def compute_incident_trend(ctx: ReportContext) -> dict:
 
 
 def compute_top_risks(ctx: ReportContext) -> dict:
-    risks = sorted(ctx.all_risks, key=lambda r: (r.level_index, r.residual), reverse=True)[:10]
+    _appetite_order = {"Exceeds": 0, "Near": 1, "Within": 2, None: 3}
+    risks = sorted(
+        ctx.all_risks,
+        key=lambda r: (_appetite_order.get(r.appetite_status, 3), -r.level_index, -r.residual),
+    )[:10]
     return {
         "risks": [
             {
-                "id":          r.id,
-                "category":    r.category,
-                "desc":        r.desc[:120],
-                "owner":       r.owner,
-                "level":       r.level,
-                "level_index": r.level_index,
-                "residual":    round(r.residual),
-                "treatment":   r.treatment,
-                "movement":    r.movement,
-                "score_delta": r.score_delta,
+                "id":             r.id,
+                "category":       r.category,
+                "desc":           r.desc[:120],
+                "owner":          r.owner or None,
+                "level":          r.level,
+                "level_index":    r.level_index,
+                "residual":       round(r.residual),
+                "treatment":      r.treatment,
+                "movement":       r.movement,
+                "score_delta":    r.score_delta,
+                "appetite_status": r.appetite_status,
             }
             for r in risks
         ],
-        "intro": "The following represent the highest-ranked risks based on residual impact and likelihood.",
+        "intro": "The following represent the highest-ranked risks by appetite status, then severity.",
     }
 
 
@@ -696,6 +799,8 @@ def compute_top_emerging_risks(ctx: ReportContext) -> dict:
 
 
 def compute_major_incidents(ctx: ReportContext) -> dict:
+    if not ctx.incidents_enabled:
+        return _INCIDENT_SUPPRESSED
     major = [
         i for i in ctx.incidents
         if i.severity.lower().strip() in ("high", "critical", "very high")
@@ -719,48 +824,67 @@ def compute_major_incidents(ctx: ReportContext) -> dict:
 def compute_findings(ctx: ReportContext) -> dict:
     risks     = ctx.all_risks
     incidents = ctx.incidents
+    allow_pct = _allow_percentages(ctx)
 
     high_count   = sum(1 for r in risks if _is_high(r))
     total_risks  = len(risks)
     residuals    = [r.residual for r in risks if r.residual > 0]
     avg_residual = round(sum(residuals) / len(residuals)) if residuals else 0
+    open_inc     = [i for i in incidents if i.status.lower().strip() not in ("resolved", "closed")]
 
-    open_inc = [i for i in incidents if i.status.lower().strip() not in ("resolved", "closed")]
-
-    positive: list[str] = []
-    key_risks: list[str] = []
-    attention: list[str] = []
+    positive:        list[str] = []
+    key_risks:       list[str] = []
+    attention:       list[str] = []
+    assurance_gaps:  list[str] = []
+    governance_gaps: list[str] = []
 
     exposure = compute_exposure_index(ctx)
+
+    # ── Positive signals ──────────────────────────────────────────────────────
     if exposure["score"] < 35:
         positive.append(
             f"Exposure index is {exposure['score']}/100 — indicating a well-managed, low-risk environment."
         )
-    if not open_inc and incidents:
+    if ctx.incidents_enabled and not open_inc and incidents:
         positive.append("All recorded incidents are resolved — incident response and containment appear effective.")
-    elif not incidents:
-        positive.append("No incidents recorded during this period.")
-    if total_risks > 0 and (high_count / total_risks) < 0.2:
+    if total_risks > 0 and high_count == 0:
+        positive.append("No elevated risks in the register — all risks are within acceptable bands.")
+    elif total_risks > 0 and allow_pct and (high_count / total_risks) < 0.2:
         pct = round((high_count / total_risks) * 100)
         positive.append(
             f"Elevated-risk concentration is within acceptable levels at {pct}% of the total risk register."
         )
+    elif total_risks > 0 and not allow_pct and high_count < total_risks:
+        positive.append(
+            f"Elevated-risk items ({high_count} of {total_risks}) represent a minority of the register."
+        )
     if 0 < avg_residual < 6:
         positive.append(
-            f"Average residual risk is low at {avg_residual}, suggesting that control measures are operating effectively."
+            f"Average residual risk is low at {avg_residual}, suggesting controls are operating effectively."
         )
 
-    if total_risks > 0 and (high_count / total_risks) > 0.3:
+    # ── Key risks ─────────────────────────────────────────────────────────────
+    breaches = [r for r in risks if r.appetite_status == "Exceeds"]
+    if breaches:
+        s = "s" if len(breaches) > 1 else ""
+        breach_ids = ", ".join(r.id for r in breaches[:3])
+        key_risks.append(
+            f"{len(breaches)} risk{s} outside configured appetite threshold{s}: {breach_ids}."
+        )
+    if total_risks > 0 and allow_pct and (high_count / total_risks) > 0.3:
         pct = round((high_count / total_risks) * 100)
         key_risks.append(
-            f"Elevated-risk concentration is high, {high_count} of {total_risks} tracked risks "
+            f"Elevated-risk concentration is high: {high_count} of {total_risks} tracked risks "
             f"({pct}%) are rated {_elevated_phrase(ctx.matrix_config)}."
+        )
+    elif total_risks > 0 and not allow_pct and high_count > 0 and high_count >= total_risks // 2:
+        key_risks.append(
+            f"Elevated risks ({high_count} of {total_risks}) make up half or more of the register."
         )
     if avg_residual > 12:
         key_risks.append(
-            f"Average residual risk of {avg_residual} indicates that current controls may not be sufficiently reducing exposure."
+            f"Average residual risk of {avg_residual} indicates current controls may not be reducing exposure sufficiently."
         )
-
     cat_map: dict[str, int] = {}
     for r in [x for x in risks if _is_high(x)]:
         cat_map[r.category] = cat_map.get(r.category, 0) + 1
@@ -768,23 +892,22 @@ def compute_findings(ctx: ReportContext) -> dict:
     if top_cat and top_cat[0][1] >= 3:
         name, cnt = top_cat[0]
         key_risks.append(
-            f"{name} represents the highest risk concentration with {cnt} high-level items requiring focused management."
+            f"{name} represents the highest risk concentration with {cnt} elevated items."
         )
 
-    if open_inc:
+    # ── Areas for attention ───────────────────────────────────────────────────
+    if ctx.incidents_enabled and open_inc:
         s = "s remain" if len(open_inc) > 1 else " remains"
         attention.append(
-            f"{len(open_inc)} open incident{s} unresolved — timely closure is required to reduce operational exposure."
+            f"{len(open_inc)} open incident{s} unresolved — timely closure is required."
         )
-
-    if len(incidents) >= 2:
+    if ctx.incidents_enabled and len(incidents) >= 2:
         sorted_inc = sorted(incidents, key=lambda i: i.reported_at or date.min)
         half = len(sorted_inc) // 2
         if len(sorted_inc[half:]) > len(sorted_inc[:half]):
             attention.append(
-                "Incident frequency is rising — the second half of the period recorded more incidents than the first."
+                "The second half of the reporting period recorded more incidents than the first half."
             )
-
     if ctx.date_from:
         new_high = [
             r for r in risks
@@ -792,52 +915,116 @@ def compute_findings(ctx: ReportContext) -> dict:
         ]
         if len(new_high) >= 3:
             attention.append(
-                f"{len(new_high)} new high-risk items were identified this period, "
-                "indicating emerging vulnerabilities that require immediate attention."
+                f"{len(new_high)} new elevated-risk items were identified this period."
             )
 
-    if not positive and not key_risks and not attention:
+    # ── Assurance gaps ────────────────────────────────────────────────────────
+    untested = [r for r in risks if not r.control_last_tested]
+    if untested:
+        s = "s" if len(untested) > 1 else ""
+        assurance_gaps.append(
+            f"{len(untested)} control{s} carry no test date. "
+            "Control effectiveness ratings are unverified self-assessments."
+        )
+    unasserted = [r for r in risks if not r.control_assertion_source]
+    if unasserted:
+        s = "s" if len(unasserted) > 1 else ""
+        assurance_gaps.append(
+            f"{len(unasserted)} risk{s} carry no assertion source for their control rating."
+        )
+    unquantified = [r for r in risks if not r.financial_exposure]
+    if unquantified:
+        assurance_gaps.append(
+            f"{len(unquantified)} of {total_risks} risks carry no financial exposure estimate."
+        )
+
+    # ── Governance gaps ───────────────────────────────────────────────────────
+    no_appetite = [r for r in risks if r.appetite_status is None]
+    if no_appetite and len(no_appetite) == total_risks:
+        governance_gaps.append(
+            "No risk appetite thresholds are configured. "
+            "No breach can be identified and risks cannot be assessed against tolerance."
+        )
+    elif no_appetite:
+        governance_gaps.append(
+            f"Appetite thresholds are not configured for {len(no_appetite)} of {total_risks} risks."
+        )
+    if not ctx.incidents_enabled:
+        governance_gaps.append(
+            "Incident module not enabled. Incident stability is unmeasured — this is not a nil return."
+        )
+
+    if not positive and not key_risks and not attention and not assurance_gaps and not governance_gaps:
         positive.append("No critical findings identified for this period. Overall risk posture appears stable.")
 
-    findings = key_risks + attention or ["No critical findings identified for this period. Risk posture appears stable."]
+    findings = key_risks + attention or ["No critical findings identified for this period."]
 
     return {
-        "positive_signals":   positive,
-        "key_risks":          key_risks,
+        "positive_signals":    positive,
+        "key_risks":           key_risks,
         "areas_for_attention": attention,
-        "findings":           findings,
-        "narrative":          " ".join(findings),
+        "assurance_gaps":      assurance_gaps,
+        "governance_gaps":     governance_gaps,
+        "findings":            findings,
+        "narrative":           " ".join(findings),
     }
 
 
 def compute_recommendations(ctx: ReportContext) -> dict:
     fn = compute_findings(ctx)
 
+    # Owner must come from the register. Never invent a role.
     owner_map: dict[str, int] = {}
     for r in [x for x in ctx.all_risks if _is_high(x)]:
-        o = r.owner or "Risk Manager"
+        o = r.owner or "Unassigned"
         owner_map[o] = owner_map.get(o, 0) + 1
-    top_owner = sorted(owner_map.items(), key=lambda x: x[1], reverse=True)
-    top_owner_name = top_owner[0][0] if top_owner else "Risk Manager"
+    top_owner_entry = sorted(owner_map.items(), key=lambda x: x[1], reverse=True)
+    top_owner_name  = top_owner_entry[0][0] if top_owner_entry else "Not specified"
 
     has_critical = any(r.level_index >= 4 for r in ctx.all_risks)
     has_high     = any(_is_high(r) for r in ctx.all_risks)
-    priority = "Critical" if has_critical else "High" if has_high else "Medium"
-    due      = "7 Days"   if priority == "Critical" else "14 Days" if priority == "High" else "30 Days"
+    priority     = "Critical" if has_critical else "High" if has_high else "Medium"
+    due          = "7 days"   if priority == "Critical" else "14 days" if priority == "High" else "30 days"
 
     recs: list[dict] = []
 
-    if any("High-risk" in f for f in fn["key_risks"]):
+    # Appetite breaches — highest priority finding
+    breaches = [r for r in ctx.all_risks if r.appetite_status == "Exceeds"]
+    if breaches:
+        breach_ids = ", ".join(r.id for r in breaches[:3])
+        s          = "s" if len(breaches) > 1 else ""
         recs.append({
-            "title": "Strengthen controls for high-risk areas",
-            "priority": priority, "owner": top_owner_name, "due": due,
-            "outcome": "Reduction in high-risk concentration and improved control effectiveness scores.",
+            "title":                f"Resolve appetite breach{s} ({breach_ids})",
+            "priority":             "Critical",
+            "owner":                top_owner_name,
+            "due":                  "7 days",
+            "trigger":              f"{len(breaches)} risk{s} exceed configured appetite thresholds.",
             "body": (
-                "Schedule an immediate review with risk owners to assess existing controls and identify gaps. "
-                "Prioritise remediation actions for risks with the highest residual exposure."
+                "Review each breaching risk with the risk owner and risk committee. "
+                "Either reduce exposure below the threshold or obtain board-level approval to revise appetite."
+            ),
+            "completion_criterion": (
+                "Breaching risks return to Within or Near status, "
+                "or revised thresholds are board-approved and documented."
             ),
         })
 
+    # Elevated risk controls
+    if any("concentration is high" in f or "make up half" in f for f in fn["key_risks"]):
+        recs.append({
+            "title":                "Strengthen controls for elevated-risk areas",
+            "priority":             priority,
+            "owner":                top_owner_name,
+            "due":                  due,
+            "trigger":              fn["key_risks"][0] if fn["key_risks"] else "Elevated risk concentration.",
+            "body": (
+                "Schedule an immediate review with risk owners to assess existing controls and identify gaps. "
+                "Prioritise remediation for risks with the highest residual exposure."
+            ),
+            "completion_criterion": "Control owner confirms remediation and supporting evidence is recorded in the register.",
+        })
+
+    # Emerging risks within period
     if ctx.date_from:
         emerging = [
             r for r in ctx.all_risks
@@ -846,35 +1033,65 @@ def compute_recommendations(ctx: ReportContext) -> dict:
         if emerging:
             s = "s" if len(emerging) > 1 else ""
             recs.append({
-                "title": f"Proactively address {len(emerging)} emerging high-risk item{s}",
-                "priority": "High", "owner": top_owner_name, "due": "14 Days",
-                "outcome": "Prevention of further risk escalation and reduced future exposure.",
+                "title":                f"Address {len(emerging)} newly elevated risk{s}",
+                "priority":             "High",
+                "owner":                top_owner_name,
+                "due":                  "14 days",
+                "trigger":              f"{len(emerging)} elevated-risk item{s} newly logged during the reporting period.",
                 "body": (
-                    "Review newly identified high-risk items and assign owners with clear action plans. "
-                    "Early intervention reduces the likelihood of these risks becoming critical."
+                    "Assign owners and define control actions for each newly identified elevated risk. "
+                    "Early intervention reduces the likelihood of further escalation."
                 ),
+                "completion_criterion": f"Each new elevated risk has an assigned owner and a documented treatment action.",
             })
 
-    if any("Incident frequency" in f for f in fn["areas_for_attention"]):
+    # Open incidents
+    if ctx.incidents_enabled and fn.get("areas_for_attention") and any(
+        "unresolved" in f for f in fn["areas_for_attention"]
+    ):
         recs.append({
-            "title": "Improve incident monitoring and response protocols",
-            "priority": "High", "owner": "Operations Lead", "due": "30 Days",
-            "outcome": "Reduction in incident frequency and improved mean time to resolution.",
+            "title":                "Close outstanding incidents",
+            "priority":             "High",
+            "owner":                "Not specified",
+            "due":                  "14 days",
+            "trigger":              next(f for f in fn["areas_for_attention"] if "unresolved" in f),
             "body": (
-                "Review incident-prone processes and implement additional monitoring controls. "
-                "Conduct a root cause analysis of recurring incident categories to address systemic gaps."
+                "Review all open incidents and drive to resolution. "
+                "Document root cause and lessons learned before closure."
+            ),
+            "completion_criterion": "All open incidents reach resolved status with root cause recorded.",
+        })
+
+    # Assurance gaps
+    if fn.get("assurance_gaps"):
+        recs.append({
+            "title":                "Evidence control effectiveness ratings",
+            "priority":             "High",
+            "owner":                top_owner_name,
+            "due":                  "30 days",
+            "trigger":              fn["assurance_gaps"][0],
+            "body": (
+                "Obtain test dates and assertion sources for all unverified control ratings. "
+                "Ratings of 3 or above should be evidenced first."
+            ),
+            "completion_criterion": (
+                "Every control rated 3 or above carries a test date within the last 12 months "
+                "and a named asserting party."
             ),
         })
 
     if not recs:
         recs.append({
-            "title": "Maintain current risk management practices",
-            "priority": "Medium", "owner": top_owner_name, "due": "30 Days",
-            "outcome": "Sustained risk posture stability and continued control effectiveness.",
+            "title":                "Maintain current risk management practices",
+            "priority":             "Medium",
+            "owner":                top_owner_name,
+            "due":                  "30 days",
+            "trigger":              "No critical findings identified this period.",
             "body": (
-                "Continue the current risk review cadence and ensure all risk owners update their assessments "
-                "on schedule. Monitor for any emerging trends that may require escalation."
+                "Continue the current risk review cadence and ensure all risk owners update their "
+                "assessments on schedule."
             ),
+            "completion_criterion": "All risk owners confirm assessments are current at the next scheduled review.",
         })
 
     return {
@@ -960,6 +1177,8 @@ def compute_risk_ownership(ctx: ReportContext) -> dict:
 
 
 def compute_incident_analytics(ctx: ReportContext) -> dict:
+    if not ctx.incidents_enabled:
+        return _INCIDENT_SUPPRESSED
     incidents = ctx.incidents
     if not incidents:
         return {
@@ -1176,6 +1395,88 @@ def compute_key_risk_movements(ctx: ReportContext) -> dict:
     return empty
 
 
+def compute_methodology(ctx: ReportContext) -> dict:
+    """Residual model evidence and report evidence basis for the methodology block."""
+    from app.services.report_facts import build_facts
+    facts = build_facts(ctx)
+    return {
+        "snapshot_count":          facts.snapshot_count,
+        "allow_trends":            facts.allow_trends,
+        "allow_percentages":       facts.allow_percentages,
+        "incidents_enabled":       facts.incidents_enabled,
+        "active_risks":            facts.counts["active"],
+        "residual_matches_engine": facts.residual_model_matches_engine(),
+        "supplied_is_subtractive": facts.supplied_model_is_subtractive(),
+        "avg_residual":            facts.scores["avg_residual"],
+        "avg_residual_pulse":      facts.scores["avg_residual_pulse"],
+        "pulse_residuals":         facts.pulse_residuals(),
+        "controls_untested":       facts.assurance["controls_untested"],
+        "unasserted":              facts.assurance["unasserted"],
+    }
+
+
+def compute_risk_heat_map(ctx: ReportContext) -> dict:
+    """Likelihood × Impact heat map with actual risk placements.
+    Risks without both likelihood and impact_score are counted as unplaced."""
+    mc      = ctx.matrix_config
+    l_scale = int(mc.likelihood_scale) if mc else 5  # type: ignore[arg-type]
+    i_scale = int(mc.impact_scale)     if mc else 5  # type: ignore[arg-type]
+
+    def _band_index(sev: int) -> int:
+        if mc:
+            if sev >= int(mc.band_extreme_min  or 21): return 5  # type: ignore[arg-type]
+            if sev >= int(mc.band_critical_min or 17): return 4  # type: ignore[arg-type]
+            if sev >= int(mc.band_high_min     or 10): return 3  # type: ignore[arg-type]
+            if sev >= int(mc.band_medium_min   or  5): return 2  # type: ignore[arg-type]
+            return 1
+        if sev >= 21: return 5
+        if sev >= 17: return 4
+        if sev >= 10: return 3
+        if sev >= 5:  return 2
+        return 1
+
+    cell_risks: dict[tuple[int, int], list[dict]] = {}
+    unplaced = 0
+    for r in ctx.all_risks:
+        l, i = r.likelihood, r.impact_score
+        if l < 1 or i < 1 or l > l_scale or i > i_scale:
+            unplaced += 1
+            continue
+        key = (l, i)
+        if key not in cell_risks:
+            cell_risks[key] = []
+        cell_risks[key].append({
+            "id":       r.id,
+            "short_id": r.id[:8] if len(r.id) > 8 else r.id,
+            "category": r.category,
+        })
+
+    # Grid rows: highest likelihood at top
+    grid: list[list[dict]] = []
+    for l in range(l_scale, 0, -1):
+        row: list[dict] = []
+        for i in range(1, i_scale + 1):
+            sev = l * i
+            row.append({
+                "likelihood": l,
+                "impact":     i,
+                "severity":   sev,
+                "band_index": _band_index(sev),
+                "risks":      cell_risks.get((l, i), []),
+            })
+        grid.append(row)
+
+    return {
+        "grid":             grid,
+        "likelihood_scale": l_scale,
+        "impact_scale":     i_scale,
+        "band_labels":      _band_labels(mc),
+        "total_placed":     sum(len(v) for v in cell_risks.values()),
+        "unplaced":         unplaced,
+        "active_risks":     len(ctx.all_risks),
+    }
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # BLOCK REGISTRY
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1201,6 +1502,8 @@ BLOCK_REGISTRY: dict[str, Any] = {
     "incident-analytics":  compute_incident_analytics,
     "executive-dashboard": compute_executive_dashboard,
     "key-risk-movements":  compute_key_risk_movements,
+    "methodology":         compute_methodology,
+    "risk-heat-map":       compute_risk_heat_map,
 }
 
 
@@ -1215,7 +1518,10 @@ async def get_report_data(
     date_from: date | None,
     date_to: date,
 ) -> dict:
-    ctx = await build_context(db, tenant_id, date_from, date_to)
+    from app.services.report_facts import build_facts
+
+    ctx   = await build_context(db, tenant_id, date_from, date_to)
+    facts = build_facts(ctx)
 
     requested = blocks or list(BLOCK_REGISTRY.keys())
     block_data: dict[str, object] = {}
@@ -1233,14 +1539,19 @@ async def get_report_data(
             errors[key] = str(exc)
 
     return {
-        "block_data": block_data,
-        "errors":     errors,
+        "block_data":  block_data,
+        "errors":      errors,
+        "facts_slice": facts.build_fact_slice(),
         "meta": {
-            "generated_at":   datetime.now(timezone.utc).isoformat(),
-            "date_from":      date_from.isoformat() if date_from else None,
-            "date_to":        date_to.isoformat(),
-            "risk_count":     len(ctx.risks),
-            "incident_count": len(ctx.incidents),
+            "generated_at":       datetime.now(timezone.utc).isoformat(),
+            "date_from":          date_from.isoformat() if date_from else None,
+            "date_to":            date_to.isoformat(),
+            "risk_count":         len(ctx.risks),
+            "incident_count":     len(ctx.incidents),
+            "incidents_enabled":  ctx.incidents_enabled,
+            "snapshot_count":     len(ctx.snapshots),
+            "allow_trends":       facts.allow_trends,
+            "allow_percentages":  facts.allow_percentages,
         },
     }
 
