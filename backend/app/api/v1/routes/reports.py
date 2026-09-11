@@ -114,6 +114,7 @@ async def generate_ai_narrative(
             blocks=payload.blocks,
             org_name=org_name,
             industry=industry,
+            facts_slice=data_result.get("facts_slice", {}),
         )
         return {"data": {"ai_data": ai_data}, "error": None, "meta": {}}
     except ValueError as exc:

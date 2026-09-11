@@ -2604,6 +2604,179 @@ Heartbeat at 120/minute accommodates multiple browser tabs per user. exec-insigh
 
 ---
 
+## Session: September 10, 2026
+
+### Scope
+
+Eight parallel workstreams completed: invite link bug, admin panel six bugs, admin UI identity, payments module (admin-only), operational feed (unified dashboard), appetite guide and delete, plus a large follow-on block covering AI error hardening, workspace quota, max_workspaces enforcement, trial cleanup with cascade, password rules UX, register page UX, admin workspace owner identity, and incident severity upgrade card.
+
+---
+
+### Fix: Invite link broken by comma-separated FRONTEND_URL
+
+**File:** `services_user.py` line 86.
+Changed `settings.FRONTEND_URL` to `settings.FRONTEND_URL.split(',')[0].strip()` in the invite link constructor. Every invite email sent since the multi-URL value was introduced had a dead link containing the raw comma string.
+
+---
+
+### Admin Panel: Six Bug Fixes
+
+**Fix 1: Error summary 24h filter** (`services_admin_panel.py`)
+All four queries in `get_error_summary` now include `.where(ApiErrorLog.created_at >= since)`. Previously `since` was computed but never applied to total, errors_5xx, errors_4xx, or top_paths.
+
+**Fix 2: 422 error surface** (`admin_src_pages_AdminAccounts.tsx`)
+`extractApiError` helper added. Reads `response.data.error`, then `response.data.detail` as array, then `response.data.detail` as string, then falls back to provided default. Both mutation onError handlers updated.
+
+**Fix 3: Shared formatDate** (`admin/src/utils/format.ts` new file)
+`formatDate` (without seconds) and `formatDateLong` (with seconds) exported. Local copies removed from `admin_src_pages_Workspaces.tsx`, `admin_src_pages_AdminAccounts.tsx`, `admin_src_pages_AuditLog.tsx`. AuditLog imports `formatDateLong as formatDate`.
+
+**Fix 4: Shell topbar** (`admin_src_components_layout_Shell.tsx`)
+Topbar renders page title from static pathname map and admin name plus role from auth store. `.admin-topbar-title`, `.admin-topbar-user`, `.admin-topbar-name`, `.admin-topbar-role` CSS classes added to `admin_src_index.css`.
+
+**Fix 5: Auth revalidation** (`admin_src_components_layout_Shell.tsx`)
+`useEffect` calls `adminAuthApi.me()` on mount. Calls `clear()` on rejection. Expired or revoked tokens caught at load.
+
+**Fix 6: Admin UI identity** (`admin_src_index.css`)
+Table headers: `background: #1F2854`, white text, weight 900. KPI stat values: navy, weight 900. Card and page titles: navy, weight 800, size 20. `--radius` raised to 14px. `--shadow` deepened.
+
+---
+
+### Payments Module (Admin-Only)
+
+**Migration 050:** `payments` table. Columns: id, tenant_id (CASCADE), amount NUMERIC(12,2), currency, method, reference, notes, paid_at DATE, recorded_by, created_at. Two indexes.
+
+**Backend:**
+- `models_payment.py`: Payment ORM model.
+- `models___init__.py`: Payment registered.
+- `schemas_admin.py`: PaymentCreate, PaymentUpdate, PaymentOut added.
+- `services_admin_payment.py`: `list_payments`, `create_payment`, `update_payment`. `_add_12_months` helper. `create_payment` blocks suspended workspaces (403), atomically sets `payment_active=True`, `payment_date`, `plan_expires_at=12 months`, `plan=PAID` on tenant.
+- `routes_admin_payments.py`: GET list, POST create, PATCH update, POST send-receipt. Mounted in `app_main.py` with `prefix="/api"` and router prefix `/admin/workspaces`.
+- `services_payment_receipt.py`: ReportLab A4 receipt. SmartRisk logo from static public URL via httpx. `recorded_by` always "SmartRisk Pulse".
+- `services_email.py`: `send_payment_receipt_email` appended. Base64 PDF attachment via Resend.
+- Send-receipt route uses `FastAPI BackgroundTasks`. Logo fetched async before `background_tasks.add_task`. `_send_receipt_task` is plain synchronous module-level function.
+
+**Frontend:**
+- `admin_src_types_admin.ts`: Payment interface.
+- `admin_src_services_api.ts`: `paymentsApi` with list, create, update, sendReceipt methods.
+- `admin_src_pages_Workspaces.tsx`: Settings and Payments drawer tabs. `PaymentRow` module-level component with inline edit and send-receipt. `DeleteWorkspaceModal` module-level component. `onUpdated` invalidates payments, workspaces, and overview queries. Settings tab payment date auto-fills plan_expires_at to 12 months on change.
+- `admin_src_index.css`: `.a-drawer-tabs`, `.a-drawer-tab`, `.a-drawer-tab.active`, `.a-pay-row`, `.a-pay-main`, `.a-pay-amount`, `.a-pay-date`, `.a-pay-meta`, `.a-pay-notes`.
+
+---
+
+### Operational Feed (Unified Dashboard)
+
+- `schemas_dashboard.py`: `IncidentFeedEntry` added before `DashboardResponse`. `incident_feed` field added to `DashboardResponse`.
+- `services_dashboard.py`: `_incident_feed` as 15th parallel task. Derives `event_type` from incident state. `_INCIDENT_FEED_LIMIT = 20`.
+- `types_dashboard.ts`: `IncidentFeedEntry` interface. `incident_feed` added to `DashboardData`.
+- `dashboard_OperationalFeed.tsx`: New file. Module-level: `IncidentFeedRow`, `IncidentStrip`, `IncidentDetailModal`, `IncidentFeedModal`, `IncidentFeedPanel`. Default export `OperationalFeed` with Risk/Incident toggle.
+- `dashboard_UnifiedSection.tsx`: `OperationalFeed` mounted before AI card.
+- `src_index.css`: `of-*` classes appended with dark mode overrides.
+
+---
+
+### Appetite Settings: Guide Panel and Delete
+
+- `services_appetite.py`: `delete` imported. `delete_appetite` function added.
+- `routes_appetite.py`: `ResourceNotFoundError` imported. `DELETE /{category}` route added.
+- `services_appetite.ts`: `apiDelete` imported. `deleteAppetite` function added.
+- `hooks_useAppetite.ts`: `remove` mutation added. Returned in hook object.
+- `settings_AppetiteSettings.tsx`: Full rewrite. `GuidePanel` with 5-step methodology and dynamic unset count. `DeleteConfirmModal` matching DeleteModal pattern. Remove button only on rows with existing threshold.
+- `src_index.css`: `.apt-del-btn`, `apt-guide-*` block appended.
+
+---
+
+### Admin Workspace Delete Route (405 Fix)
+
+- `routes_admin_workspaces.py`: UUID, delete, select, Tenant, ResourceNotFoundError, PermissionDeniedError imports added. `@router.delete("/workspaces/{tenant_id}")` route added. TRIAL-only guard raises 403 for PAID workspaces. Applied to correct file after previous snippet was accidentally targeted at `routes_workspaces.py`.
+
+---
+
+### AI Error Hardening
+
+- `services_ai_incident.py`: `_call_api` wrapped in try/except. Raises `ValueError` with user-friendly message on Anthropic failure.
+- `services_ai_executive.py`: `client.messages.create` call wrapped in its own try/except separate from the parse block. Two distinct error messages.
+- `app_main.py`: `ValueError: 422` added to `_EXCEPTION_MAP` so ValueError messages reach the client instead of the generic 500 handler.
+
+---
+
+### Error Log Middleware Skip List
+
+- `middleware_error_log.py`: `_SKIP` tuple added with 8 entries covering presence, triage/count, and incident-severity endpoints for 401 and 403 status codes. Skip check placed immediately after the `< 400` early return.
+
+---
+
+### Incident Severity Upgrade Card
+
+- `settings_IncidentSeveritySettings.tsx`: `useAuthStore` imported. `hasIncident` check on `claims.modules`. Full upgrade card rendered for non-incident workspaces and on API error. Card links to `mailto:info@smartrisksheets.com`. Broken `<a>` tag (missing opening `<`) fixed.
+
+---
+
+### Password Rules UX
+
+- `utils_validation.ts`: `validatePassword` now checks all 5 backend rules. `getPasswordRules` added returning `PasswordRuleState`. `PasswordRuleState` interface exported.
+- `pages_Register.tsx`: `PasswordRules` module-level component replaces `StrengthBar`. `existingAccount` state added. 409 catch renders teal upgrade banner with sign-in link. Google redirect now checks `result.workspaces.length > 0` before deciding route.
+- `pages_AcceptInvite.tsx`: `validatePassword`, `validateConfirm`, `getPasswordRules`, `PasswordRuleState` imported. `RULES` constant and `PasswordRules` component added at module level. `showPwd` and `showConfirm` toggle state. Eye icon added to both password fields. Button margin raised to 24px.
+- `src_index.css`: `pwd-strength` classes replaced with `pwd-rules` and `pwd-rule.met`. `auth-info-banner` and `auth-info-link` added after `.auth-error`.
+
+---
+
+### Workspace Quota
+
+- `store_authStore.ts`: `workspaceQuota: {owned: number; limit: number} | null` state added. `setWorkspaceQuota` action added. Included in persist partialize.
+- `pages_WorkspacePicker.tsx`: `api.get` (raw) replaces `apiGet` in useEffect to access response meta. `setWorkspaceQuota` called with `res.data.meta`. `atLimit` replaces `isTrial` for gating "New workspace" button. `limitTip` tooltip message added.
+- `layout_Sidebar.tsx`: Duplicate `useNavigate` import and duplicate `navigate` declaration removed. `quota`, `isOwner`, `showQuota`, `canAddWorkspace` derived from `useAuthStore`. Quota pill renders in sidebar footer for Owners only. `src_index.css`: `sidebar-workspace-quota`, `sidebar-quota-text`, `sidebar-quota-add`, `sidebar-quota-full` classes added.
+
+---
+
+### max_workspaces: Account-Level Workspace Quota
+
+**Migration 051:** `max_workspaces INTEGER NOT NULL DEFAULT 1` added to accounts table.
+
+- `models_account.py`: `max_workspaces = Column(SmallInteger, ...)` added.
+- `routes_workspaces.py`: `from datetime import date, timedelta` added. `settings` import removed (now unused). Workspace creation reads `account.max_workspaces` for limit. `is_enterprise = account.max_workspaces > 1`. `plan_expires_at = date.today() + timedelta(days=365)` set for enterprise workspaces. `plan="PAID"`, `payment_active=True` for enterprise.
+- `schemas_admin.py`: `AccountWorkspaceLimitUpdate` added. `AdminUserListItem` gets `max_workspaces`. `AdminWorkspaceListItem` gets `owner_email` and `owner_name` with defaults. `_valid_plan` validator extended to accept `EXPIRED`. EXPIRED option shows inline warning in admin workspace drawer.
+- `services_admin_panel.py`: `from app.models.account import Account as UserAccount` duplicate removed, replaced with plain `Account`. `list_platform_users` query selects `Account.max_workspaces`. Constructor maps `max_workspaces`. `update_account_workspace_limit` function added. `list_workspaces` query adds `.outerjoin(Account, Account.id == Tenant.created_by)` and selects `Account.email.label("owner_email")` and `Account.name.label("owner_name")`. GROUP BY extended. Constructor maps both owner fields.
+- `routes_admin_accounts.py`: `AccountWorkspaceLimitUpdate` and `ResourceNotFoundError` imported. `PATCH /platform-users/{account_id}/workspace-limit` route added.
+- `admin_src_types_admin.ts`: `max_workspaces` on `PlatformUser`. `owner_email` and `owner_name` on `WorkspaceListItem`.
+- `admin_src_services_api.ts`: `usersApi.updateWorkspaceLimit` added. `workspacesApi.delete` added.
+- `admin_src_pages_PlatformUsers.tsx`: `useMutation`, `useQueryClient` imported. `WorkspaceLimitCell` module-level component with inline edit. `UserRow` renders `WorkspaceLimitCell` in workspace column. Table header renamed to "Workspace Limit".
+- `admin_src_pages_Workspaces.tsx`: `DeleteWorkspaceModal` module-level component added. `deleteMutation` added. Delete button on TRIAL rows only. Owner column added after workspace name. Search filter extended to match owner_email and owner_name. colSpan updated to 10.
+
+---
+
+### Trial Cleanup: CASCADE + Scheduler + Email
+
+**Migration 052:** `ON DELETE CASCADE` added to 12 tenant FK constraints: workspace_members, risks, incidents, audit_logs, activity_feed, risk_history, recycle_bin, external_submissions, snapshots_monthly, snapshots_daily, lookups, notification_prefs.
+
+- `services_trial_cleanup.py`: New file. 30-day grace period. 4 reminders at days 1, 14, 25, 29. Hard delete at day 30+. Reminder deduplication via audit_log `action = "TRIAL_EXPIRY_REMINDER"`. Joins Account on Tenant.created_by to get owner email.
+- `services_email.py`: `send_trial_expiry_reminder` appended. 4 reminder messages with escalating urgency. HTML email only, no attachment.
+- `scheduler_jobs.py`: `job_trial_cleanup` added. Runs at 05:00 UTC daily.
+- `app_main.py`: `job_trial_cleanup` imported and registered in lifespan block.
+
+---
+
+**Status:** Session complete. No incomplete items.
+
+**Files changed this session (50):**
+
+Backend: `services_user.py`, `services_admin_panel.py`, `services_admin_payment.py` (new), `services_payment_receipt.py` (new), `services_trial_cleanup.py` (new), `services_email.py`, `services_appetite.py`, `services_dashboard.py`, `services_ai_incident.py`, `services_ai_executive.py`, `models_payment.py` (new), `models_account.py`, `models___init__.py`, `schemas_admin.py`, `schemas_dashboard.py`, `routes_admin_payments.py` (new), `routes_admin_workspaces.py`, `routes_admin_accounts.py`, `routes_appetite.py`, `routes_workspaces.py`, `app_main.py`, `middleware_error_log.py`, `scheduler_jobs.py`, `core_dependencies.py` (ValueError mapping), `050_create_payments_table.py` (new), `051_add_max_workspaces_to_accounts.py` (new), `052_add_cascade_to_tenant_fkeys.py` (new)
+
+Frontend main app: `types_dashboard.ts`, `services_appetite.ts`, `hooks_useAppetite.ts`, `utils_validation.ts`, `store_authStore.ts`, `pages_Register.tsx`, `pages_AcceptInvite.tsx`, `pages_WorkspacePicker.tsx`, `layout_Sidebar.tsx`, `dashboard_OperationalFeed.tsx` (new), `dashboard_UnifiedSection.tsx`, `settings_AppetiteSettings.tsx`, `settings_IncidentSeveritySettings.tsx`, `src_index.css`
+
+Frontend admin: `admin_src_index.css`, `admin_src_components_layout_Shell.tsx`, `admin_src_pages_AdminAccounts.tsx`, `admin_src_pages_Workspaces.tsx`, `admin_src_pages_AuditLog.tsx`, `admin_src_pages_PlatformUsers.tsx`, `admin_src_services_api.ts`, `admin_src_types_admin.ts`, `admin/src/utils/format.ts` (new)
+
+**Next session starts with:**
+
+1. Read `SMARTRISK_V2_SETUP.md`, `SMARTRISK_V2_BUILD.md`, `SMARTRISK_V2_DECISIONS.md` in full.
+2. Phase E: Frameworks page full redesign to new mock layout (8 collapsible sections, version stamp, stat cards, live matrix and appetite data, incident escalation section, print capability).
+3. Confirm residual formula with partner.
+4. Confirm custom domain migration on Render to fix Safari and Brave cookie blocking.
+5. Incident onboarding steps addition to existing wizard flow.
+6. Renewal reminder email for lapsed PAID workspaces (separate from trial cleanup, commercial chase flow only, no auto-deletion).
+7. Shareholder agreement follow-up (non-technical, flagged as urgent in session).
+
+---
+
 **Important reminders:**
 
 - Docker must be running before starting. Run `docker compose ps` to confirm

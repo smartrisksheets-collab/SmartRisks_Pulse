@@ -9,6 +9,7 @@ import {
   useTriageClose, usePromote,
 } from '../hooks/useSubmissions';
 import { useToast } from '../hooks/useToast';
+import { useLookups } from '../hooks/useLookups';
 import { listRisks } from '../services/risks';
 import { useAuthStore } from '../store/authStore';
 import type { RiskSubmissionListItem, TriageStatus, SubmitterUrgency } from '../types/submission';
@@ -66,6 +67,7 @@ export default function TriageQueue() {
   const [pPlan,        setPPlan]       = useState('');
   const [pTargetDate,  setPTargetDate] = useState('');
 
+  const { lookups } = useLookups();
   const { data: detail } = useSubmission(selectedId);
   const { data: dupes }  = useDuplicates(selectedId);
   const isIdPattern = (s: string) => /^[A-Za-z]+-?/i.test(s) && s.includes('-');
@@ -375,8 +377,15 @@ export default function TriageQueue() {
                     </div>
                     <div className="field" style={{ gridColumn: 'span 6' }}>
                       <label>Owner <span style={{ color: '#ef4444' }}>*</span></label>
-                      <input value={pOwner} onChange={e => setPOwner(e.target.value)}
-                        placeholder="e.g. Tolu, Head of Finance" />
+                      <select value={pOwner} onChange={e => setPOwner(e.target.value)} required>
+                        <option value="">— Select Owner —</option>
+                        {(lookups?.risk_owner ?? []).map(o => (
+                          <option key={o} value={o}>{o}</option>
+                        ))}
+                        {pOwner && !(lookups?.risk_owner ?? []).includes(pOwner) && (
+                          <option value={pOwner}>{pOwner}</option>
+                        )}
+                      </select>
                     </div>
                     <div className="field" style={{ gridColumn: 'span 6' }}>
                       <label>Owner Email</label>

@@ -57,6 +57,9 @@ from app.scheduler.jobs import (
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    from app.services.report_fonts import register_fonts
+    register_fonts()
+
     scheduler = AsyncIOScheduler()
 
     # Daily per-risk snapshot — midnight UTC

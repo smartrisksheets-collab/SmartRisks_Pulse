@@ -20,12 +20,15 @@ from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
+from app.services.report_fonts import f_regular, f_medium, f_semibold, f_bold
 from reportlab.platypus import (
     BaseDocTemplate,
+    CondPageBreak,
     Flowable,
     Frame,
     HRFlowable,
     Image,
+    KeepTogether,
     NextPageTemplate,
     PageBreak,
     PageTemplate,
@@ -205,14 +208,14 @@ def _kpi_val_paragraph(k: dict) -> Paragraph:
 
     if unit_str:
         markup = (
-            f'<font name="Helvetica-Bold" size="15" color="{clr_str}">{val_str}</font>'
-            f'<font name="Helvetica" size="9" color="#94a3b8">{unit_str}</font>'
+            f'<font name="{f_bold()}" size="15" color="{clr_str}">{val_str}</font>'
+            f'<font name="{f_regular()}" size="9" color="#94a3b8">{unit_str}</font>'
             + arrow
         )
         return Paragraph(markup, ParagraphStyle(
             "kvp", alignment=TA_LEFT, leading=18, spaceBefore=0, spaceAfter=0,
         ))
-    markup = f'<font name="Helvetica-Bold" size="15" color="{clr_str}">{val_str}</font>' + arrow
+    markup = f'<font name="{f_bold()}" size="15" color="{clr_str}">{val_str}</font>' + arrow
     return Paragraph(markup, ParagraphStyle(
         "kv", alignment=TA_LEFT, leading=18, spaceBefore=0, spaceAfter=0,
     ))
@@ -233,11 +236,11 @@ def _kpi_table(kpis: list[dict], col_width: float = 50 * mm) -> Table:
     has_prev = any(k.get("prev") is not None for k in kpis)
 
     _lbl_s = ParagraphStyle(
-        "kl", fontName="Helvetica", fontSize=8,
+        "kl", fontName=f_medium(), fontSize=8,
         textColor=colors.HexColor("#555555"), alignment=TA_LEFT,
     )
     _prv_s = ParagraphStyle(
-        "kprev", fontName="Helvetica", fontSize=7,
+        "kprev", fontName=f_regular(), fontSize=7,
         textColor=colors.HexColor("#94a3b8"), alignment=TA_LEFT,
     )
 
@@ -281,6 +284,48 @@ def _kpi_table(kpis: list[dict], col_width: float = 50 * mm) -> Table:
 
     tbl.setStyle(TableStyle(style_cmds))
     return tbl
+
+
+# ── Jakarta font migration ─────────────────────────────────────────────────────
+
+_JAKARTA_APPLIED = False
+
+def _apply_jakarta_fonts() -> None:
+    """
+    Migrate named _S paragraph styles to Plus Jakarta Sans in place.
+    Called once from build_pdf() after register_fonts() succeeds.
+    Inline styles created inside renderer functions are migrated when
+    those renderers are rewritten during the visual upgrade phases.
+    """
+    global _JAKARTA_APPLIED
+    if _JAKARTA_APPLIED:
+        return
+    _JAKARTA_APPLIED = True
+
+    from app.services.report_fonts import font_available, f_regular, f_medium, f_semibold, f_bold
+    if not font_available():
+        return
+
+    # Per-style weight assignment — matches typography hierarchy
+    _STYLE_FONTS: dict[str, str] = {
+        "block_title":     f_bold(),       # section header
+        "narrative":       f_regular(),    # supporting prose
+        "body":            f_regular(),    # body text
+        "kpi_value":       f_bold(),       # KPI number
+        "kpi_label":       f_medium(),     # KPI label — upgrade from Regular
+        "section_head":    f_semibold(),   # meta section header
+        "cover_title":     f_bold(),       # cover heading
+        "cover_sub":       f_regular(),    # cover subheading
+        "cover_meta_key":  f_medium(),     # metadata label — upgrade from Bold
+        "cover_meta_val":  f_regular(),    # metadata value
+        "ai_text":         f_regular(),    # AI callout body
+        "footer":          f_regular(),    # footer text
+        "signoff_label":   f_semibold(),   # sign-off label
+        "signoff_val":     f_regular(),    # sign-off value
+    }
+    for name, font in _STYLE_FONTS.items():
+        if name in _S:
+            _S[name].fontName = font
 
 
 # ── Narrative paragraph ────────────────────────────────────────────────────────
@@ -367,14 +412,14 @@ def _render_exposure_index(data: dict, ai_text: str | None) -> list:
     out = _block_header("Risk Health")
 
     _lbl_s = ParagraphStyle(
-        "eil", fontName="Helvetica-Bold", fontSize=8,
+        "eil", fontName=f_medium(), fontSize=8,
         textColor=MUTED, alignment=TA_CENTER, spaceAfter=3, spaceBefore=3,
     )
 
     # ── Left: Risk Health (prominent) ─────────────────────────────────────────
     badge = Table(
         [[Paragraph(hl, ParagraphStyle(
-            "eibg", fontName="Helvetica-Bold", fontSize=9,
+            "eibg", fontName=f_semibold(), fontSize=9,
             textColor=hc, alignment=TA_CENTER,
         ))]],
         colWidths=[60 * mm],
@@ -390,12 +435,12 @@ def _render_exposure_index(data: dict, ai_text: str | None) -> list:
         [
             [Paragraph("RISK HEALTH", _lbl_s)],
             [Paragraph(str(h), ParagraphStyle(
-                "eih", fontName="Helvetica-Bold", fontSize=35,
+                "eih", fontName=f_bold(), fontSize=35,
                 textColor=hc, alignment=TA_CENTER, leading=40,
             ))],
             [badge],
             [Paragraph("/ 100 \u2014 higher is better", ParagraphStyle(
-                "eihs", fontName="Helvetica", fontSize=8,
+                "eihs", fontName=f_regular(), fontSize=8,
                 textColor=colors.HexColor("#94a3b8"), alignment=TA_CENTER, spaceBefore=3,
             ))],
         ],
@@ -414,11 +459,11 @@ def _render_exposure_index(data: dict, ai_text: str | None) -> list:
         [
             [Paragraph("EXPOSURE INDEX", _lbl_s)],
             [Paragraph(str(score), ParagraphStyle(
-                "eii", fontName="Helvetica-Bold", fontSize=23,
+                "eii", fontName=f_bold(), fontSize=23,
                 textColor=NAVY, alignment=TA_CENTER, leading=27, spaceAfter=4,
             ))],
             [Paragraph(f"/ 100 \u2014 <b>{label}</b>", ParagraphStyle(
-                "eiil", fontName="Helvetica", fontSize=9,
+                "eiil", fontName=f_regular(), fontSize=9,
                 textColor=colors.HexColor("#94a3b8"), alignment=TA_CENTER,
             ))],
         ],
@@ -981,10 +1026,17 @@ def _render_findings(data: dict, _ai: str | None) -> list:
     _section(data.get("positive_signals", []),    "Positive Signals",           GREEN)
     _section(data.get("key_risks", []),            "Key Risks",                  RED)
     _section(data.get("areas_for_attention", []), "Areas Requiring Attention",   AMBER)
+    _section(data.get("assurance_gaps", []),       "Assurance Gaps",             AMBER)
+    _section(data.get("governance_gaps", []),      "Governance Gaps",            RED)
 
-    # Fallback to flat findings list
-    if (not data.get("positive_signals") and not data.get("key_risks")
-            and not data.get("areas_for_attention")):
+    has_sections = any([
+        data.get("positive_signals"),
+        data.get("key_risks"),
+        data.get("areas_for_attention"),
+        data.get("assurance_gaps"),
+        data.get("governance_gaps"),
+    ])
+    if not has_sections:
         for f in (data.get("findings") or []):
             out.append(Paragraph(f"● {f}", _S["body"]))
     return out
@@ -1077,7 +1129,7 @@ def _render_recommendations(data: dict, ai_text: str | None) -> list:
 
 
 def _render_rec_card(out: list, index: int, rec: dict) -> None:
-    """Renders one recommendation action card. Shared by AI and data paths.
+    """Renders one recommendation action card.
     Source: GAS renderRecommendationsHtml_()"""
     _PRIORITY_COLORS: dict[str, colors.HexColor] = {
         "critical": colors.HexColor("#dc2626"),
@@ -1086,16 +1138,17 @@ def _render_rec_card(out: list, index: int, rec: dict) -> None:
         "low":      GREEN,
     }
 
-    title    = rec.get("title", "")
-    priority = rec.get("priority", "")
-    owner    = rec.get("owner", "")
-    due      = rec.get("due", "")
-    outcome  = rec.get("outcome", "")
-    body     = rec.get("body", "")
-    pc       = _PRIORITY_COLORS.get((priority or "").lower(), MUTED)
+    title               = rec.get("title", "")
+    priority            = rec.get("priority", "")
+    owner               = rec.get("owner", "")
+    due                 = rec.get("due", "")
+    trigger             = rec.get("trigger", "")
+    body                = rec.get("body", "")
+    completion_criterion = rec.get("completion_criterion") or rec.get("outcome", "")
+    pc                  = _PRIORITY_COLORS.get((priority or "").lower(), MUTED)
 
-    # ── Title + priority badge inline ─────────────────────────────────────────
-    pri_hex  = pc.hexval()
+    # ── Title + priority badge ────────────────────────────────────────────────
+    pri_hex      = pc.hexval()
     title_markup = f"Action {index}: {title}"
     if priority:
         title_markup += (
@@ -1105,29 +1158,41 @@ def _render_rec_card(out: list, index: int, rec: dict) -> None:
 
     # ── Meta row: owner · due ─────────────────────────────────────────────────
     meta_parts: list[str] = []
-    if owner: meta_parts.append(f"Owner: {owner}")
-    if due:   meta_parts.append(f"Due: {due}")
+    if owner and owner not in ("Not specified", "Unassigned"):
+        meta_parts.append(f"Owner: {owner}")
+    elif owner:
+        meta_parts.append(f"Owner: {owner}")
+    if due:
+        meta_parts.append(f"Due: {due}")
 
     inner_rows: list[list] = [
         [Paragraph(title_markup, ParagraphStyle(
-            "at", fontName="Helvetica-Bold", fontSize=9, textColor=TEAL,
+            "at", fontName=f_semibold(), fontSize=9, textColor=TEAL,
         ))],
     ]
     if meta_parts:
         inner_rows.append([Paragraph(
             "  \u00b7  ".join(meta_parts),
-            ParagraphStyle("am", fontName="Helvetica", fontSize=8,
-                           textColor=MUTED, spaceAfter=3),
+            ParagraphStyle("am", fontName=f_medium(), fontSize=8,
+                           textColor=MUTED, spaceAfter=2),
         )])
-    if outcome:
+    if trigger:
         inner_rows.append([Paragraph(
-            f"&#10003; {outcome}",
-            ParagraphStyle("ao", fontName="Helvetica", fontSize=8,
-                           textColor=GREEN),
+            f"Why: {trigger}",
+            ParagraphStyle("atr", fontName=f_regular(), fontSize=7.5,
+                           textColor=MUTED, spaceAfter=3,
+                           borderPadding=(3, 0, 3, 0)),
         )])
     if body:
         inner_rows.append([Spacer(1, 2 * mm)])
         inner_rows.append([Paragraph(body, _S["body"])])
+    if completion_criterion:
+        inner_rows.append([Spacer(1, 1 * mm)])
+        inner_rows.append([Paragraph(
+            f"&#10003; Done when: {completion_criterion}",
+            ParagraphStyle("ac", fontName=f_regular(), fontSize=8,
+                           textColor=GREEN, spaceAfter=0),
+        )])
 
     card = Table([[
         Table(
@@ -1158,7 +1223,7 @@ def _render_conclusion(data: dict, ai_text: str | None) -> list:
     text = ai_text or data.get("text") or ""
     if text:
         out.append(Paragraph(text, ParagraphStyle(
-            "conc", fontName="Helvetica", fontSize=9,
+            "conc", fontName=f_regular(), fontSize=9,
             textColor=colors.HexColor("#333333"), leading=14,
         )))
     return out
@@ -1174,7 +1239,7 @@ def _render_risk_ownership(data: dict, ai_text: str | None) -> list:
         [
             Paragraph(o.get("owner", ""), _S["body"]),
             Paragraph(str(o.get("high_count", 0)), ParagraphStyle(
-                "hc", fontName="Helvetica-Bold", fontSize=8, textColor=RED)),
+                "hc", fontName=f_bold(), fontSize=8, textColor=RED)),
             Paragraph(str(o.get("total_count", 0)), _S["body"]),
             Paragraph(str(o.get("avg_residual", 0)), _S["body"]),
             Paragraph(o.get("top_category", ""), _S["body"]),
@@ -1262,11 +1327,11 @@ def _render_executive_dashboard(data: dict, ai_text: str | None) -> list:
         no_data_box = Table(
             [
                 [Paragraph("No Data Available", ParagraphStyle(
-                    "ndh", fontName="Helvetica-Bold", fontSize=10,
+                    "ndh", fontName=f_semibold(), fontSize=10,
                     textColor=colors.HexColor("#94a3b8"), alignment=TA_CENTER, spaceAfter=4,
                 ))],
                 [Paragraph(msg, ParagraphStyle(
-                    "ndb", fontName="Helvetica", fontSize=9,
+                    "ndb", fontName=f_regular(), fontSize=9,
                     textColor=colors.HexColor("#94a3b8"), alignment=TA_CENTER, leading=14,
                 ))],
             ],
@@ -1300,11 +1365,11 @@ def _render_executive_dashboard(data: dict, ai_text: str | None) -> list:
         )
         _col_w3 = (180 * mm) / 3
         _plbl = ParagraphStyle(
-            "plbl", fontName="Helvetica-Bold", fontSize=8,
+            "plbl", fontName=f_medium(), fontSize=8,
             textColor=MUTED, alignment=TA_CENTER, spaceAfter=3,
         )
         _pval = ParagraphStyle(
-            "pval", fontName="Helvetica-Bold", fontSize=10,
+            "pval", fontName=f_semibold(), fontSize=10,
             textColor=NAVY, alignment=TA_CENTER,
         )
         posture_row = Table(
@@ -1317,7 +1382,7 @@ def _render_executive_dashboard(data: dict, ai_text: str | None) -> list:
                 [
                     Paragraph(posture.get("status", ""), _pval),
                     Paragraph(posture.get("trend", ""), ParagraphStyle(
-                        "ptrend", fontName="Helvetica-Bold", fontSize=10,
+                        "ptrend", fontName=f_semibold(), fontSize=10,
                         textColor=p_color, alignment=TA_CENTER,
                     )),
                     Paragraph(posture.get("confidence", ""), _pval),
@@ -1339,7 +1404,7 @@ def _render_executive_dashboard(data: dict, ai_text: str | None) -> list:
 
     heading = (data.get("heading_text") or "What Leadership Needs To Know").upper()
     out.append(Paragraph(heading, ParagraphStyle(
-        "edhead", fontName="Helvetica-Bold", fontSize=8,
+        "edhead", fontName=f_semibold(), fontSize=8,
         textColor=NAVY, spaceAfter=6, spaceBefore=4,
     )))
 
@@ -1350,12 +1415,12 @@ def _render_executive_dashboard(data: dict, ai_text: str | None) -> list:
         bullets_src = data.get("bullets") or []
 
     _btxt = ParagraphStyle(
-        "edbul", fontName="Helvetica", fontSize=9,
-        textColor=colors.HexColor("#334155"), leading=12,
+        "edbul", fontName=f_regular(), fontSize=9,
+        textColor=colors.HexColor("#334155"), leading=13,
     )
     for b in bullets_src:
         row = Table(
-            [[Paragraph("●", ParagraphStyle("dot2", fontName="Helvetica-Bold",
+            [[Paragraph("●", ParagraphStyle("dot2", fontName=f_bold(),
                                              fontSize=9, textColor=TEAL)),
               Paragraph(b, _btxt)]],
             colWidths=[6 * mm, None],
@@ -1506,7 +1571,315 @@ def _render_key_risk_movements(data: dict, _ai: str | None) -> list:
     return out
 
 
+# ── Suppressed block card ──────────────────────────────────────────────────────
+
+def _render_suppressed_note(label: str, reason: str, requirement: str) -> list:
+    """Minimal suppressed block card. Full visual upgrade in Phase 5 (Step 15)."""
+    out = _block_header(label)
+    _sup_h = ParagraphStyle(
+        "sup_h", fontName="Helvetica-Bold", fontSize=9,
+        textColor=MUTED, spaceAfter=4,
+    )
+    _sup_b = ParagraphStyle(
+        "sup_b", fontName="Helvetica", fontSize=8,
+        textColor=MUTED, leading=13,
+    )
+    _sup_e = ParagraphStyle(
+        "sup_e", fontName="Helvetica-Oblique", fontSize=8,
+        textColor=MUTED, leading=13,
+    )
+    inner: list[list] = [
+        [Paragraph("Not generated", _sup_h)],
+        [Paragraph(reason, _sup_b)],
+    ]
+    if requirement:
+        inner.append([Paragraph(f"To enable: {requirement}", _sup_e)])
+    box = Table(inner, colWidths=["100%"])
+    box.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, -1), colors.HexColor("#f8fafc")),
+        ("BOX",           (0, 0), (-1, -1), 0.5, BORDER),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 12),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 12),
+        ("TOPPADDING",    (0, 0), (-1, -1), 10),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+    ]))
+    out.append(box)
+    return out
+
+
 # ── Block renderer registry ────────────────────────────────────────────────────
+def _render_methodology(data: dict, _ai: str | None) -> list:
+    """Methodology block: evidence basis, residual model, assurance coverage."""
+    out = _block_header("Methodology & Evidence Basis")
+
+    _lbl = ParagraphStyle("ml", fontName=f_medium(),  fontSize=8, textColor=MUTED)
+    _val = ParagraphStyle("mv", fontName=f_regular(), fontSize=8, textColor=NAVY)
+    _sec = ParagraphStyle("ms", fontName=f_semibold(), fontSize=9,
+                          textColor=NAVY, spaceBefore=10, spaceAfter=4)
+    _note = ParagraphStyle("mn", fontName=f_regular(), fontSize=7.5,
+                           textColor=MUTED, leading=11)
+
+    def _kv_table(rows: list[tuple[str, str]]) -> Table:
+        table_data = [
+            [Paragraph(k, _lbl), Paragraph(v, _val)]
+            for k, v in rows
+        ]
+        t = Table(table_data, colWidths=[55 * mm, None])
+        t.setStyle(TableStyle([
+            ("VALIGN",       (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING",  (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING",   (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING",(0, 0), (-1, -1), 4),
+            ("LINEBELOW",    (0, 0), (-1, -1), 0.25, BORDER),
+        ]))
+        return t
+
+    # ── Section 1: Report Evidence Basis ──────────────────────────────────────
+    out.append(Paragraph("Report Evidence Basis", _sec))
+
+    snapshot_count   = data.get("snapshot_count", 0)
+    allow_trends     = data.get("allow_trends", False)
+    allow_pct        = data.get("allow_percentages", False)
+    incidents_on     = data.get("incidents_enabled", False)
+    active_risks     = data.get("active_risks", 0)
+
+    trend_val = (
+        f"{snapshot_count} snapshots — trend analysis enabled"
+        if allow_trends
+        else f"{snapshot_count} snapshot — trend analysis suppressed (requires \u22652)"
+    )
+    pct_val = (
+        f"Enabled (n = {active_risks} \u2265 5)"
+        if allow_pct
+        else f"Suppressed (n = {active_risks} < 5, counts used instead)"
+    )
+    inc_val = "Enabled" if incidents_on else "Not enabled for this workspace"
+
+    out.append(_kv_table([
+        ("Active risks",         str(active_risks)),
+        ("Reporting snapshots",  trend_val),
+        ("Percentage framing",   pct_val),
+        ("Incidents module",     inc_val),
+    ]))
+
+    # ── Section 2: Residual Model ─────────────────────────────────────────────
+    out.append(Paragraph("Residual Model", _sec))
+
+    matches   = data.get("residual_matches_engine", True)
+    subtractive = data.get("supplied_is_subtractive", False)
+    avg_sup   = data.get("avg_residual", 0.0)
+    avg_pulse = data.get("avg_residual_pulse", 0.0)
+    pulse_res = data.get("pulse_residuals", [])
+    mismatches = [r for r in pulse_res if r.get("status") == "Mismatch"]
+
+    if matches:
+        model_val = "\u2713 Supplied residuals match the Pulse multiplicative engine"
+    elif subtractive:
+        model_val = (
+            f"\u26a0 {len(mismatches)} of {len(pulse_res)} residuals differ from Pulse formula. "
+            "Supplied values appear to use a subtractive model (severity \u2212 control effectiveness)."
+        )
+    else:
+        model_val = (
+            f"\u26a0 {len(mismatches)} of {len(pulse_res)} residuals differ from Pulse formula. "
+            "Model basis is unrecognised."
+        )
+
+    out.append(_kv_table([
+        ("Engine",               "Pulse multiplicative: severity \u00d7 (1 \u2212 control%)"),
+        ("Supplied vs engine",   model_val),
+        ("Avg supplied residual", f"{avg_sup}"),
+        ("Avg Pulse residual",    f"{avg_pulse}"),
+    ]))
+    if not matches:
+        out.append(Paragraph(
+            "Where supplied and Pulse residuals differ, the report uses supplied values. "
+            "Review control effectiveness ratings to align the models.",
+            _note,
+        ))
+
+    # ── Section 3: Assurance Coverage ─────────────────────────────────────────
+    out.append(Paragraph("Assurance Coverage", _sec))
+
+    untested   = data.get("controls_untested", 0)
+    unasserted = data.get("unasserted", 0)
+
+    tested_val = (
+        "\u2713 All controls carry a test date"
+        if untested == 0
+        else f"\u26a0 {untested} of {active_risks} controls carry no test date"
+    )
+    asserted_val = (
+        "\u2713 All controls carry an assertion source"
+        if unasserted == 0
+        else f"\u26a0 {unasserted} of {active_risks} controls carry no assertion source"
+    )
+
+    out.append(_kv_table([
+        ("Control test dates",   tested_val),
+        ("Assertion sources",    asserted_val),
+    ]))
+
+    out.append(Spacer(1, 4 * mm))
+    return out
+
+
+def _render_risk_heat_map(data: dict, _ai: str | None) -> list:
+    """Likelihood × Impact heat map with risk ID placements per cell."""
+    out = _block_header("Risk Heat Map")
+
+    grid        = data.get("grid", [])
+    l_scale     = data.get("likelihood_scale", 5)
+    i_scale     = data.get("impact_scale", 5)
+    band_labels = data.get("band_labels", ["Low", "Medium", "High", "Critical"])
+    total       = data.get("active_risks", 0)
+    unplaced    = data.get("unplaced", 0)
+
+    if not grid:
+        out.append(Paragraph("No risk data available for this heat map.", _S["narrative"]))
+        return out
+
+    # Band index → cell background and text colors (restrained tints)
+    _CELL_BG: dict[int, str] = {
+        1: "#f0fdf4",  # Low       — light green tint
+        2: "#fffbeb",  # Medium    — light amber tint
+        3: "#fef2f2",  # High      — light red tint
+        4: "#fde8e8",  # Critical  — rose tint
+        5: "#fbd5d5",  # Extreme   — deeper rose tint
+    }
+    _CELL_FG: dict[int, str] = {
+        1: "#065f46",  # Low text
+        2: "#92400e",  # Medium text
+        3: "#991b1b",  # High text
+        4: "#7f1d1d",  # Critical text
+        5: "#450a0a",  # Extreme text
+    }
+
+    _PAGE_W     = 170 * mm
+    _AXIS_W     = 10  * mm
+    _cell_w     = (_PAGE_W - _AXIS_W) / i_scale
+
+    _ax_style = ParagraphStyle(
+        "hm_ax", fontName=f_medium(), fontSize=7,
+        textColor=MUTED, alignment=TA_CENTER,
+    )
+    _empty_style = ParagraphStyle(
+        "hm_empty", fontName=f_regular(), fontSize=8,
+        textColor=colors.HexColor("#cbd5e1"), alignment=TA_CENTER,
+    )
+
+    # Axis caption above the table
+    out.append(Paragraph(
+        f"Likelihood (rows, 1\u2013{l_scale}) \u00d7 Impact (columns, 1\u2013{i_scale})",
+        ParagraphStyle(
+            "hm_cap", fontName=f_regular(), fontSize=7.5,
+            textColor=MUTED, spaceAfter=3,
+        ),
+    ))
+
+    # Build table rows
+    # Row 0: axis labels — blank col + impact numbers
+    header_row = (
+        [Paragraph("", _ax_style)] +
+        [Paragraph(str(i), _ax_style) for i in range(1, i_scale + 1)]
+    )
+    table_rows: list[list] = [header_row]
+    cell_cmds:  list[tuple] = [
+        ("ALIGN",        (0, 0), (-1, -1), "CENTER"),
+        ("VALIGN",       (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING",   (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING",(0, 0), (-1, -1), 4),
+        ("LEFTPADDING",  (0, 0), (-1, -1), 2),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+        # Outer border around data cells only
+        ("BOX",          (1, 1), (-1, -1), 0.75, BORDER),
+        # Inner grid lines
+        ("INNERGRID",    (1, 1), (-1, -1), 0.4, colors.HexColor("#e2e8f0")),
+        # Header row separator
+        ("LINEBELOW",    (0, 0), (-1, 0),  0.5, BORDER),
+        # Axis column separator
+        ("LINEAFTER",    (0, 0), (0, -1),  0.5, BORDER),
+    ]
+
+    for row_i, grid_row in enumerate(grid, start=1):
+        l_val     = grid_row[0]["likelihood"]
+        row_cells = [Paragraph(str(l_val), _ax_style)]
+
+        for col_i, cell in enumerate(grid_row, start=1):
+            b_idx   = cell["band_index"]
+            risks   = cell["risks"]
+            bg_hex  = _CELL_BG.get(b_idx, "#f8fafc")
+            fg_hex  = _CELL_FG.get(b_idx, "#64748b")
+
+            cell_cmds.append((
+                "BACKGROUND",
+                (col_i, row_i), (col_i, row_i),
+                colors.HexColor(bg_hex),
+            ))
+
+            if not risks:
+                row_cells.append(Paragraph("\u00b7", _empty_style))
+            else:
+                display = [r["short_id"] for r in risks[:2]]
+                if len(risks) > 2:
+                    display.append(f"+{len(risks) - 2}")
+                row_cells.append(Paragraph(
+                    "\n".join(display),
+                    ParagraphStyle(
+                        f"hm_r{row_i}c{col_i}",
+                        fontName=f_regular(), fontSize=6.5,
+                        textColor=colors.HexColor(fg_hex),
+                        leading=9, alignment=TA_CENTER,
+                    ),
+                ))
+
+        table_rows.append(row_cells)
+
+    col_widths = [_AXIS_W] + [_cell_w] * i_scale
+    grid_table = Table(table_rows, colWidths=col_widths)
+    grid_table.setStyle(TableStyle(cell_cmds))
+    out.append(grid_table)
+
+    # Legend
+    out.append(Spacer(1, 4 * mm))
+    legend_parts = [
+        f'<font color="{_CELL_FG.get(idx, "#64748b")}">&#9632; {label}</font>'
+        for idx, label in enumerate(band_labels, start=1)
+    ]
+    out.append(Paragraph(
+        "   ".join(legend_parts),
+        ParagraphStyle(
+            "hm_legend", fontName=f_regular(), fontSize=7.5,
+            textColor=MUTED, spaceAfter=3,
+        ),
+    ))
+
+    # Axis key
+    out.append(Paragraph(
+        f"Rows = Likelihood (1 = lowest, {l_scale} = highest shown at top).   "
+        f"Columns = Impact (1 = lowest, {i_scale} = highest).   "
+        "Cell values = risk short ID (first 8 chars).",
+        ParagraphStyle(
+            "hm_key", fontName=f_regular(), fontSize=7,
+            textColor=MUTED, leading=10,
+        ),
+    ))
+
+    # Unplaced note
+    if unplaced > 0:
+        out.append(Spacer(1, 2 * mm))
+        out.append(Paragraph(
+            f"\u26a0  {unplaced} of {total} risks carry no likelihood or impact score "
+            "and are not shown on this grid. Update the risk register to place them.",
+            ParagraphStyle(
+                "hm_note", fontName=f_regular(), fontSize=7.5, textColor=AMBER,
+            ),
+        ))
+
+    return out
+
+
 _RENDERERS: dict[str, Any] = {
     "exposure-index":       _render_exposure_index,
     "risk-snapshot":        _render_risk_snapshot,
@@ -1528,6 +1901,8 @@ _RENDERERS: dict[str, Any] = {
     "incident-analytics":   _render_incident_analytics,
     "executive-dashboard":  _render_executive_dashboard,
     "key-risk-movements":   _render_key_risk_movements,
+    "methodology":          _render_methodology,
+    "risk-heat-map":        _render_risk_heat_map,
 }
 
 _LABELS: dict[str, str] = {
@@ -1551,6 +1926,8 @@ _LABELS: dict[str, str] = {
     "incident-analytics":   "Incident Analytics",
     "executive-dashboard":  "Executive Dashboard",
     "key-risk-movements":   "Key Risk Movements",
+    "methodology":          "Methodology",
+    "risk-heat-map":        "Risk Heat Map",
 }
 
 
@@ -1663,6 +2040,10 @@ def build_pdf(
     Builds and returns a PDF as bytes.
     Source: Reportservice.gs api_buildAndExportPDF()
     """
+    from app.services.report_fonts import register_fonts
+    register_fonts()
+    _apply_jakarta_fonts()
+
     buf          = io.BytesIO()
     title        = settings_p.get("report_title") or "SmartRisk Report"
     is_landscape = orientation.lower() == "landscape"
@@ -1706,13 +2087,16 @@ def build_pdf(
         classif_label = settings_p.get("footer_text") or "Confidential"
 
         # ── Metadata 2x2 grid ─────────────────────────────────────────────────
-        _mk = ParagraphStyle("ck", fontName="Helvetica-Bold", fontSize=7,
-                             textColor=colors.HexColor("#8a98b0"), spaceBefore=0, spaceAfter=2,
-                             wordWrap="LTR")
-        _mv = ParagraphStyle("cv", fontName="Helvetica-Bold", fontSize=10,
-                             textColor=NAVY, spaceBefore=0, spaceAfter=0)
-
         def _meta_cell(k: str, v: str) -> Table:
+            _mk = ParagraphStyle(
+                "ck", fontName=f_medium(), fontSize=7,
+                textColor=colors.HexColor("#8a98b0"),
+                spaceBefore=0, spaceAfter=2, wordWrap="LTR",
+            )
+            _mv = ParagraphStyle(
+                "cv", fontName=f_semibold(), fontSize=10,
+                textColor=NAVY, spaceBefore=0, spaceAfter=0,
+            )
             return Table(
                 [[Paragraph(k.upper(), _mk)], [Paragraph(v or "\u2014", _mv)]],
                 colWidths=["100%"],
@@ -1757,9 +2141,9 @@ def build_pdf(
         # ── Navy footer bar on cover ──────────────────────────────────────────
         cover_foot = Table(
             [[Paragraph(f'<font color="#ffffff"><b>{brand_label}</b></font>', ParagraphStyle(
-                "cfl", fontName="Helvetica-Bold", fontSize=7, textColor=WHITE)),
+                "cfl", fontName=f_semibold(), fontSize=7, textColor=WHITE)),
               Paragraph(f'<font color="rgba(255,255,255,.7)">{ref_val}</font>', ParagraphStyle(
-                "cfr", fontName="Helvetica", fontSize=7, textColor=colors.HexColor("#94a3b8"),
+                "cfr", fontName=f_regular(), fontSize=7, textColor=colors.HexColor("#94a3b8"),
                 alignment=TA_RIGHT))]],
             colWidths=["60%", "40%"],
         )
@@ -1792,7 +2176,7 @@ def build_pdf(
             _logo_el: Image | Paragraph = _limg
         else:
             _logo_el = Paragraph(brand_label, ParagraphStyle(
-                "corg", fontName="Helvetica-Bold", fontSize=15,
+                "corg", fontName=f_bold(), fontSize=15,
                 textColor=NAVY, spaceAfter=0,
             ))
 
@@ -1813,19 +2197,19 @@ def build_pdf(
 
                 # Eyebrow
                 [Paragraph("RISK MANAGEMENT REPORT", ParagraphStyle(
-                    "ey", fontName="Helvetica-Bold", fontSize=8, textColor=NAVY,
+                    "ey", fontName=f_medium(), fontSize=8, textColor=NAVY,
                     wordWrap="LTR", spaceAfter=6,
                 ))],
 
                 # Title — large
                 [Paragraph(title, ParagraphStyle(
-                    "ctitle", fontName="Times-Bold", fontSize=26,
+                    "ctitle", fontName=f_bold(), fontSize=26,
                     textColor=NAVY, leading=32, spaceAfter=10,
                 ))],
 
                 # Period
                 [Paragraph(f"Reporting period \u00b7 {period}", ParagraphStyle(
-                    "cper", fontName="Helvetica", fontSize=11,
+                    "cper", fontName=f_regular(), fontSize=11,
                     textColor=colors.HexColor("#5a6b8c"), spaceAfter=14,
                 ))],
 
@@ -1845,7 +2229,7 @@ def build_pdf(
                     "named recipients only. It must not be copied, forwarded or distributed "
                     "without authorisation.",
                     ParagraphStyle(
-                        "cdis", fontName="Helvetica", fontSize=7,
+                        "cdis", fontName=f_regular(), fontSize=7,
                         textColor=colors.HexColor("#8a98b0"), leading=11, spaceAfter=12,
                     ),
                 )],
@@ -1875,6 +2259,15 @@ def build_pdf(
         data = block_data.get(key)
         if not data:
             continue
+        if isinstance(data, dict) and data.get("status") == "suppressed":
+            story.append(CondPageBreak(30 * mm))
+            story.extend(_render_suppressed_note(
+                _LABELS.get(key, key),
+                str(data.get("reason", "Not available.")),
+                str(data.get("requirement", "")),
+            ))
+            story.append(Spacer(1, 5 * mm))
+            continue
         renderer = _RENDERERS.get(key)
         if not renderer:
             continue
@@ -1886,7 +2279,13 @@ def build_pdf(
             elements = _block_header(_LABELS.get(key, key)) + [
                 Paragraph(f"Block could not be rendered: {exc}", _S["narrative"])
             ]
-        story.extend(elements)
+        story.append(CondPageBreak(40 * mm))
+        # Keep block header together with first content element
+        if len(elements) >= 3:
+            story.append(KeepTogether(elements[:3]))
+            story.extend(elements[3:])
+        else:
+            story.extend(elements)
         story.append(Spacer(1, 5 * mm))
 
     # ── Sign-off ───────────────────────────────────────────────────────────────

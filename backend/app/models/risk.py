@@ -51,6 +51,7 @@ class Risk(Base):
     root_cause               = Column(String)
     financial_exposure       = Column(String)
     linked_decision          = Column(String)
+    linked_decision_at       = Column(Date)
     control_assertion_source = Column(String)
     level_index  = Column(Integer)
     is_elevated  = Column(Boolean, nullable=False, server_default='false')
