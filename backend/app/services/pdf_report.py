@@ -918,7 +918,7 @@ def _render_risk_table(label: str, risks: list[dict], intro: str | None,
         [
             Paragraph(str(r.get("id", "")), _S["body"]),
             Paragraph((r.get("owner") or "")[:50], _S["body"]),
-            Paragraph((r.get("desc") or "")[:100], _S["body"]),
+            Paragraph(r.get("desc") or "", _S["body"]),
             _level_badge_cell(r.get("level", ""), r.get("level_index")),
             Paragraph(str(r.get("residual", "")), _res_s),
             Paragraph(

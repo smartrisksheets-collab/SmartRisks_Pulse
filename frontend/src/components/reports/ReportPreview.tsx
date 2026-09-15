@@ -21,7 +21,6 @@ import type {
   RiskOwnershipData,
   IncidentAnalyticsData,
   ExecutiveDashboardData,
-  KeyRiskMovementsData,
   RiskHeatMapData,
   MethodologyData
 } from '../../types/report';
@@ -633,11 +632,6 @@ function ExecutiveDashboardBlock({ data, ai, onEdit }: { data: ExecutiveDashboar
   );
 }
 
-function KeyRiskMovementsBlock({ data }: { data: KeyRiskMovementsData }) {
-  return (
-    <p style={{ fontSize: 12, color: '#94a3b8', fontStyle: 'italic' }}>{data.narrative}</p>
-  );
-}
 
 
 
@@ -678,7 +672,6 @@ export default function ReportPreview({ blockKey, blockData, aiData, onEdit }: P
     case 'risk-ownership':      return <RiskOwnershipBlock  data={data as RiskOwnershipData}       onEdit={onEdit} />;
     case 'incident-analytics':  return <IncidentAnalyticsBlock data={data as IncidentAnalyticsData} onEdit={onEdit} />;
     case 'executive-dashboard': return <ExecutiveDashboardBlock data={data as ExecutiveDashboardData} ai={ai} onEdit={onEdit} />;
-    case 'key-risk-movements':  return <KeyRiskMovementsBlock   data={data as KeyRiskMovementsData} />;
     case 'risk-heat-map':       return <RiskHeatMapBlock        data={data as RiskHeatMapData} />;
     case 'methodology':         return <MethodologyBlock        data={data as MethodologyData} />;
     default:                    return <p style={{ fontSize: 12, color: '#94a3b8' }}>Unknown block.</p>;

@@ -774,7 +774,7 @@ def compute_top_risks(ctx: ReportContext) -> dict:
             {
                 "id":              r.id,
                 "category":        r.category,
-                "desc":            r.desc[:120],
+                "desc":            r.desc,
                 "owner":           r.owner or None,
                 "level":           r.level,
                 "level_index":     r.level_index,
@@ -802,7 +802,7 @@ def compute_top_emerging_risks(ctx: ReportContext) -> dict:
             {
                 "id":          r.id,
                 "category":    r.category,
-                "desc":        r.desc[:120],
+                "desc":        r.desc,
                 "owner":       r.owner,
                 "level":       r.level,
                 "level_index": r.level_index,
@@ -832,7 +832,7 @@ def compute_major_incidents(ctx: ReportContext) -> dict:
                 "category":     i.category,
                 "severity":     i.severity,
                 "status":       i.status,
-                "desc":         i.desc[:120],
+                "desc":         i.desc,
             }
             for i in major
         ],
