@@ -67,7 +67,7 @@ export interface RiskCreate {
   // the distinction, so it must survive in the type.
   primary_impact?:       string | null;
   controls?:             string | null;
-  control_effectiveness?: number;
+  control_effectiveness?: number | null;
   mitigation_plan?:      string | null;
   comments?:             string | null;
   owner_email?:          string | null;

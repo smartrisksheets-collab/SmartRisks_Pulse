@@ -7,13 +7,14 @@ import { useMatrix } from '../../hooks/useMatrix';
 
 const FALLBACK_CATEGORIES: string[]        = ['Strategic', 'Operational', 'Financial', 'Compliance', 'Reputational', 'Technical'];
 const FALLBACK_TREATMENTS: RiskTreatment[] = ['Mitigate', 'Transfer', 'Accept', 'Avoid'];
-const CTRL_EFF = [
-  { label: '— None —', value: 0 },
-  { label: '1', value: 1 },
-  { label: '2', value: 2 },
-  { label: '3', value: 3 },
-  { label: '4', value: 4 },
-  { label: '5', value: 5 },
+const CTRL_EFF: { label: string; value: string }[] = [
+  { label: 'None',              value: '' },
+  { label: '0 – Ineffective',   value: '0' },
+  { label: '1 – Minimal',       value: '1' },
+  { label: '2 – Partial',       value: '2' },
+  { label: '3 – Moderate',      value: '3' },
+  { label: '4 – Substantial',   value: '4' },
+  { label: '5 – Full',          value: '5' },
 ];
 
 export interface RiskFormValues {
@@ -26,7 +27,7 @@ export interface RiskFormValues {
   impact_score:          number;
   treatment:             RiskTreatment;
   controls:              string;
-  control_effectiveness: number;
+  control_effectiveness: number | null;
   mitigation_plan:       string;
   comments:              string;
   owner_email:           string;
@@ -43,7 +44,7 @@ const EMPTY: RiskFormValues = {
   category: '', description: '', owner: '', primary_impact: '',
   logged_at: new Date().toISOString().slice(0, 10),
   likelihood: 3, impact_score: 3, treatment: 'Mitigate',
-  controls: '', control_effectiveness: 0,
+  controls: '', control_effectiveness: null,
   mitigation_plan: '', comments: '',
   owner_email: '', target_date: '', mitigation_status: 'Open',
   root_cause: '', financial_exposure: '', linked_decision: '',
@@ -76,9 +77,11 @@ export default function RiskForm({ editId, initial, submitLabel, loading, error,
   function f<K extends keyof RiskFormValues>(key: K) {
     return (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
       const raw = e.target.value;
-      const val = (key === 'likelihood' || key === 'impact_score' || key === 'control_effectiveness')
+      const val = (key === 'likelihood' || key === 'impact_score')
         ? Number(raw)
-        : raw;
+        : key === 'control_effectiveness'
+          ? (raw === '' ? null : Number(raw))
+          : raw;
       setV(prev => ({ ...prev, [key]: val }));
     };
   }
@@ -97,7 +100,7 @@ export default function RiskForm({ editId, initial, submitLabel, loading, error,
       // read the field as "not being changed" and keep the old value.
       primary_impact:        v.primary_impact           || null,
       controls:              v.controls                 || null,
-      control_effectiveness: v.control_effectiveness    || undefined,
+      control_effectiveness: v.control_effectiveness !== null ? v.control_effectiveness : null,
       mitigation_plan:       v.mitigation_plan          || null,
       comments:              v.comments                 || null,
       owner_email:           v.owner_email              || null,
@@ -254,7 +257,7 @@ export default function RiskForm({ editId, initial, submitLabel, loading, error,
               </div>
               <div className="field" style={{ gridColumn: 'span 4' }}>
                 <label>Effectiveness</label>
-                <select value={v.control_effectiveness} onChange={f('control_effectiveness')}>
+                <select value={v.control_effectiveness ?? ''} onChange={f('control_effectiveness')}>
                   {CTRL_EFF.map(o => (
                     <option key={o.value} value={o.value}>{o.label}</option>
                   ))}

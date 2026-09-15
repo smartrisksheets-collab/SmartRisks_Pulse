@@ -50,6 +50,7 @@ export default function RiskRegister() {
   const [flashId, setFlashId]           = useState<string | null>(null);
   const [aiFlashIds, setAiFlashIds]     = useState<Set<string>>(new Set());
   const [filterUndecided, setFilterUndecided] = useState(false);
+  const [appetite, setAppetite]               = useState('');
 
   const { data: undecidedData } = useQuery({
     queryKey: ['risks', 'undecided-count'],
@@ -73,6 +74,7 @@ export default function RiskRegister() {
     owner:     owner           || undefined,
     category:  category        || undefined,
     undecided: filterUndecided || undefined,
+    appetite:  appetite        || undefined,
   };
     const { risks, quota, total, loading, create, update, remove, importRisks, generateAI } = useRisks(riskParams);
 
@@ -363,6 +365,16 @@ export default function RiskRegister() {
             </select>
           </div>
           <div className="field">
+            <label>Appetite</label>
+            <select value={appetite} onChange={e => { setAppetite(e.target.value); setPage(1); }}>
+              <option value="">All</option>
+              <option value="Exceeds">Exceeds</option>
+              <option value="Near">Near</option>
+              <option value="Within">Within</option>
+              <option value="unset">No threshold</option>
+            </select>
+          </div>
+          <div className="field">
             <label>Risk Level</label>
             <select value={level} onChange={e => { setLevel(e.target.value); setPage(1); }}>
               <option value="">All</option>
@@ -407,6 +419,7 @@ export default function RiskRegister() {
           risks={risks}
           loading={loading}
           onView={openDetail}
+          onEdit={openEdit}
           flashId={flashId}
           aiFlashIds={aiFlashIds}
           selectedIds={selectedIds}
@@ -456,6 +469,12 @@ export default function RiskRegister() {
           if (r) {
             setFlashId(id);
             setTimeout(() => setFlashId(null), 2400);
+            setLevel('');
+            setCategory('');
+            setTreatment('');
+            setOwner('');
+            setFilterUndecided(false);
+            setAppetite('');
           }
           return r;
         }}

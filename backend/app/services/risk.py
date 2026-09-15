@@ -19,6 +19,7 @@ from app.schemas.risk import (
 )
 from app.core.config import settings
 from app.core.exceptions import ResourceNotFoundError, QuotaExceededError
+from app.models.appetite_threshold import AppetiteThreshold
 from app.models.matrix_config import MatrixConfig
 from app.services.matrix_config import _get_or_create as _get_matrix
 from app.services.phase_one import (
@@ -154,6 +155,7 @@ async def list_risks(
     owner: str | None = None,
     search: str | None = None,
     undecided: bool | None = None,
+    appetite: str | None = None,
 ) -> RiskListResponse:
     q = select(Risk).where(Risk.tenant_id == tenant_id)
 
@@ -177,13 +179,38 @@ async def list_risks(
     if undecided is True:
         q = q.where(Risk.linked_decision.is_(None))
 
+    if appetite:
+        q = q.outerjoin(
+            AppetiteThreshold,
+            (AppetiteThreshold.category == Risk.category)
+            & (AppetiteThreshold.tenant_id == tenant_id),
+        )
+        if appetite == "Exceeds":
+            q = q.where(
+                AppetiteThreshold.threshold.isnot(None),
+                Risk.residual > AppetiteThreshold.threshold,
+            )
+        elif appetite == "Near":
+            q = q.where(
+                AppetiteThreshold.threshold.isnot(None),
+                Risk.residual > AppetiteThreshold.threshold * 0.75,
+                Risk.residual <= AppetiteThreshold.threshold,
+            )
+        elif appetite == "Within":
+            q = q.where(
+                AppetiteThreshold.threshold.isnot(None),
+                Risk.residual <= AppetiteThreshold.threshold * 0.75,
+            )
+        elif appetite == "unset":
+            q = q.where(AppetiteThreshold.threshold.is_(None))
+
     total_result = await db.execute(
         select(func.count()).select_from(q.subquery())
     )
     total = total_result.scalar() or 0
 
     rows = await db.execute(
-        q.order_by(Risk.created_at.desc())
+        q.order_by(Risk.created_at.desc(), Risk.id.asc())
         .offset((page - 1) * page_size)
         .limit(page_size)
     )
@@ -428,10 +455,14 @@ async def get_stats(
 
     total = len(rows)
 
-    # Exposure index: avg residual -> 0-100 pct
+    # Exposure index: avg residual -> 0-100 pct, denominator from matrix config
+    _mc      = await _get_matrix(db, tenant_id)
+    _l_scale = int(_mc.likelihood_scale) if _mc else 5  # type: ignore[arg-type]
+    _i_scale = int(_mc.impact_scale)     if _mc else 5  # type: ignore[arg-type]
+    _res_max = _l_scale * _i_scale
     residuals = [float(r.residual) for r in rows if r.residual is not None]
     avg_resid = sum(residuals) / len(residuals) if residuals else 0.0
-    exposure_pct = min(100, round((avg_resid / 25) * 100))
+    exposure_pct = min(100, round((avg_resid / _res_max) * 100))
     if exposure_pct < 30:
         exposure_label = 'Low'
     elif exposure_pct < 55:

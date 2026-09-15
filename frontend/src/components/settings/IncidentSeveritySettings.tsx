@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useIncidentSeverity } from '../../hooks/useIncidentSeverity';
+import { useAuthStore } from '../../store/authStore';
 import UnsavedBanner from './UnsavedBanner';
 
 // ── Module-level constants ───────────────────────────────────────────────────
@@ -122,6 +123,7 @@ export default function IncidentSeveritySettings() {
     if (!level.id) {
       setLevels(prev => prev.filter((_, idx) => idx !== i));
       setSla(prev => prev.filter((_, idx) => idx !== i));
+      markDirty();
       return;
     }
 
@@ -207,8 +209,64 @@ export default function IncidentSeveritySettings() {
 
   function handleReset() { setInitialized(false); setIsDirty(false); setMsg(''); }
 
+  const modules = useAuthStore((s) => s.claims?.modules ?? []);
+  const hasIncident = modules.includes('incident');
+
   if (config.isLoading) return <p className="muted small">Loading…</p>;
-  if (config.isError)   return <p style={{ color: '#ef4444', fontSize: 13 }}>Failed to load incident severity configuration.</p>;
+
+  if (config.isError || !hasIncident) return (
+    <div style={{
+      display: 'flex', flexDirection: 'column', alignItems: 'center',
+      justifyContent: 'center', padding: '48px 24px', textAlign: 'center',
+      gap: 16,
+    }}>
+      <div style={{
+        width: 52, height: 52, borderRadius: 14,
+        background: '#eef8f5', display: 'flex',
+        alignItems: 'center', justifyContent: 'center',
+      }}>
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none"
+          stroke="#01b88e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+        </svg>
+      </div>
+      <div>
+        <div style={{
+          fontSize: 15, fontWeight: 800, color: '#1F2854', marginBottom: 6,
+        }}>
+          Incident Module — Unified Plan
+        </div>
+        <div style={{
+          fontSize: 13, color: '#64748b', lineHeight: 1.65,
+          maxWidth: 360, margin: '0 auto',
+        }}>
+          Incident severity configuration is available on the Unified Plan,
+          which includes both Risk and Incident management in one workspace.
+        </div>
+      </div>
+
+      <a
+        href="mailto:info@smartrisksheets.com"
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 6,
+          background: '#1F2854',
+          color: '#ffffff',
+          fontWeight: 700,
+          fontSize: 13,
+          padding: '10px 24px',
+          borderRadius: 8,
+          textDecoration: 'none',
+        }}
+      >
+        Contact us to upgrade
+      </a>
+      <div style={{ fontSize: 11, color: '#94a3b8' }}>
+        info@smartrisksheets.com
+      </div>
+    </div>
+  );
 
   const bandMap  = config.data?.band_map ?? [];
   const allLevels = config.data?.levels  ?? [];

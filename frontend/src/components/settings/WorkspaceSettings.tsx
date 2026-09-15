@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import { applyBrandColors } from "../../utils/brand";
 import { useSettings } from "../../hooks/useSettings";
+import { useSettingsStore } from "../../store/settingsStore";
 import UnsavedBanner from "./UnsavedBanner";
 import { uploadLogo } from "../../services/settings";
 import type { SettingsData, SettingsUpdate } from "../../types/settings";
@@ -42,6 +43,7 @@ interface Props {
 
 export default function WorkspaceSettings({ settings }: Props) {
   const { update, setPinMutation, removePinMutation } = useSettings();
+  const setLogoUrl = useSettingsStore((s) => s.setLogoUrl);
 
   // ── identity form state ──────────────────────────────────────────────
   const [form, setForm] = useState<SettingsUpdate>({
@@ -93,7 +95,8 @@ export default function WorkspaceSettings({ settings }: Props) {
 
   function handleLogoRemove() {
     setLogoPreview(null);
-    setForm((f) => ({ ...f, logo_url: undefined }));
+    setForm((f) => ({ ...f, logo_url: null }));
+    setLogoUrl(null);
   }
 
   async function handleSave() {

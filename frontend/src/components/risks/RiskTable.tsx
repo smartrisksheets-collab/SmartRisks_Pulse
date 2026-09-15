@@ -11,6 +11,7 @@ interface Props {
   risks:        Risk[];
   loading:      boolean;
   onView:       (r: Risk) => void;
+  onEdit:       (r: Risk) => void;
   flashId?:     string | null;
   aiFlashIds?:  Set<string>;
   selectedIds:  Set<string>;
@@ -54,7 +55,7 @@ const APT_LABELS: Record<string, string> = {
 
 
 
-export default function RiskTable({ risks, loading, onView, flashId, aiFlashIds, selectedIds, onToggle, onToggleAll, appetites }: Props) {
+export default function RiskTable({ risks, loading, onView, onEdit, flashId, aiFlashIds, selectedIds, onToggle, onToggleAll, appetites }: Props) {
   const currency = useSettingsStore(s => s.currency);
 
   if (loading && !risks.length) {
@@ -119,19 +120,27 @@ export default function RiskTable({ risks, loading, onView, flashId, aiFlashIds,
                     onChange={() => onToggle(r.id)}
                   />
                 </td>
-                {/* Risk ID + source badge */}
+                {/* Risk ID + control effectiveness prompt */}
                 <td>
                   <span style={{ fontWeight: 900, color: '#01b88e', fontSize: 13 }}>{r.id}</span>
                   <br />
-                  <span style={{
-                    fontSize: 10, fontWeight: 700, padding: '2px 8px',
-                    borderRadius: 4,
-                    background: r.source === 'external' ? 'rgba(1,184,142,.15)' : '#dbeafe',
-                    color: r.source === 'external' ? '#01b88e' : '#1d4ed8',
-                    display: 'inline-block', marginTop: 2,
-                  }}>
-                    {r.source === 'external' ? 'External' : 'Internal'}
-                  </span>
+                  {(r.control_effectiveness === null || r.control_effectiveness === 0) && (
+                    <span
+                      role="button"
+                      onClick={(e) => { e.stopPropagation(); onEdit(r); }}
+                      style={{
+                        fontSize: 10, fontWeight: 700, padding: '2px 7px',
+                        borderRadius: 4, cursor: 'pointer', marginTop: 2,
+                        display: 'inline-block',
+                        background: 'rgba(245,158,11,.12)',
+                        border: '1px solid rgba(245,158,11,.30)',
+                        color: '#78450c',
+                      }}
+                      title="Control effectiveness not set — click to edit"
+                    >
+                      Set Controls
+                    </span>
+                  )}
                 </td>
 
                 {/* Date Logged */}

@@ -2631,6 +2631,7 @@ tr.row-flash { animation: rowFlash 2.2s ease; }
 }
 .pin-box:focus  { border-color: #01b88e; box-shadow: 0 0 0 3px rgba(1,184,142,.15); background: #fff; }
 .pin-box.filled { border-color: #1F2854; }
+.pin-box.err    { border-color: #ef4444; box-shadow: 0 0 0 3px rgba(239,68,68,.15); background: #fff8f8; }
 .pin-err  { font-size: 13px; color: #ef4444; margin-top: 14px; min-height: 20px; }
 .pin-ok   { font-size: 13px; color: #01b88e; margin-top: 14px; min-height: 20px; }
 .pin-foot { margin-top: 20px; font-size: 13px; color: #64748b; }

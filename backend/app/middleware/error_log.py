@@ -14,6 +14,13 @@ from app.models.api_error_log import ApiErrorLog
 _SKIP: tuple[tuple[str, int], ...] = (
     ("/api/v1/presence/", 401),
     ("/api/v1/presence/", 403),
+    ("/api/v1/submissions/triage/count",    401),
+    ("/api/v1/submissions/triage/count",    403),
+    ("/api/v1/incident-severity/preview",   401),
+    ("/api/v1/incident-severity/preview",   403),
+    ("/api/v1/incident-severity/config",    401),
+    ("/api/v1/incident-severity/config",    403),
+    
 )
 
 _SCRUB_KEYS: frozenset[str] = frozenset({

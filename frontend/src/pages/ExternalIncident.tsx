@@ -65,6 +65,15 @@ export default function ExternalIncident() {
   const [errMsg,     setErrMsg]     = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [submitted,  setSubmitted]  = useState(false);
+  const [brand, setBrand] = useState<{ org_name: string; logo_url: string | null }>({ org_name: '', logo_url: null });
+
+  useEffect(() => {
+    if (!workspaceId) return;
+    fetch(`${API_BASE}/api/v1/external/brand/${encodeURIComponent(workspaceId)}`)
+      .then(r => r.json())
+      .then(d => { if (d.data) setBrand(d.data); })
+      .catch(() => {});
+  }, [workspaceId]);
 
   // Hydrate category and business unit dropdowns from workspace lookups
   useEffect(() => {
@@ -152,7 +161,8 @@ export default function ExternalIncident() {
         <div className="ext-wrap">
           <div className="ext-card">
             <div className="ext-hd" style={{ background: '#01b88e' }}>
-              <div className="ext-hd-org">SmartRisk GRC</div>
+              {brand.logo_url && <img src={brand.logo_url} alt="logo" style={{ height: 36, width: 'auto', marginBottom: 8 }} />}
+              <div className="ext-hd-org">{brand.org_name || 'SmartRisk GRC'}</div>
             </div>
             <div className="ext-bd">
               <p className="ext-err" style={{ display: 'block', fontSize: 14, textAlign: 'center', padding: '24px 0' }}>
@@ -171,7 +181,9 @@ export default function ExternalIncident() {
         <div className="ext-card">
           {/* GAS incident form uses teal header; risk form uses navy. Kept for parity. */}
           <div className="ext-hd" style={{ background: '#01b88e' }}>
-            <div className="ext-hd-org">Report an Incident</div>
+            {brand.logo_url && <img src={brand.logo_url} alt="logo" style={{ height: 36, width: 'auto', marginBottom: 8 }} />}
+            <div className="ext-hd-org">{brand.org_name || 'SmartRisk GRC'}</div>
+            <div className="ext-hd-sub">External Incident Report</div>
             <div className="ext-hd-sub">Submit incident details to SmartRisk GRC</div>
           </div>
 

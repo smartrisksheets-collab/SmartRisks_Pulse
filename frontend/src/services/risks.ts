@@ -20,6 +20,7 @@ export interface ListRisksParams {
   owner?:     string;
   search?:    string;
   undecided?: boolean;
+  appetite?:  string;
 }
 
 export interface RiskListResponse {
@@ -38,6 +39,7 @@ export async function listRisks(params: ListRisksParams = {}): Promise<RiskListR
   if (params.owner)     query.set('owner',      params.owner);
   if (params.search)    query.set('search',     params.search);
   if (params.undecided) query.set('undecided',  'true');
+  if (params.appetite)  query.set('appetite',   params.appetite);
 
   const qs  = query.toString();
   const url = `/api/v1/risks${qs ? `?${qs}` : ''}`;

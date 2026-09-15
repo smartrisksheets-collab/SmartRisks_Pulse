@@ -1526,4 +1526,169 @@ Raised by: When the backend Google auth call failed, the Google button stayed pe
 Chosen: `onSuccess` prop type changed to `(token: string) => Promise<void>`. Child's `useGoogleLogin.onSuccess` made `async`. Wraps `await onSuccess(r.access_token)` in try/finally. `googlePending` is reset to `false` in the finally block, running after the parent's full async operation resolves or rejects.
 Why: The state controlling the button lives in the child. The only correct place to reset it is the child's own finally block, triggered after the parent's promise settles. Lifting state to the parent would require additional props and was unnecessary.
 
+---
+
+**Decision: Invite link broken by comma-separated FRONTEND_URL (September 10, 2026)**
+Raised by: FRONTEND_URL was set to a comma-separated string for staging and production Render deployment. `services_user.py` used `settings.FRONTEND_URL` directly to build the invite link, producing a malformed URL containing the raw comma-separated string.
+Chosen: `settings.FRONTEND_URL.split(',')[0].strip()` at the point of use in `services_user.py` line 86.
+Why: The first URL is always the canonical production URL. `allowed_origins` already splits correctly for CORS. The invite link needs only one URL. One line, one file, no config change.
+
+**Decision: Admin panel six bugs fixed in one session (September 10, 2026)**
+Raised by: Audit of admin panel after delivery revealed six confirmed lapses: error summary all-time rather than 24h, 422 errors showing as [object Object], formatDate duplicated in three files, no topbar rendered in shell, no server-side token revalidation on load, flat UI identity.
+Chosen: (1) All four queries in `get_error_summary` now include `.where(ApiErrorLog.created_at >= since)`. (2) `extractApiError` helper reads `response.data.error` then `response.data.detail` array then falls back to generic string. (3) Shared `admin/src/utils/format.ts` with `formatDate` and `formatDateLong`, local copies removed from three pages. (4) Shell renders topbar with page title from static pathname map and admin name from auth store. (5) Shell calls `adminAuthApi.me()` on mount and clears store on rejection. (6) `admin_src_index.css` updated: table headers navy weight 900, KPI numbers navy weight 900, card and page titles navy weight 800, radius 14px, shadow deepened.
+Why: Each fix confirmed by reading the source file in session. No guesses.
+
+**Decision: Payments module built admin-only, workspace-level billing (September 10, 2026)**
+Raised by: No payment history, no receipts, and no billing records existed in V2.
+Chosen: `payments` table (migration 050), `Payment` model, schemas, service, and routes. Recording a payment atomically sets `payment_active=True`, `payment_date`, `plan_expires_at` (12 months from paid date), and `plan=PAID` on the tenant in the same flush. Suspended workspaces blocked from receiving payments (403). Admin panel workspace drawer gets Settings and Payments tabs. Payment rows support inline edit and send-receipt. PDF receipt generated with ReportLab, SmartRisk logo fetched from public URL via httpx, dispatched via Resend as FastAPI BackgroundTask so HTTP response returns immediately. `recorded_by` on receipt always shows "SmartRisk Pulse", not the admin name.
+Why: BackgroundTask costs nothing, requires no infrastructure, and the only failure mode is a missed receipt that the admin can resend. Admin-only first keeps scope contained.
+
+**Decision: Operational Feed added to Unified Dashboard (September 10, 2026)**
+Raised by: Dashboard had no real-time event narrative. ActivityFeed was risk-only.
+Chosen: `IncidentFeedEntry` schema and type. `_incident_feed` as 15th parallel task in `asyncio.gather`. Derives synthetic event types from incident state: resolved, in-progress, escalated, created. `dashboard_OperationalFeed.tsx` new component with Risk/Incident toggle. Risk tab delegates to existing `ActivityFeed`. Mounted in `UnifiedSection` before AI card. `of-*` CSS classes in `src/index.css`.
+Why: No migration. Incident feed derives from the incidents table at read time. 15th gather task adds no meaningful latency.
+
+**Decision: Risk Appetite guide panel and threshold delete added (September 10, 2026)**
+Raised by: AppetiteSettings had no guidance for new users and no way to remove a threshold.
+Chosen: Collapsible `GuidePanel` with 5-step methodology, dynamic unset count in step 5. `DELETE /api/v1/appetite/{category}` route. `remove` mutation in `useAppetite` hook. `DeleteConfirmModal` matching `risks_DeleteModal.tsx` structure exactly. Remove button only on rows with an existing threshold. `apt-guide-*` and `apt-del-btn` CSS classes added.
+Why: Guide collapsed by default to avoid disrupting returning users. Delete is permanent with no recycle bin since appetite thresholds are configuration not data.
+
+**Decision: AI Anthropic calls wrapped in try/except on all unprotected surfaces (September 10, 2026)**
+Raised by: `services_ai_incident.py` `_call_api` had no try/except. `services_ai_executive.py` API call had no try/except, only the parser was wrapped. Both surfaces propagated Anthropic timeouts and rate limit errors as unhandled exceptions, surfacing as 500.
+Chosen: try/except added to both. `ValueError` raised on failure with a human-readable message. `ValueError` mapped to 422 in `_EXCEPTION_MAP` in `app_main.py` so the message reaches the client instead of the generic 500 handler.
+Why: AI calls are the most likely source of 5xx errors in production. A timeout or rate limit should give the user a recoverable message, not a crash.
+
+**Decision: Error log middleware skip list for noisy expected-failure endpoints (September 10, 2026)**
+Raised by: `/api/v1/presence/heartbeat`, `/api/v1/submissions/triage/count`, `/api/v1/incident-severity/preview`, and `/api/v1/incident-severity/config` all fired 401 or 403 on token expiry or module mismatch. These poll on interval and generated dozens of error log DB writes per hour with zero diagnostic value.
+Chosen: `_SKIP` tuple of `(path_prefix, status_code)` pairs in `middleware_error_log.py`. Any path starting with the prefix that returns the matching status is returned immediately before the DB write. 401 and 403 skipped for all four endpoint groups. Genuine 5xx on any of these still logs.
+Why: Each endpoint is expected to return 401/403 under normal product conditions (expired token, wrong module). Logging them is noise that grows with active users and burns DB connections.
+
+**Decision: Incident Severity settings shows upgrade card for non-incident workspaces (September 10, 2026)**
+Raised by: Risk-only workspaces saw a generic "Failed to load incident severity configuration" error on the settings tab.
+Chosen: `useAuthStore` check for `incident` in `claims.modules` before the error check. If not present, render a branded upgrade card pointing to `mailto:info@smartrisksheets.com`. The card also renders on API error since the error is caused by the missing module.
+Why: A generic error message on a tab a risk-only user can navigate to is a poor experience. The upgrade card is informative and actionable.
+
+**Decision: Password validation rules checklist replaces strength bar (September 10, 2026)**
+Raised by: The strength bar scored entropy while the backend validator checked specific character classes. A user could see "Strong" from the bar and receive a 422 from the backend. The [object Object] bug in `services_api.ts` also meant 422 detail was never surfaced.
+Chosen: `validatePassword` in `utils_validation.ts` now checks all five backend rules (length, uppercase, lowercase, digit, special character). `getPasswordRules` returns a live rule state for the checklist. `PasswordRules` module-level component replaces `StrengthBar`. Applied to `/register` and `/accept-invite`. `src/index.css` pwd-strength classes replaced with pwd-rules and pwd-rule classes. `services_api.ts` 422 handler now checks `typeof backendMessage === 'string'` before creating Error, preventing array-to-string coercion.
+Why: Checklist tells the user exactly which rule is unmet before submission. Eliminates the gap between what the UI signals and what the backend enforces.
+
+**Decision: Register page duplicate email shows upgrade banner not error (September 10, 2026)**
+Raised by: A 409 from the register endpoint showed a generic error string. The correct UX for an existing account is a prompt to sign in.
+Chosen: Catch block inspects the error message for "already", "duplicate", or "registered". On match, sets `existingAccount` state which renders a teal banner with a "Sign in instead" link pre-filled with the typed email. Separate from the generic error state.
+Why: A banner with a direct action is more useful than an error string. The sign-in link removes all friction for the user.
+
+**Decision: Google OAuth redirect on register checks workspaces.length (September 10, 2026)**
+Raised by: An existing user clicking "Continue with Google" on /register was redirected to /workspaces/create because the page only checked `requires_workspace_select`, not whether the user already had workspaces.
+Chosen: `result.workspaces && result.workspaces.length > 0` check added before the create redirect. Existing users with one workspace go to `/`, new accounts go to `/workspaces/create`.
+Why: `workspaces: []` from the backend is the reliable signal for a brand new account. No backend change needed.
+
+**Decision: Workspace quota surfaced in sidebar and workspace picker (September 10, 2026)**
+Raised by: Users had no visibility into how many workspaces they could own or how many they had used. The "New workspace" button was gated on plan being TRIAL, which was wrong after the max_workspaces change.
+Chosen: `GET /api/v1/workspaces` response meta extended with `owned` and `limit`. `WorkspacePicker` uses raw `api.get` (not `apiGet`) to access meta and populates `workspaceQuota` in `authStore`. Sidebar renders quota pill for Owners only when quota is loaded. `canAddWorkspace` gates the sidebar add button. WorkspacePicker "New workspace" button gated on `atLimit` from quota, not `isTrial`.
+Why: `apiGet` strips the envelope and returns only `res.data.data`, discarding meta. Raw `api.get` is the correct call when meta is needed alongside data.
+
+**Decision: max_workspaces column on accounts, workspace creation enforces account limit (September 10, 2026)**
+Raised by: Workspace creation limit was derived from plan config constants. No per-account flexibility existed. Enterprise consultants needing more than 3 workspaces had no supported path.
+Chosen: Migration 051 adds `max_workspaces INTEGER NOT NULL DEFAULT 1` to accounts. Workspace creation reads `account.max_workspaces` directly. Admin panel Platform Users page gets `WorkspaceLimitCell` inline editor. `PATCH /api/admin/platform-users/{account_id}/workspace-limit` route. Default is 1 (trial and standard), admin sets higher for enterprise.
+Why: Per-account limit is flexible without requiring a new plan tier or code change. Admin sets the number to whatever is commercially agreed.
+
+**Decision: Enterprise accounts create PAID workspaces by default, with initial plan_expires_at (September 10, 2026)**
+Raised by: Accounts with max_workspaces above 1 were commercially approved for enterprise. New workspaces created by these accounts still appeared as TRIAL.
+Chosen: `is_enterprise = account.max_workspaces > 1`. If true, new tenant gets `plan=PAID`, `payment_active=True`, `plan_expires_at = date.today() + 365 days`. First payment recording overwrites plan_expires_at with the exact paid date plus 12 months.
+Why: An enterprise-approved account creating a workspace should not see a trial UI. The initial 365-day expiry is a placeholder that prevents NULL in the admin table until the first payment is recorded.
+
+**Decision: CASCADE ON DELETE added to all tenant FK constraints (migration 052) (September 10, 2026)**
+Raised by: 12 tables had `REFERENCES tenants(id)` without `ON DELETE CASCADE`. A direct tenant DELETE raised FK constraint violations, making automated trial cleanup and admin workspace deletion impossible without manual ordering.
+Chosen: Migration 052 drops and recreates all 12 FK constraints with `ON DELETE CASCADE`. `payments` and `report_templates` already had cascade. Migration is 12 separate `ALTER TABLE` statements, one per table, each in its own `op.execute()`.
+Why: Cascade is the correct behaviour for child data owned by a tenant. When a tenant is deleted, all its data should be deleted atomically. Without cascade, every deletion path requires manual ordering or risks leaving orphan rows.
+
+**Decision: Trial cleanup job uses 30-day grace period, 4 reminder emails (September 10, 2026)**
+Raised by: 14-day grace was discussed initially. 30 days was chosen as more appropriate for a B2B risk management product where customers may be on leave or waiting on budget approval. Industry standard is 30 days.
+Chosen: `_REMINDER_DAYS` at days 1, 14, 25, 29. `_DELETE_AFTER_DAYS = 30`. Reminders tracked via audit_log with `action = "TRIAL_EXPIRY_REMINDER"` and marker in summary to prevent duplicates on scheduler retry. Job runs daily at 05:00 UTC.
+Why: 30 days gives genuine time to respond. 4 reminders escalate from informational to urgent. Audit log tracking avoids duplicate sends without requiring a new table.
+
+**Decision: PAID workspaces never touched by trial cleanup, never degrade to TRIAL (September 10, 2026)**
+Raised by: Question raised whether paid workspaces with an expired plan_expires_at would fall back to TRIAL behaviour or be caught by the cleanup job.
+Confirmed: Trial cleanup query filters `Tenant.plan == "TRIAL"` explicitly. PAID workspaces are never in scope. The expiry gate in `core_dependencies.py` only fires for `plan == "EXPIRED"` (manually set by admin) or `plan == "TRIAL"` with an expired trial date. A PAID workspace with an expired plan_expires_at continues to work until the admin explicitly sets plan to EXPIRED or SUSPENDED. No code downgrades PAID to TRIAL. Admin panel now shows EXPIRED as a selectable plan option with an inline warning about immediate lockout.
+
+**Decision: Workspace owner identity added to admin workspace list (September 10, 2026)**
+Raised by: Admin workspace table showed no information about which account owned each workspace. Search had no way to filter by account.
+Chosen: `list_workspaces` query in `services_admin_panel.py` adds `.outerjoin(Account, Account.id == Tenant.created_by)` and selects `Account.email.label("owner_email")` and `Account.name.label("owner_name")`. GROUP BY extended to include Account columns. `owner_email` and `owner_name` added to `AdminWorkspaceListItem` schema and TypeScript type. Owner column added to workspace table in admin. Search filter extended to match on owner_email and owner_name.
+Why: Owner identity is essential for support and commercial operations. The join is on `Tenant.created_by`, not on WorkspaceMember, which is the correct source of the owning account.
+
+---
+
+## Session 22: September 11, 2026 — Report Engine Upgrade
+
+**Decision: Central facts/evidence layer introduced as single source of truth (September 11, 2026)**
+Raised by: Report engine computed metrics independently in multiple places. AI prompts invented owners, dates, percentages and trends without any constraint. Trend language appeared in reports with only one snapshot.
+Chosen: `services/report_facts.py` new file. `ReportFacts` dataclass takes `ReportContext` and computes all counts, scores, governance, and assurance state in `__post_init__`. All block compute functions and AI prompts draw from this object. Nothing recalculates independently.
+Why: One source of truth eliminates contradictions between blocks. Guards (`allow_trends`, `allow_percentages`) are enforced uniformly rather than per-function. AI evidence slice is a pre-computed, bounded dict, not raw ORM data.
+
+**Decision: allow_trends requires >=2 snapshots, allow_percentages requires >=5 risks (September 11, 2026)**
+Raised by: Reports claimed trends with one data point and used percentages on registers of 2-3 risks.
+Chosen: `allow_trends = len(ctx.snapshots) >= 2`. `allow_percentages = len(ctx.all_risks) >= 5`. Both derived from `ReportFacts` properties. Trend blocks return `_TREND_SUPPRESSED` sentinel dict when `allow_trends` is False. AI prompts receive both flags and are instructed to suppress the relevant language.
+Why: A single data point cannot constitute a trend by any statistical standard. Percentage framing on very small datasets creates false precision. These are hard guards, not soft suggestions.
+
+**Decision: Appetite status computed as Exceeds/Near/Within using 80% Near boundary (September 11, 2026)**
+Raised by: `AppetiteThreshold` stored one threshold per category but no code ever compared a risk's residual against it. The report could not flag appetite breaches.
+Chosen: `_compute_appetite_status(residual, threshold)` in `services/report.py`. `residual > threshold` = Exceeds. `residual >= threshold * 0.80` = Near. Otherwise Within. `None` when no threshold is configured for the category. 80% boundary confirmed by user on September 11, 2026. `_NEAR_APPETITE_RATIO = 0.80` named constant in source.
+Why: 80% matches the SLA threshold pattern already used elsewhere in the product. It gives a meaningful amber warning state. Zero-threshold edge case returns Exceeds for any nonzero residual (zero tolerance means any exposure breaches it).
+
+**Decision: Incidents module gate on reports via tenant.modules column (September 11, 2026)**
+Raised by: Incident blocks returned `total: 0` when the module was disabled, making it appear the organisation had a perfect incident record rather than no measurement.
+Chosen: `incidents_enabled = 'incident' in tenant.modules` derived in `build_context`. Added to `ReportContext`. All four incident compute functions return `_INCIDENT_SUPPRESSED` sentinel dict when False. PDF `build_pdf` loop renders a "Not generated" card via `_render_suppressed_note()` for suppressed blocks rather than silently skipping. `_render_suppressed_note()` shows reason and how to enable.
+Why: "0 incidents" and "unmeasured" are materially different statements in a risk report. Silent omission is worse than a clear "not enabled" card. The suppressed card maintains report completeness while being accurate about data availability.
+
+**Decision: Recommendations are now fully deterministic, removed from AI blocks (September 11, 2026)**
+Raised by: AI `recommendations` prompt asked it to generate `Owner: [Relevant role or function]` and `Due: [e.g. 7 Days]` freely. Hardcoded fallbacks in `compute_recommendations` used "Operations Lead" and "Risk Manager" as invented owner names.
+Chosen: `recommendations` removed from `_AI_BLOCKS`. `compute_recommendations` rebuilt: owner always comes from the register (top owner of high-risk items) or "Not specified" when no authoritative source exists. Every recommendation has a `trigger` field (the evidence fact that generated it) and a `completion_criterion` field (what done looks like). Appetite breaches generate their own dedicated recommendation. AI prohibition rules in `_EVIDENCE_RULES` block owner invention.
+Why: Invented owners in a governance document are a credibility failure. A client seeing "Operations Lead" for a specific risk finding that has a real owner in the register would immediately distrust the report. Owners must trace to the register or be absent.
+
+**Decision: AI evidence rules and guard rules added to every prompt (September 11, 2026)**
+Raised by: AI prompts had no prohibition rules. The AI could and did invent percentages when `allow_percentages` was False and claim trends when `allow_trends` was False.
+Chosen: `_EVIDENCE_RULES` static constant appended to every system prompt via `_call`. `_guard_rules(fs)` generates dynamic instructions based on `allow_trends`, `allow_percentages`, and `incidents_enabled` flags from the fact slice. Both are prepended to the system prompt. `_build_prompt` rebuilt to include these in every block.
+Why: The AI cannot enforce rules it is not given. Static rules cover the invariants (no invented owners, no invented IDs, no fabricated figures). Dynamic guard rules cover the data-dependent invariants (trend language only when evidence exists).
+
+**Decision: Plus Jakarta Sans as PDF brand font, registered via bundled TTF files (September 11, 2026)**
+Raised by: PDF used Times-Bold for the cover title and Helvetica throughout all other blocks. The result was visually inconsistent and dated.
+Chosen: `services/report_fonts.py` new file. Font path resolved relative to `app/services/report_fonts.py` via `Path(__file__).resolve().parent.parent / "static" / "fonts" / "plus-jakarta-sans"`. Four weights: Regular, Medium, SemiBold, Bold. `register_fonts()` is idempotent, logs a clear diagnostic if files are missing, falls back to Helvetica gracefully. `_apply_jakarta_fonts()` in `pdf_report.py` migrates all named `_S` styles in-place after registration. Inline styles in renderer functions updated to use `f_regular()`, `f_medium()`, `f_semibold()`, `f_bold()` resolver functions. Typography hierarchy: Bold = KPI numbers; SemiBold = section headings, card titles; Medium = labels, metadata; Regular = body, narrative. Cover title changed from Times-Bold to Jakarta-Bold. `.gitignore` confirmed safe for `.ttf` files. Font files committed to repo at `backend/app/static/fonts/plus-jakarta-sans/`.
+Why: Jakarta Sans is a clean, modern, enterprise-appropriate geometric sans-serif. Consistent with the React frontend's intended aesthetic. All four weights allow full typographic hierarchy without mixing font families.
+
+**Decision: Risk heat map added as new PDF block (September 11, 2026)**
+Raised by: The implementation guide listed `risk-heat-map` as a required missing block. The report had no spatial view of the register.
+Chosen: `compute_risk_heat_map` in `services/report.py`. Likelihood × impact grid. Cells coloured by band index using very light tints of the semantic colours (print-safe). Risk short IDs (first 8 chars of UUID) shown inside each cell, stacked, up to 2 then "+N more". Empty cells show a muted dot. Unplaced risks (no likelihood or impact score) counted and surfaced as an amber note. Legend uses coloured squares with band label text. `_render_risk_heat_map` in `services/pdf_report.py`. Block key `risk-heat-map`, label `Risk Heat Map`.
+Why: The heat map is the most readable spatial summary of the register. Clients understand likelihood × impact grids intuitively. The print-safe colour scheme ensures the block is useful in greyscale printed copies.
+
+**Decision: Methodology block added as new PDF block (September 11, 2026)**
+Raised by: The report had no block explaining what evidence it was based on, whether trend analysis was available, or whether the residual model matched the Pulse engine.
+Chosen: `compute_methodology` builds from `ReportFacts`. Three sections: Report Evidence Basis (active risks, snapshot count, trend/percentage/incident flags), Residual Model (Pulse engine comparison, avg supplied vs avg Pulse), Assurance Coverage (controls untested, unasserted). `_render_methodology` in `services/pdf_report.py` uses two-column label/value tables with status symbols (✓ and ⚠). Block key `methodology`, label `Methodology`.
+Why: A report that does not explain its own evidence basis is incomplete as a governance document. Auditors and boards need to understand what the report can and cannot claim.
+
+**Decision: Page breaks controlled via CondPageBreak and KeepTogether (September 11, 2026)**
+Raised by: Block headers were appearing at the bottom of pages with no content below them. Blocks were splitting at awkward points.
+Chosen: `CondPageBreak(40 * mm)` inserted before every block in the `build_pdf` loop. `KeepTogether` wraps the first three elements of each block so the header and its first content element are never separated by a page break.
+Why: `CondPageBreak` is the correct ReportLab primitive for this pattern. 40mm is enough to always include at least one content row after the block header. `KeepTogether` on the first three elements avoids wrapping large blocks (which would force page breaks mid-content) while protecting the header.
+
+**Decision: Wrong-PIN 401 bypasses token refresh interceptor (September 11, 2026)**
+Raised by: A wrong workspace PIN returned 401. The axios interceptor treated this as an expired token, attempted a refresh, and depending on the refresh result either redirected the user to `/workspaces` or showed "Request failed with status code 401" instead of the actual PIN error message.
+Chosen: `isPinVerifyCall = originalRequest?.url?.includes('/auth/verify-pin')` added to the response interceptor. When this flag is true, the interceptor skips the refresh entirely, extracts `error.response?.data?.error`, and rejects with `new Error(msg)`. The PIN page catch handler then receives the correct backend message.
+Why: A 401 from `/auth/verify-pin` always means wrong PIN or locked workspace. It never means an expired token. Treating it as a token error is a category error. The fix is surgical and does not affect any other endpoint.
+
+**Decision: PIN lockout messages now include attempt count and actual remaining time (September 11, 2026)**
+Raised by: Wrong PIN always showed "Incorrect PIN" with no indication of how many attempts remained. After the 5th wrong attempt, the workspace locked silently and the user still saw "Incorrect PIN" with no indication of why subsequent attempts were blocked. The locked message always said "15 minutes" even if the lockout happened 13 minutes ago.
+Chosen: Wrong PIN now says "Incorrect PIN. X attempt(s) remaining before lockout." On the 5th wrong attempt: "Incorrect PIN. This workspace is now locked for 15 minutes." Already locked: actual remaining minutes computed from `pin_locked_until - now`, rounded up, shown as "Try again in N minute(s)."
+Why: Users need actionable information. Knowing they have 2 attempts remaining changes behaviour (they will pause and recall the PIN rather than guess again). Knowing the actual remaining lockout time is more trustworthy than a static "15 minutes" that is always wrong.
+
+**Decision: VerifyPin page shows visual error state on wrong PIN (September 11, 2026)**
+Raised by: Wrong PIN cleared the digits but gave no visual signal on the boxes themselves that an error had occurred. The only feedback was the text message below.
+Chosen: `isError` boolean state. `.err` CSS class applied to all six boxes simultaneously when `isError` is true. Cleared on the first keypress of the next attempt. `.pin-box.err` added to `src/index.css`: red border (#ef4444), red glow (rgba 15% alpha), light red background (#fff8f8).
+Why: The digit boxes are the user's focus point. A red border directly on the boxes is faster to process than reading error text below. The error clears immediately on next input so it never lingers past its usefulness.
+
+**Decision: Triage promote form owner field changed from text input to lookup dropdown (September 11, 2026)**
+Raised by: The promote-to-register form had a free-text owner input while the main risk form uses a dropdown populated from `lookups.risk_owner`. Owners entered via the triage form bypassed the lookup and could create inconsistencies in the register.
+Chosen: `useLookups` imported in `pages/TriageQueue.tsx`. Owner field changed to `<select>` with `lookups?.risk_owner` options, matching the `RiskForm` pattern exactly. Fallback option preserves any pre-filled value from the submission if it is not in the lookup list.
+Why: Owner values should come from the configured lookup list to maintain consistency across the register. A free-text field allows arbitrary strings that do not match any existing owner, breaking downstream filtering and reporting.
+
 Why: The cover_body is one large Table. Any overflow causes ReportLab to split it, creating a near-blank page 2 with only the metadata footer. The adjusted estimate brings total height back within the frame.

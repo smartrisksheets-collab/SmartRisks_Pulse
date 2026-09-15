@@ -23,11 +23,8 @@ const GROUPS: Group[] = [
       { label: 'Risk Health',          key: 'exposure-index'       },
       { label: 'Risk Snapshot',        key: 'risk-snapshot'        },
       { label: 'Key Risk Changes',     key: 'key-risk-changes'     },
-      { label: 'Key Risk Movements',   key: 'key-risk-movements'   },
       { label: 'Risk Ownership',       key: 'risk-ownership'       },
-      { label: 'Incident Stability',   key: 'incident-stability'   },
       { label: 'Executive Summary',    key: 'ai-exec-summary'      },
-      { label: 'Executive Commentary', key: 'executive-commentary'  },
     ],
   },
   {
@@ -36,14 +33,21 @@ const GROUPS: Group[] = [
       { label: 'Exposure Trend',       key: 'exposure-trend'       },
       { label: 'Residual Risk Trend',  key: 'residual-risk-trend'  },
       { label: 'Risk Distribution',    key: 'risk-distribution'    },
-      { label: 'Incident Trend',       key: 'incident-trend'       },
+      { label: 'Risk Heat Map',        key: 'risk-heat-map'        },
     ],
   },
   {
-    head: 'Tables',
+    head: 'Intelligence',
     items: [
       { label: 'Top Risks',            key: 'top-risks'            },
       { label: 'Top Emerging Risks',   key: 'top-emerging-risks'   },
+    ],
+  },
+  {
+    head: 'Incidents',
+    items: [
+      { label: 'Incident Stability',   key: 'incident-stability'   },
+      { label: 'Incident Trend',       key: 'incident-trend'       },
       { label: 'Major Incidents',      key: 'major-incidents'      },
       { label: 'Incident Analytics',   key: 'incident-analytics'   },
     ],
@@ -51,6 +55,7 @@ const GROUPS: Group[] = [
   {
     head: 'Final Layer',
     items: [
+      { label: 'Methodology',          key: 'methodology'          },
       { label: 'Findings',             key: 'findings'             },
       { label: 'Recommendations',      key: 'recommendations'      },
       { label: 'Conclusion',           key: 'conclusion'           },

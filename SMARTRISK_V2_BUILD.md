@@ -3,7 +3,7 @@
 **Product:** SmartRisk Pulse v2
 **Stack:** FastAPI + React + Supabase + Render + Vercel
 **Setup document:** SMARTRISK_V2_SETUP.md
-**Last updated:** August 22, 2026
+**Last updated:** September 11, 2026
  
 ---
  
@@ -15,9 +15,9 @@ At the end of every session Claude outputs a fresh version of this file with all
  
 ---
  
-**Phase:** Admin Panel build complete (backend + frontend). Stream B staging QA deferred.
-**Status:** Session 21, September 8, 2026: Admin Panel fully built. Backend routes live. Admin React app scaffolded and all six pages written. Light theme applied. See session log below.
-**Next action:** Begin next session by reading SMARTRISK_V2_SETUP.md, SMARTRISK_V2_DECISIONS.md, then this file. First task: run seed_admin.py on staging to create both super admin accounts. Second task: wire admin app to staging backend and QA all six pages end to end. Third task: address any bugs found. Stream B staging QA (public form, submissions inbox, token manager, promotion flow) resumes after admin panel QA is complete.
+**Phase:** Report engine upgrade complete. Visual polish, testing, and final PDF inspection remain.
+**Status:** Session 22, September 11, 2026: Report engine rebuilt with central facts layer, Jakarta Sans font, risk heat map, module gate, AI prohibition rules, and frontend block selector restructured. See session log below.
+**Next action:** Begin next session by reading SMARTRISK_V2_SETUP.md, SMARTRISK_V2_DECISIONS.md, then this file. First task: generate a full PDF with all new blocks and visually inspect every page (cover, dashboard, heat map, findings, recommendations, methodology, conclusion). Second task: run existing backend tests and confirm no regressions. Third task: visual upgrade of executive dashboard, cover page, tables, charts, and distribution block (Steps 18-22 from CLAUDE_REPORT_FIX_IMPLEMENTATION_GUIDE.md).
  
 ---
 
@@ -2601,6 +2601,234 @@ Heartbeat at 120/minute accommodates multiple browser tabs per user. exec-insigh
 4. Confirm custom domain migration on Render to fix Safari and Brave cookie blocking
 5. Operational intelligence feed design for unified dashboard (risk feed + incident feed with toggle)
 6. Incident onboarding steps addition to existing wizard flow
+
+---
+
+## Session: September 10, 2026
+
+### Scope
+
+Eight parallel workstreams completed: invite link bug, admin panel six bugs, admin UI identity, payments module (admin-only), operational feed (unified dashboard), appetite guide and delete, plus a large follow-on block covering AI error hardening, workspace quota, max_workspaces enforcement, trial cleanup with cascade, password rules UX, register page UX, admin workspace owner identity, and incident severity upgrade card.
+
+---
+
+### Fix: Invite link broken by comma-separated FRONTEND_URL
+
+**File:** `services_user.py` line 86.
+Changed `settings.FRONTEND_URL` to `settings.FRONTEND_URL.split(',')[0].strip()` in the invite link constructor. Every invite email sent since the multi-URL value was introduced had a dead link containing the raw comma string.
+
+---
+
+### Admin Panel: Six Bug Fixes
+
+**Fix 1: Error summary 24h filter** (`services_admin_panel.py`)
+All four queries in `get_error_summary` now include `.where(ApiErrorLog.created_at >= since)`. Previously `since` was computed but never applied to total, errors_5xx, errors_4xx, or top_paths.
+
+**Fix 2: 422 error surface** (`admin_src_pages_AdminAccounts.tsx`)
+`extractApiError` helper added. Reads `response.data.error`, then `response.data.detail` as array, then `response.data.detail` as string, then falls back to provided default. Both mutation onError handlers updated.
+
+**Fix 3: Shared formatDate** (`admin/src/utils/format.ts` new file)
+`formatDate` (without seconds) and `formatDateLong` (with seconds) exported. Local copies removed from `admin_src_pages_Workspaces.tsx`, `admin_src_pages_AdminAccounts.tsx`, `admin_src_pages_AuditLog.tsx`. AuditLog imports `formatDateLong as formatDate`.
+
+**Fix 4: Shell topbar** (`admin_src_components_layout_Shell.tsx`)
+Topbar renders page title from static pathname map and admin name plus role from auth store. `.admin-topbar-title`, `.admin-topbar-user`, `.admin-topbar-name`, `.admin-topbar-role` CSS classes added to `admin_src_index.css`.
+
+**Fix 5: Auth revalidation** (`admin_src_components_layout_Shell.tsx`)
+`useEffect` calls `adminAuthApi.me()` on mount. Calls `clear()` on rejection. Expired or revoked tokens caught at load.
+
+**Fix 6: Admin UI identity** (`admin_src_index.css`)
+Table headers: `background: #1F2854`, white text, weight 900. KPI stat values: navy, weight 900. Card and page titles: navy, weight 800, size 20. `--radius` raised to 14px. `--shadow` deepened.
+
+---
+
+### Payments Module (Admin-Only)
+
+**Migration 050:** `payments` table. Columns: id, tenant_id (CASCADE), amount NUMERIC(12,2), currency, method, reference, notes, paid_at DATE, recorded_by, created_at. Two indexes.
+
+**Backend:**
+- `models_payment.py`: Payment ORM model.
+- `models___init__.py`: Payment registered.
+- `schemas_admin.py`: PaymentCreate, PaymentUpdate, PaymentOut added.
+- `services_admin_payment.py`: `list_payments`, `create_payment`, `update_payment`. `_add_12_months` helper. `create_payment` blocks suspended workspaces (403), atomically sets `payment_active=True`, `payment_date`, `plan_expires_at=12 months`, `plan=PAID` on tenant.
+- `routes_admin_payments.py`: GET list, POST create, PATCH update, POST send-receipt. Mounted in `app_main.py` with `prefix="/api"` and router prefix `/admin/workspaces`.
+- `services_payment_receipt.py`: ReportLab A4 receipt. SmartRisk logo from static public URL via httpx. `recorded_by` always "SmartRisk Pulse".
+- `services_email.py`: `send_payment_receipt_email` appended. Base64 PDF attachment via Resend.
+- Send-receipt route uses `FastAPI BackgroundTasks`. Logo fetched async before `background_tasks.add_task`. `_send_receipt_task` is plain synchronous module-level function.
+
+**Frontend:**
+- `admin_src_types_admin.ts`: Payment interface.
+- `admin_src_services_api.ts`: `paymentsApi` with list, create, update, sendReceipt methods.
+- `admin_src_pages_Workspaces.tsx`: Settings and Payments drawer tabs. `PaymentRow` module-level component with inline edit and send-receipt. `DeleteWorkspaceModal` module-level component. `onUpdated` invalidates payments, workspaces, and overview queries. Settings tab payment date auto-fills plan_expires_at to 12 months on change.
+- `admin_src_index.css`: `.a-drawer-tabs`, `.a-drawer-tab`, `.a-drawer-tab.active`, `.a-pay-row`, `.a-pay-main`, `.a-pay-amount`, `.a-pay-date`, `.a-pay-meta`, `.a-pay-notes`.
+
+---
+
+### Operational Feed (Unified Dashboard)
+
+- `schemas_dashboard.py`: `IncidentFeedEntry` added before `DashboardResponse`. `incident_feed` field added to `DashboardResponse`.
+- `services_dashboard.py`: `_incident_feed` as 15th parallel task. Derives `event_type` from incident state. `_INCIDENT_FEED_LIMIT = 20`.
+- `types_dashboard.ts`: `IncidentFeedEntry` interface. `incident_feed` added to `DashboardData`.
+- `dashboard_OperationalFeed.tsx`: New file. Module-level: `IncidentFeedRow`, `IncidentStrip`, `IncidentDetailModal`, `IncidentFeedModal`, `IncidentFeedPanel`. Default export `OperationalFeed` with Risk/Incident toggle.
+- `dashboard_UnifiedSection.tsx`: `OperationalFeed` mounted before AI card.
+- `src_index.css`: `of-*` classes appended with dark mode overrides.
+
+---
+
+### Appetite Settings: Guide Panel and Delete
+
+- `services_appetite.py`: `delete` imported. `delete_appetite` function added.
+- `routes_appetite.py`: `ResourceNotFoundError` imported. `DELETE /{category}` route added.
+- `services_appetite.ts`: `apiDelete` imported. `deleteAppetite` function added.
+- `hooks_useAppetite.ts`: `remove` mutation added. Returned in hook object.
+- `settings_AppetiteSettings.tsx`: Full rewrite. `GuidePanel` with 5-step methodology and dynamic unset count. `DeleteConfirmModal` matching DeleteModal pattern. Remove button only on rows with existing threshold.
+- `src_index.css`: `.apt-del-btn`, `apt-guide-*` block appended.
+
+---
+
+### Admin Workspace Delete Route (405 Fix)
+
+- `routes_admin_workspaces.py`: UUID, delete, select, Tenant, ResourceNotFoundError, PermissionDeniedError imports added. `@router.delete("/workspaces/{tenant_id}")` route added. TRIAL-only guard raises 403 for PAID workspaces. Applied to correct file after previous snippet was accidentally targeted at `routes_workspaces.py`.
+
+---
+
+### AI Error Hardening
+
+- `services_ai_incident.py`: `_call_api` wrapped in try/except. Raises `ValueError` with user-friendly message on Anthropic failure.
+- `services_ai_executive.py`: `client.messages.create` call wrapped in its own try/except separate from the parse block. Two distinct error messages.
+- `app_main.py`: `ValueError: 422` added to `_EXCEPTION_MAP` so ValueError messages reach the client instead of the generic 500 handler.
+
+---
+
+### Error Log Middleware Skip List
+
+- `middleware_error_log.py`: `_SKIP` tuple added with 8 entries covering presence, triage/count, and incident-severity endpoints for 401 and 403 status codes. Skip check placed immediately after the `< 400` early return.
+
+---
+
+### Incident Severity Upgrade Card
+
+- `settings_IncidentSeveritySettings.tsx`: `useAuthStore` imported. `hasIncident` check on `claims.modules`. Full upgrade card rendered for non-incident workspaces and on API error. Card links to `mailto:info@smartrisksheets.com`. Broken `<a>` tag (missing opening `<`) fixed.
+
+---
+
+### Password Rules UX
+
+- `utils_validation.ts`: `validatePassword` now checks all 5 backend rules. `getPasswordRules` added returning `PasswordRuleState`. `PasswordRuleState` interface exported.
+- `pages_Register.tsx`: `PasswordRules` module-level component replaces `StrengthBar`. `existingAccount` state added. 409 catch renders teal upgrade banner with sign-in link. Google redirect now checks `result.workspaces.length > 0` before deciding route.
+- `pages_AcceptInvite.tsx`: `validatePassword`, `validateConfirm`, `getPasswordRules`, `PasswordRuleState` imported. `RULES` constant and `PasswordRules` component added at module level. `showPwd` and `showConfirm` toggle state. Eye icon added to both password fields. Button margin raised to 24px.
+- `src_index.css`: `pwd-strength` classes replaced with `pwd-rules` and `pwd-rule.met`. `auth-info-banner` and `auth-info-link` added after `.auth-error`.
+
+---
+
+### Workspace Quota
+
+- `store_authStore.ts`: `workspaceQuota: {owned: number; limit: number} | null` state added. `setWorkspaceQuota` action added. Included in persist partialize.
+- `pages_WorkspacePicker.tsx`: `api.get` (raw) replaces `apiGet` in useEffect to access response meta. `setWorkspaceQuota` called with `res.data.meta`. `atLimit` replaces `isTrial` for gating "New workspace" button. `limitTip` tooltip message added.
+- `layout_Sidebar.tsx`: Duplicate `useNavigate` import and duplicate `navigate` declaration removed. `quota`, `isOwner`, `showQuota`, `canAddWorkspace` derived from `useAuthStore`. Quota pill renders in sidebar footer for Owners only. `src_index.css`: `sidebar-workspace-quota`, `sidebar-quota-text`, `sidebar-quota-add`, `sidebar-quota-full` classes added.
+
+---
+
+### max_workspaces: Account-Level Workspace Quota
+
+**Migration 051:** `max_workspaces INTEGER NOT NULL DEFAULT 1` added to accounts table.
+
+- `models_account.py`: `max_workspaces = Column(SmallInteger, ...)` added.
+- `routes_workspaces.py`: `from datetime import date, timedelta` added. `settings` import removed (now unused). Workspace creation reads `account.max_workspaces` for limit. `is_enterprise = account.max_workspaces > 1`. `plan_expires_at = date.today() + timedelta(days=365)` set for enterprise workspaces. `plan="PAID"`, `payment_active=True` for enterprise.
+- `schemas_admin.py`: `AccountWorkspaceLimitUpdate` added. `AdminUserListItem` gets `max_workspaces`. `AdminWorkspaceListItem` gets `owner_email` and `owner_name` with defaults. `_valid_plan` validator extended to accept `EXPIRED`. EXPIRED option shows inline warning in admin workspace drawer.
+- `services_admin_panel.py`: `from app.models.account import Account as UserAccount` duplicate removed, replaced with plain `Account`. `list_platform_users` query selects `Account.max_workspaces`. Constructor maps `max_workspaces`. `update_account_workspace_limit` function added. `list_workspaces` query adds `.outerjoin(Account, Account.id == Tenant.created_by)` and selects `Account.email.label("owner_email")` and `Account.name.label("owner_name")`. GROUP BY extended. Constructor maps both owner fields.
+- `routes_admin_accounts.py`: `AccountWorkspaceLimitUpdate` and `ResourceNotFoundError` imported. `PATCH /platform-users/{account_id}/workspace-limit` route added.
+- `admin_src_types_admin.ts`: `max_workspaces` on `PlatformUser`. `owner_email` and `owner_name` on `WorkspaceListItem`.
+- `admin_src_services_api.ts`: `usersApi.updateWorkspaceLimit` added. `workspacesApi.delete` added.
+- `admin_src_pages_PlatformUsers.tsx`: `useMutation`, `useQueryClient` imported. `WorkspaceLimitCell` module-level component with inline edit. `UserRow` renders `WorkspaceLimitCell` in workspace column. Table header renamed to "Workspace Limit".
+- `admin_src_pages_Workspaces.tsx`: `DeleteWorkspaceModal` module-level component added. `deleteMutation` added. Delete button on TRIAL rows only. Owner column added after workspace name. Search filter extended to match owner_email and owner_name. colSpan updated to 10.
+
+---
+
+### Trial Cleanup: CASCADE + Scheduler + Email
+
+**Migration 052:** `ON DELETE CASCADE` added to 12 tenant FK constraints: workspace_members, risks, incidents, audit_logs, activity_feed, risk_history, recycle_bin, external_submissions, snapshots_monthly, snapshots_daily, lookups, notification_prefs.
+
+- `services_trial_cleanup.py`: New file. 30-day grace period. 4 reminders at days 1, 14, 25, 29. Hard delete at day 30+. Reminder deduplication via audit_log `action = "TRIAL_EXPIRY_REMINDER"`. Joins Account on Tenant.created_by to get owner email.
+- `services_email.py`: `send_trial_expiry_reminder` appended. 4 reminder messages with escalating urgency. HTML email only, no attachment.
+- `scheduler_jobs.py`: `job_trial_cleanup` added. Runs at 05:00 UTC daily.
+- `app_main.py`: `job_trial_cleanup` imported and registered in lifespan block.
+
+---
+
+**Status:** Session complete. No incomplete items.
+
+**Files changed this session (50):**
+
+Backend: `services_user.py`, `services_admin_panel.py`, `services_admin_payment.py` (new), `services_payment_receipt.py` (new), `services_trial_cleanup.py` (new), `services_email.py`, `services_appetite.py`, `services_dashboard.py`, `services_ai_incident.py`, `services_ai_executive.py`, `models_payment.py` (new), `models_account.py`, `models___init__.py`, `schemas_admin.py`, `schemas_dashboard.py`, `routes_admin_payments.py` (new), `routes_admin_workspaces.py`, `routes_admin_accounts.py`, `routes_appetite.py`, `routes_workspaces.py`, `app_main.py`, `middleware_error_log.py`, `scheduler_jobs.py`, `core_dependencies.py` (ValueError mapping), `050_create_payments_table.py` (new), `051_add_max_workspaces_to_accounts.py` (new), `052_add_cascade_to_tenant_fkeys.py` (new)
+
+Frontend main app: `types_dashboard.ts`, `services_appetite.ts`, `hooks_useAppetite.ts`, `utils_validation.ts`, `store_authStore.ts`, `pages_Register.tsx`, `pages_AcceptInvite.tsx`, `pages_WorkspacePicker.tsx`, `layout_Sidebar.tsx`, `dashboard_OperationalFeed.tsx` (new), `dashboard_UnifiedSection.tsx`, `settings_AppetiteSettings.tsx`, `settings_IncidentSeveritySettings.tsx`, `src_index.css`
+
+Frontend admin: `admin_src_index.css`, `admin_src_components_layout_Shell.tsx`, `admin_src_pages_AdminAccounts.tsx`, `admin_src_pages_Workspaces.tsx`, `admin_src_pages_AuditLog.tsx`, `admin_src_pages_PlatformUsers.tsx`, `admin_src_services_api.ts`, `admin_src_types_admin.ts`, `admin/src/utils/format.ts` (new)
+
+**Next session starts with:**
+
+1. Read `SMARTRISK_V2_SETUP.md`, `SMARTRISK_V2_BUILD.md`, `SMARTRISK_V2_DECISIONS.md` in full.
+2. Phase E: Frameworks page full redesign to new mock layout (8 collapsible sections, version stamp, stat cards, live matrix and appetite data, incident escalation section, print capability).
+3. Confirm residual formula with partner.
+4. Confirm custom domain migration on Render to fix Safari and Brave cookie blocking.
+5. Incident onboarding steps addition to existing wizard flow.
+6. Renewal reminder email for lapsed PAID workspaces (separate from trial cleanup, commercial chase flow only, no auto-deletion).
+7. Shareholder agreement follow-up (non-technical, flagged as urgent in session).
+
+---
+
+### Session 22: September 11, 2026 — Report Engine Upgrade, Jakarta Sans, Heat Map, Module Gate
+
+**Completed:**
+
+**New backend files:**
+- `app/services/report_fonts.py`: Plus Jakarta Sans registration helper. Resolves font path relative to `app/static/fonts/plus-jakarta-sans/`. Idempotent `register_fonts()` with clear diagnostic on missing files. `f_regular()`, `f_medium()`, `f_semibold()`, `f_bold()` resolver functions for use in renderers.
+- `app/services/report_facts.py`: Central facts/evidence layer. `ReportFacts` dataclass with `__post_init__` computing all counts, scores, governance, assurance, and residual model state. Guards `allow_trends` (>=2 snapshots), `allow_percentages` (>=5 risks). `build_fact_slice()` produces compact evidence dict for AI. `top_by_residual()` sorts appetite breaches above all others. `build_facts(ctx)` public constructor.
+
+**New migration:**
+- Migration 029: `ALTER TABLE risks ADD COLUMN IF NOT EXISTS linked_decision_at DATE` — enables decision age tracking in the governance block.
+
+**Backend modified files:**
+- `app/models/risk.py`: `linked_decision_at = Column(Date)` added after `linked_decision`.
+- `app/services/report.py`: `RiskRow` extended with `likelihood`, `impact_score`, `severity_raw`, `controls`, `appetite_status`, `linked_decision`, `linked_decision_at`, `financial_exposure`, `control_last_tested`, `control_assertion_source`. `_NEAR_APPETITE_RATIO = 0.80` and `_compute_appetite_status()` added. `AppetiteThreshold` imported and fetched in `_fetch_risks`. `ReportContext` gains `incidents_enabled: bool`. `build_context` fetches tenant modules to derive `incidents_enabled`. `_INCIDENT_SUPPRESSED` and `_TREND_SUPPRESSED` sentinel dicts added. `_allow_trends()` and `_allow_percentages()` guard helpers added. 4 incident compute functions gated by `incidents_enabled`. `compute_exposure_trend` and `compute_residual_risk_trend` gated by `allow_trends`. `compute_incident_stability` half-split trend claim removed. `compute_risk_distribution` percentage narrative gated by `allow_percentages`. `compute_top_risks` sorts by appetite breach then residual. `compute_findings` rebuilt with `assurance_gaps` and `governance_gaps`. `compute_recommendations` rebuilt: no invented owners, `trigger` and `completion_criterion` on every rec, appetite breaches trigger own rec. `compute_methodology` new. `compute_risk_heat_map` new with `_band_index` and `cell_risks` map. `BLOCK_REGISTRY` updated with both new blocks. `get_report_data` wired to `build_facts`, exposes `facts_slice`, `allow_trends`, `allow_percentages`, `incidents_enabled`, `snapshot_count` in meta.
+- `app/services/ai_report.py`: `_EVIDENCE_RULES` constant added. `_guard_rules(fs)` dynamic guard function. `_AI_BLOCKS` removes `recommendations` (now fully deterministic). `_call` appends `_EVIDENCE_RULES` to every system prompt. `_build_prompt` rebuilt: accepts `facts_slice`, prepends `_guard_rules`, all prompts receive `allow_trends` and `allow_percentages`, inline metric calculations removed in favour of fact slice values. `generate_report_narrative` accepts `facts_slice` parameter. `_generate_one` passes it to `_build_prompt`.
+- `app/services/pdf_report.py`: `CondPageBreak` and `KeepTogether` added to platypus imports. `f_regular`, `f_medium`, `f_semibold`, `f_bold` imported from `report_fonts`. `_apply_jakarta_fonts()` migrates `_S` named styles in-place after registration. `register_fonts()` and `_apply_jakarta_fonts()` called at start of `build_pdf`. `_render_suppressed_note()` minimal suppressed block card. `build_pdf` block loop handles suppressed dicts, adds `CondPageBreak(40mm)` and `KeepTogether` on first 3 elements per block. `_kpi_val_paragraph` HTML markup uses `f_bold()` and `f_regular()`. `_kpi_table` inline styles use `f_medium()` and `f_regular()`. `_render_exposure_index` all inline fonts migrated to Jakarta. `_render_executive_dashboard` all inline fonts migrated to Jakarta. Cover page: `Times-Bold` title replaced with `f_bold()`, all inline cover fonts migrated. `_render_findings` adds `assurance_gaps` and `governance_gaps` sections using existing `_section()` helper. `_render_rec_card` adds `trigger` row, `completion_criterion` replaces `outcome`, all inline fonts migrated to Jakarta. `_render_conclusion` body migrated to `f_regular()`. `_render_risk_ownership` high-count cell migrated to `f_bold()`. `_render_methodology` new function (3 sections: evidence basis, residual model, assurance coverage). `_render_risk_heat_map` new function (likelihood × impact grid, band-tinted cells, risk IDs, legend, unplaced note). `_RENDERERS` and `_LABELS` updated with `methodology` and `risk-heat-map`.
+- `app/services/auth.py`: `verify_pin_and_issue_token` wrong-PIN error now includes attempt count ("X attempt(s) remaining before lockout"). 5th wrong attempt message explicitly states lockout. Already-locked message computes actual remaining minutes from `pin_locked_until` timestamp.
+- `app/main.py`: `register_fonts()` called before scheduler starts in lifespan.
+- `app/api/v1/routes/reports.py`: `facts_slice` extracted from `data_result` and passed to `generate_report_narrative`.
+
+**Font files required (manual step, not in repo):**
+- `backend/app/static/fonts/plus-jakarta-sans/PlusJakartaSans-Regular.ttf`
+- `backend/app/static/fonts/plus-jakarta-sans/PlusJakartaSans-Medium.ttf`
+- `backend/app/static/fonts/plus-jakarta-sans/PlusJakartaSans-SemiBold.ttf`
+- `backend/app/static/fonts/plus-jakarta-sans/PlusJakartaSans-Bold.ttf`
+- Download from Google Fonts (OFL licence). Committed to repo. `.gitignore` confirmed safe (no `*.ttf` exclusion).
+
+**Frontend modified files:**
+- `src/types/report.ts`: `BlockKey` union extended with `risk-heat-map` and `methodology`. `BLOCK_LABELS` extended. `FindingsData` extended with `assurance_gaps?` and `governance_gaps?`. `Recommendation` extended with `trigger?` and `completion_criterion?`, `outcome` made optional. `HeatMapCell`, `RiskHeatMapData`, `MethodologyData` interfaces added. `BlockData` union extended.
+- `src/components/reports/BlockSelector.tsx`: Groups restructured. Incident blocks moved from Executive/Visuals/Tables into dedicated `Incidents` group (hidden for risk-only workspaces via existing `hasIncident` filter). `Risk Heat Map` added to Visuals. `Methodology` added to Final Layer before Findings. `Executive Commentary` removed. Tables renamed to Intelligence.
+- `src/components/reports/ReportPreview.tsx`: `RiskHeatMapData` and `MethodologyData` imported. `FindingsBlock` renders `assurance_gaps` (amber) and `governance_gaps` (red) via `FindingSection`. `RiskHeatMapBlock` new module-scope component (placement summary, unplaced warning, PDF note). `MetaRow` new module-scope helper. `MethodologyBlock` new module-scope component (8 key-value rows with amber warning on false flags). Switch cases added for `risk-heat-map` and `methodology`.
+- `src/pages/VerifyPin.tsx`: `isError` state added. `.err` class applied to all pin boxes on wrong entry. `isError` cleared on next keypress. `setIsError(true)` in catch block.
+- `src/pages/TriageQueue.tsx`: `useLookups` imported and called. Owner field in promote form changed from `<input>` to `<select>` populated from `lookups?.risk_owner`, matching `RiskForm` pattern. Fallback option preserves any pre-filled value not in the lookup list.
+- `src/index.css`: `.pin-box.err` added (red border, red glow, light red background).
+- `src/services/api.ts`: `isPinVerifyCall` guard added. A 401 from `/auth/verify-pin` now bypasses the token refresh entirely and propagates the backend error message directly to the page handler. Prevents wrong-PIN 401 from triggering token refresh and redirecting to `/workspaces`.
+
+**Status:** Complete. No incomplete items.
+
+**Files changed this session (14):**
+
+New: `services_report_fonts.py`, `services_report_facts.py`, `029_add_linked_decision_at_to_risks.py`
+
+Backend: `models_risk.py`, `services_report.py`, `services_ai_report.py`, `services_pdf_report.py`, `services_auth.py`, `app_main.py`, `routes_reports.py`
+
+Frontend: `types_report.ts`, `reports_BlockSelector.tsx`, `reports_ReportPreview.tsx`, `pages_VerifyPin.tsx`, `pages_TriageQueue.tsx`, `src_index.css`, `services_api.ts`
+
+**Next session starts with:**
+
+1. Read `SMARTRISK_V2_SETUP.md`, `SMARTRISK_V2_DECISIONS.md`, then this file.
+2. Generate a full PDF with all blocks selected and visually inspect every page against the checklist in CLAUDE_REPORT_FIX_IMPLEMENTATION_GUIDE.md Section 72.
+3. Run existing backend tests, confirm no regressions.
+4. Visual upgrade: executive dashboard (Step 18), cover page (Step 19), tables/charts/distribution (Step 20), page breaks and section composition (Step 22).
 
 ---
 

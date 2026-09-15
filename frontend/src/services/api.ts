@@ -49,10 +49,18 @@ api.interceptors.response.use(
   async (error) => {
     const status = error.response?.status;
     const originalRequest = error.config as InternalAxiosRequestConfig & { _retried?: boolean };
-    const isAuthRoute = ['/login', '/register', '/forgot-password', '/reset-password'].includes(window.location.pathname);
-    const isRefreshCall = originalRequest?.url?.includes('/auth/refresh');
+    const isAuthRoute    = ['/login', '/register', '/forgot-password', '/reset-password'].includes(window.location.pathname);
+    const isRefreshCall  = originalRequest?.url?.includes('/auth/refresh');
+    const isPinVerifyCall = originalRequest?.url?.includes('/auth/verify-pin');
 
     if (status === 401 && !isAuthRoute) {
+      // A 401 from verify-pin means wrong or locked PIN, never an expired token.
+      // Skip refresh entirely and let the error propagate to the page handler.
+      if (isPinVerifyCall) {
+        const msg = error.response?.data?.error;
+        if (msg) return Promise.reject(new Error(msg));
+        return Promise.reject(error);
+      }
       // If the refresh endpoint itself returned 401, the refresh token is
       // expired or invalid. Log out immediately, no retry.
       if (isRefreshCall || originalRequest._retried) {

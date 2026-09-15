@@ -52,6 +52,24 @@ async def submit_incident(
     return await ext_svc.submit_incident(db, tenant_id, payload)
 
 
+@router.get("/external/brand/{tenant_id}")
+async def get_workspace_brand(tenant_id: str, db: AsyncSession = Depends(get_db)):
+    """Public endpoint: returns org name and logo for external form headers."""
+    from uuid import UUID as _UUID
+    from app.models.tenant import Tenant
+    try:
+        tid = _UUID(tenant_id)
+    except ValueError:
+        return {"data": {"org_name": "", "logo_url": None}, "error": None, "meta": {}}
+    tenant = await db.get(Tenant, tid)
+    if not tenant:
+        return {"data": {"org_name": "", "logo_url": None}, "error": None, "meta": {}}
+    ws: dict = dict(tenant.workspace_settings or {})  # type: ignore[arg-type]
+    org = ws.get("organization") or str(tenant.name or "") or ""
+    logo = str(tenant.logo_url) if tenant.logo_url else None  # type: ignore[union-attr]
+    return {"data": {"org_name": org, "logo_url": logo}, "error": None, "meta": {}}
+
+
 @router.get("/external/lookups/{tenant_id}")
 @limiter.limit("30/minute")
 async def get_public_lookups(

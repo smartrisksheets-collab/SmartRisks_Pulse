@@ -27,7 +27,7 @@ export default function EditRiskModal({ open, risk, onClose, onSubmit }: Props) 
     impact_score:         risk.impact_score ?? 3,
     treatment:            risk.treatment ?? 'Mitigate',
     controls:             risk.controls ?? '',
-    control_effectiveness: risk.control_effectiveness ?? 0,
+    control_effectiveness: risk.control_effectiveness ?? null,
     mitigation_plan:      risk.mitigation_plan ?? '',
     comments:             risk.comments ?? '',
     owner_email:          risk.owner_email ?? '',

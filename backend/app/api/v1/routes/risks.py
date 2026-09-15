@@ -32,13 +32,14 @@ async def list_risks(
     owner: str | None     = Query(None),
     search: str | None     = Query(None),
     undecided: bool | None = Query(None),
+    appetite:  str | None  = Query(None),
     db: AsyncSession   = Depends(get_db),
     claims: dict       = Depends(require_module("risk")),
 ):
     tenant_id = UUID(claims["active_tenant_id"])
     result = await risk_service.list_risks(
         db, tenant_id, page, page_size,
-        risk_id, category, level, treatment, owner, search, undecided,
+        risk_id, category, level, treatment, owner, search, undecided, appetite,
     )
     return {
         "data": result.items,
