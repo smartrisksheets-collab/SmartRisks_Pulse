@@ -124,7 +124,7 @@ export default function RiskTable({ risks, loading, onView, onEdit, flashId, aiF
                 <td>
                   <span style={{ fontWeight: 900, color: '#01b88e', fontSize: 13 }}>{r.id}</span>
                   <br />
-                  {(r.control_effectiveness === null || r.control_effectiveness === 0) && (
+                  {(r.control_effectiveness === null) && (
                     <span
                       role="button"
                       onClick={(e) => { e.stopPropagation(); onEdit(r); }}
