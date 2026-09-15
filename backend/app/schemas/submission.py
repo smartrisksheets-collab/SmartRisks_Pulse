@@ -37,6 +37,8 @@ class SubmissionTokenResponse(BaseModel):
 class TokenResolveResponse(BaseModel):
     label:      str
     department: str
+    org_name:   str
+    logo_url:   str | None
 
 
 class PublicSubmitRequest(BaseModel):

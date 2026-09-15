@@ -5,7 +5,7 @@ import { useParams } from 'react-router-dom';
 
 const API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000';
 
-interface TokenInfo { label: string; department: string; }
+interface TokenInfo { label: string; department: string; org_name: string; logo_url: string | null; }
 interface SubmitResult { reference: string; message: string; }
 
 function CheckIcon() {
@@ -399,11 +399,13 @@ export default function ExternalSubmit() {
 function Brandbar({ tokenInfo }: { tokenInfo: TokenInfo | null }) {
   return (
     <div className="sf-brandbar">
-      <div className="sf-mark">
-        <ShieldIcon />
-      </div>
+      {tokenInfo?.logo_url ? (
+        <img src={tokenInfo.logo_url} alt="logo" style={{ height: 34, width: 'auto', borderRadius: 6, flexShrink: 0 }} />
+      ) : (
+        <div className="sf-mark"><ShieldIcon /></div>
+      )}
       <div>
-        <strong className="sf-brand-name">{tokenInfo?.label ?? 'SmartRisk Pulse'}</strong>
+        <strong className="sf-brand-name">{tokenInfo?.org_name || tokenInfo?.label || 'SmartRisk Pulse'}</strong>
         <span className="sf-brand-sub">Risk &amp; Compliance</span>
       </div>
     </div>

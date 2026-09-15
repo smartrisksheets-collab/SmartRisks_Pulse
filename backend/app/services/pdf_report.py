@@ -498,10 +498,11 @@ def _render_exposure_index(data: dict, ai_text: str | None) -> list:
 
 
 def _render_risk_snapshot(data: dict, ai_text: str | None) -> list:
+    _res_max = data.get("residual_max", 25)
     kpis = [
-        {"label": "Total Risks",     "value": data.get("total", 0),        "color": "#1F2854"},
-        {"label": "High / Critical", "value": data.get("high_count", 0),   "color": "#ef4444"},
-        {"label": "Avg Residual",    "value": data.get("avg_residual", 0),  "color": "#f59e0b"},
+        {"label": "Total Risks",     "value": data.get("total", 0),       "color": "#1F2854"},
+        {"label": "High / Critical", "value": data.get("high_count", 0),  "color": "#ef4444"},
+        {"label": "Avg Residual",    "value": data.get("avg_residual", 0), "unit": f"/{_res_max}", "color": "#f59e0b"},
     ]
     out = _block_header("Risk Snapshot")
     out.append(_kpi_table(kpis, col_width=55 * mm))
@@ -1402,7 +1403,7 @@ def _render_executive_dashboard(data: dict, ai_text: str | None) -> list:
         out.append(posture_row)
         out.append(Spacer(1, 2 * mm))
 
-    heading = (data.get("heading_text") or "What Leadership Needs To Know").upper()
+    heading = (data.get("heading_text") or "Highlights").upper()
     out.append(Paragraph(heading, ParagraphStyle(
         "edhead", fontName=f_semibold(), fontSize=8,
         textColor=NAVY, spaceAfter=6, spaceBefore=4,
@@ -1900,7 +1901,6 @@ _RENDERERS: dict[str, Any] = {
     "risk-ownership":       _render_risk_ownership,
     "incident-analytics":   _render_incident_analytics,
     "executive-dashboard":  _render_executive_dashboard,
-    "key-risk-movements":   _render_key_risk_movements,
     "methodology":          _render_methodology,
     "risk-heat-map":        _render_risk_heat_map,
 }
@@ -2193,28 +2193,50 @@ def build_pdf(
                                   ("RIGHTPADDING",(0,0),(-1,-1),0),
                                   ("ALIGN",   (1,0),(1,-1), "RIGHT")]))],
 
-                [Spacer(1, 48 * mm)],
+                [Spacer(1, 44 * mm)],
 
-                # Eyebrow
+                # ── Report identification block ──────────────────────────────────
+                # Explicit spacer rows are used here because this content lives
+                # inside a Table. Paragraph spaceAfter alone does not create
+                # enough visual separation between the rows.
+
                 [Paragraph("RISK MANAGEMENT REPORT", ParagraphStyle(
-                    "ey", fontName=f_medium(), fontSize=8, textColor=NAVY,
-                    wordWrap="LTR", spaceAfter=6,
+                    "ey",
+                    fontName=f_medium(),
+                    fontSize=8,
+                    textColor=NAVY,
+                    leading=10,
                 ))],
 
-                # Title — large
+                [Spacer(1, 4 * mm)],
+
                 [Paragraph(title, ParagraphStyle(
-                    "ctitle", fontName=f_bold(), fontSize=26,
-                    textColor=NAVY, leading=32, spaceAfter=10,
+                    "ctitle",
+                    fontName=f_bold(),
+                    fontSize=20,
+                    textColor=NAVY,
+                    leading=27,
                 ))],
 
-                # Period
-                [Paragraph(f"Reporting period \u00b7 {period}", ParagraphStyle(
-                    "cper", fontName=f_regular(), fontSize=11,
-                    textColor=colors.HexColor("#5a6b8c"), spaceAfter=14,
+                [Spacer(1, 2.5 * mm)],
+
+                [Paragraph(f"Reporting period · {period}", ParagraphStyle(
+                    "cper",
+                    fontName=f_regular(),
+                    fontSize=11,
+                    leading=14,
+                    textColor=colors.HexColor("#5a6b8c"),
                 ))],
 
-                # Navy rule
-                [HRFlowable(width=52 * mm, thickness=3, color=NAVY, spaceAfter=14)],
+                [Spacer(1, 3.5 * mm)],
+
+                [HRFlowable(
+                    width=52 * mm,
+                    thickness=3,
+                    color=NAVY,
+                )],
+
+                [Spacer(1, 5 * mm)],
 
                 [Spacer(1, _meta_gap)],
 

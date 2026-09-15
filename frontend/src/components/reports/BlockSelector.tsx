@@ -23,7 +23,6 @@ const GROUPS: Group[] = [
       { label: 'Risk Health',          key: 'exposure-index'       },
       { label: 'Risk Snapshot',        key: 'risk-snapshot'        },
       { label: 'Key Risk Changes',     key: 'key-risk-changes'     },
-      { label: 'Key Risk Movements',   key: 'key-risk-movements'   },
       { label: 'Risk Ownership',       key: 'risk-ownership'       },
       { label: 'Executive Summary',    key: 'ai-exec-summary'      },
     ],

@@ -22,7 +22,6 @@ export type BlockKey =
   | 'risk-ownership'
   | 'incident-analytics'
   | 'executive-dashboard'
-  | 'key-risk-movements'
   | 'risk-heat-map'
   | 'methodology';
 
@@ -200,17 +199,6 @@ export interface ExecutiveDashboardData {
   heading_text?: string;
 }
 
-export interface KeyRiskMovementsData {
-  has_data: boolean;
-  escalations: unknown[];
-  reductions: unknown[];
-  new_risks: unknown[];
-  removed_risks: unknown[];
-  prev_month_label: string;
-  curr_month_label: string;
-  narrative: string;
-}
-
 export interface HeatMapCell {
   likelihood: number;
   impact:     number;
@@ -261,7 +249,6 @@ export type BlockData =
   | RiskOwnershipData
   | IncidentAnalyticsData
   | ExecutiveDashboardData
-  | KeyRiskMovementsData
   | RiskHeatMapData
   | MethodologyData;
 
@@ -356,7 +343,6 @@ export const BLOCK_LABELS: Record<BlockKey, string> = {
   'risk-ownership':       'Risk Ownership',
   'incident-analytics':   'Incident Analytics',
   'executive-dashboard':  'Executive Dashboard',
-  'key-risk-movements':   'Key Risk Movements',
   'risk-heat-map':        'Risk Heat Map',
   'methodology':          'Methodology',
 };

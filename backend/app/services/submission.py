@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.exceptions import ResourceNotFoundError
 from app.models.account import Account
+from app.models.tenant import Tenant
 from app.models.incident import Incident
 from app.models.rate_limit_counter import RateLimitCounter
 from app.models.risk import Risk
@@ -251,13 +252,19 @@ async def resolve_token_for_form(
     db: AsyncSession,
     token_str: str,
 ) -> TokenResolveResponse:
-    """Returns label and department for form display. Same neutral error for all failure cases."""
+    """Returns label, department, org_name, and logo_url for form display."""
     row = await _get_token_record(db, token_str)
     if not row or not _token_is_active(row):
         raise ResourceNotFoundError("inactive")
+    tenant = await db.get(Tenant, row.workspace_id)
+    ws: dict = dict(tenant.workspace_settings or {}) if tenant else {}  # type: ignore[union-attr]
+    org_name = ws.get("organization") or (str(tenant.name) if tenant else "") or "the organization"
+    logo_url = str(tenant.logo_url) if tenant and tenant.logo_url else None  # type: ignore[union-attr]
     return TokenResolveResponse(
         label=str(row.label or ''),
         department=str(row.department or ''),
+        org_name=org_name,
+        logo_url=logo_url,
     )
 
 

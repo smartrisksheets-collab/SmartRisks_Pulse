@@ -35,7 +35,7 @@ OVERDUE_DAYS      = 30    # decisions older than this are flagged overdue
 def _pulse_residual(r: RiskRow) -> float:
     """Residual under the Pulse multiplicative engine.
     Returns full severity when control_effectiveness is 0 (unrated)."""
-    if r.control_effectiveness <= 0 or r.severity_raw <= 0:
+    if r.control_effectiveness is None or r.control_effectiveness <= 0 or r.severity_raw <= 0:
         return r.severity_raw
     ce_pct = CONTROL_EFFECTIVENESS_PCT.get(r.control_effectiveness, 0.0)
     return round(r.severity_raw * (1.0 - ce_pct), 1)
@@ -95,7 +95,7 @@ class ReportFacts:
         # ── Scores ──────────────────────────────────────────────────────────
         residuals  = [r.residual      for r in risks if r.residual > 0]
         severities = [r.severity_raw  for r in risks if r.severity_raw > 0]
-        ctrl_vals  = [r.control_effectiveness for r in risks if r.control_effectiveness > 0]
+        ctrl_vals  = [r.control_effectiveness for r in risks if r.control_effectiveness is not None]
         pulse_vals = [_pulse_residual(r) for r in risks if r.severity_raw > 0]
 
         avg_residual   = round(sum(residuals)  / len(residuals),  1) if residuals  else 0.0
@@ -103,7 +103,10 @@ class ReportFacts:
         avg_ctrl_eff   = round(sum(ctrl_vals)  / len(ctrl_vals),  1) if ctrl_vals  else 0.0
         avg_pulse      = round(sum(pulse_vals) / len(pulse_vals), 1) if pulse_vals else 0.0
         ctrl_strength  = round(avg_ctrl_eff / 5 * 100) if avg_ctrl_eff else 0
-        exposure_index = min(100, round((avg_residual / 25) * 100))
+        mc = self.ctx.matrix_config
+        _l = int(mc.likelihood_scale) if mc else 5  # type: ignore[arg-type]
+        _i = int(mc.impact_scale)     if mc else 5  # type: ignore[arg-type]
+        exposure_index = min(100, round((avg_residual / (_l * _i)) * 100))
         risk_health    = max(0, 100 - exposure_index)
 
         self.scores = {

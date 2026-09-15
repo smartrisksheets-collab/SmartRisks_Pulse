@@ -39,11 +39,15 @@ def _parse_date(val: str | None) -> date | None:
 
 
 async def _get_tenant_name(db: AsyncSession, tenant_id: UUID) -> tuple[str, str]:
-    """Returns (org_name, industry) from the Tenant row."""
+    """Returns (org_name, industry) from the Tenant row.
+    Prefers workspace_settings.organization over the workspace name field."""
     result = await db.get(Tenant, tenant_id)
-    name     = (result.name     if result else "") or "the organization"  # type: ignore[union-attr]
-    industry = (result.industry if result else "") or ""                  # type: ignore[union-attr]
-    return name, industry
+    if not result:
+        return "the organization", ""
+    ws: dict = dict(result.workspace_settings or {})  # type: ignore[arg-type]
+    org      = ws.get("organization") or str(result.name or "") or "the organization"
+    industry = str(result.industry or "")              # type: ignore[union-attr]
+    return org, industry
 
 
 async def _fetch_logo_bytes(db: AsyncSession, tenant_id: UUID) -> bytes | None:

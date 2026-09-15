@@ -3,7 +3,7 @@
 **Product:** SmartRisk Pulse v2
 **Stack:** FastAPI + React + Supabase + Render + Vercel
 **Setup document:** SMARTRISK_V2_SETUP.md
-**Last updated:** August 22, 2026
+**Last updated:** September 11, 2026
  
 ---
  
@@ -15,9 +15,9 @@ At the end of every session Claude outputs a fresh version of this file with all
  
 ---
  
-**Phase:** Admin Panel build complete (backend + frontend). Stream B staging QA deferred.
-**Status:** Session 21, September 8, 2026: Admin Panel fully built. Backend routes live. Admin React app scaffolded and all six pages written. Light theme applied. See session log below.
-**Next action:** Begin next session by reading SMARTRISK_V2_SETUP.md, SMARTRISK_V2_DECISIONS.md, then this file. First task: run seed_admin.py on staging to create both super admin accounts. Second task: wire admin app to staging backend and QA all six pages end to end. Third task: address any bugs found. Stream B staging QA (public form, submissions inbox, token manager, promotion flow) resumes after admin panel QA is complete.
+**Phase:** Report engine upgrade complete. Visual polish, testing, and final PDF inspection remain.
+**Status:** Session 22, September 11, 2026: Report engine rebuilt with central facts layer, Jakarta Sans font, risk heat map, module gate, AI prohibition rules, and frontend block selector restructured. See session log below.
+**Next action:** Begin next session by reading SMARTRISK_V2_SETUP.md, SMARTRISK_V2_DECISIONS.md, then this file. First task: generate a full PDF with all new blocks and visually inspect every page (cover, dashboard, heat map, findings, recommendations, methodology, conclusion). Second task: run existing backend tests and confirm no regressions. Third task: visual upgrade of executive dashboard, cover page, tables, charts, and distribution block (Steps 18-22 from CLAUDE_REPORT_FIX_IMPLEMENTATION_GUIDE.md).
  
 ---
 
@@ -2774,6 +2774,61 @@ Frontend admin: `admin_src_index.css`, `admin_src_components_layout_Shell.tsx`, 
 5. Incident onboarding steps addition to existing wizard flow.
 6. Renewal reminder email for lapsed PAID workspaces (separate from trial cleanup, commercial chase flow only, no auto-deletion).
 7. Shareholder agreement follow-up (non-technical, flagged as urgent in session).
+
+---
+
+### Session 22: September 11, 2026 — Report Engine Upgrade, Jakarta Sans, Heat Map, Module Gate
+
+**Completed:**
+
+**New backend files:**
+- `app/services/report_fonts.py`: Plus Jakarta Sans registration helper. Resolves font path relative to `app/static/fonts/plus-jakarta-sans/`. Idempotent `register_fonts()` with clear diagnostic on missing files. `f_regular()`, `f_medium()`, `f_semibold()`, `f_bold()` resolver functions for use in renderers.
+- `app/services/report_facts.py`: Central facts/evidence layer. `ReportFacts` dataclass with `__post_init__` computing all counts, scores, governance, assurance, and residual model state. Guards `allow_trends` (>=2 snapshots), `allow_percentages` (>=5 risks). `build_fact_slice()` produces compact evidence dict for AI. `top_by_residual()` sorts appetite breaches above all others. `build_facts(ctx)` public constructor.
+
+**New migration:**
+- Migration 029: `ALTER TABLE risks ADD COLUMN IF NOT EXISTS linked_decision_at DATE` — enables decision age tracking in the governance block.
+
+**Backend modified files:**
+- `app/models/risk.py`: `linked_decision_at = Column(Date)` added after `linked_decision`.
+- `app/services/report.py`: `RiskRow` extended with `likelihood`, `impact_score`, `severity_raw`, `controls`, `appetite_status`, `linked_decision`, `linked_decision_at`, `financial_exposure`, `control_last_tested`, `control_assertion_source`. `_NEAR_APPETITE_RATIO = 0.80` and `_compute_appetite_status()` added. `AppetiteThreshold` imported and fetched in `_fetch_risks`. `ReportContext` gains `incidents_enabled: bool`. `build_context` fetches tenant modules to derive `incidents_enabled`. `_INCIDENT_SUPPRESSED` and `_TREND_SUPPRESSED` sentinel dicts added. `_allow_trends()` and `_allow_percentages()` guard helpers added. 4 incident compute functions gated by `incidents_enabled`. `compute_exposure_trend` and `compute_residual_risk_trend` gated by `allow_trends`. `compute_incident_stability` half-split trend claim removed. `compute_risk_distribution` percentage narrative gated by `allow_percentages`. `compute_top_risks` sorts by appetite breach then residual. `compute_findings` rebuilt with `assurance_gaps` and `governance_gaps`. `compute_recommendations` rebuilt: no invented owners, `trigger` and `completion_criterion` on every rec, appetite breaches trigger own rec. `compute_methodology` new. `compute_risk_heat_map` new with `_band_index` and `cell_risks` map. `BLOCK_REGISTRY` updated with both new blocks. `get_report_data` wired to `build_facts`, exposes `facts_slice`, `allow_trends`, `allow_percentages`, `incidents_enabled`, `snapshot_count` in meta.
+- `app/services/ai_report.py`: `_EVIDENCE_RULES` constant added. `_guard_rules(fs)` dynamic guard function. `_AI_BLOCKS` removes `recommendations` (now fully deterministic). `_call` appends `_EVIDENCE_RULES` to every system prompt. `_build_prompt` rebuilt: accepts `facts_slice`, prepends `_guard_rules`, all prompts receive `allow_trends` and `allow_percentages`, inline metric calculations removed in favour of fact slice values. `generate_report_narrative` accepts `facts_slice` parameter. `_generate_one` passes it to `_build_prompt`.
+- `app/services/pdf_report.py`: `CondPageBreak` and `KeepTogether` added to platypus imports. `f_regular`, `f_medium`, `f_semibold`, `f_bold` imported from `report_fonts`. `_apply_jakarta_fonts()` migrates `_S` named styles in-place after registration. `register_fonts()` and `_apply_jakarta_fonts()` called at start of `build_pdf`. `_render_suppressed_note()` minimal suppressed block card. `build_pdf` block loop handles suppressed dicts, adds `CondPageBreak(40mm)` and `KeepTogether` on first 3 elements per block. `_kpi_val_paragraph` HTML markup uses `f_bold()` and `f_regular()`. `_kpi_table` inline styles use `f_medium()` and `f_regular()`. `_render_exposure_index` all inline fonts migrated to Jakarta. `_render_executive_dashboard` all inline fonts migrated to Jakarta. Cover page: `Times-Bold` title replaced with `f_bold()`, all inline cover fonts migrated. `_render_findings` adds `assurance_gaps` and `governance_gaps` sections using existing `_section()` helper. `_render_rec_card` adds `trigger` row, `completion_criterion` replaces `outcome`, all inline fonts migrated to Jakarta. `_render_conclusion` body migrated to `f_regular()`. `_render_risk_ownership` high-count cell migrated to `f_bold()`. `_render_methodology` new function (3 sections: evidence basis, residual model, assurance coverage). `_render_risk_heat_map` new function (likelihood × impact grid, band-tinted cells, risk IDs, legend, unplaced note). `_RENDERERS` and `_LABELS` updated with `methodology` and `risk-heat-map`.
+- `app/services/auth.py`: `verify_pin_and_issue_token` wrong-PIN error now includes attempt count ("X attempt(s) remaining before lockout"). 5th wrong attempt message explicitly states lockout. Already-locked message computes actual remaining minutes from `pin_locked_until` timestamp.
+- `app/main.py`: `register_fonts()` called before scheduler starts in lifespan.
+- `app/api/v1/routes/reports.py`: `facts_slice` extracted from `data_result` and passed to `generate_report_narrative`.
+
+**Font files required (manual step, not in repo):**
+- `backend/app/static/fonts/plus-jakarta-sans/PlusJakartaSans-Regular.ttf`
+- `backend/app/static/fonts/plus-jakarta-sans/PlusJakartaSans-Medium.ttf`
+- `backend/app/static/fonts/plus-jakarta-sans/PlusJakartaSans-SemiBold.ttf`
+- `backend/app/static/fonts/plus-jakarta-sans/PlusJakartaSans-Bold.ttf`
+- Download from Google Fonts (OFL licence). Committed to repo. `.gitignore` confirmed safe (no `*.ttf` exclusion).
+
+**Frontend modified files:**
+- `src/types/report.ts`: `BlockKey` union extended with `risk-heat-map` and `methodology`. `BLOCK_LABELS` extended. `FindingsData` extended with `assurance_gaps?` and `governance_gaps?`. `Recommendation` extended with `trigger?` and `completion_criterion?`, `outcome` made optional. `HeatMapCell`, `RiskHeatMapData`, `MethodologyData` interfaces added. `BlockData` union extended.
+- `src/components/reports/BlockSelector.tsx`: Groups restructured. Incident blocks moved from Executive/Visuals/Tables into dedicated `Incidents` group (hidden for risk-only workspaces via existing `hasIncident` filter). `Risk Heat Map` added to Visuals. `Methodology` added to Final Layer before Findings. `Executive Commentary` removed. Tables renamed to Intelligence.
+- `src/components/reports/ReportPreview.tsx`: `RiskHeatMapData` and `MethodologyData` imported. `FindingsBlock` renders `assurance_gaps` (amber) and `governance_gaps` (red) via `FindingSection`. `RiskHeatMapBlock` new module-scope component (placement summary, unplaced warning, PDF note). `MetaRow` new module-scope helper. `MethodologyBlock` new module-scope component (8 key-value rows with amber warning on false flags). Switch cases added for `risk-heat-map` and `methodology`.
+- `src/pages/VerifyPin.tsx`: `isError` state added. `.err` class applied to all pin boxes on wrong entry. `isError` cleared on next keypress. `setIsError(true)` in catch block.
+- `src/pages/TriageQueue.tsx`: `useLookups` imported and called. Owner field in promote form changed from `<input>` to `<select>` populated from `lookups?.risk_owner`, matching `RiskForm` pattern. Fallback option preserves any pre-filled value not in the lookup list.
+- `src/index.css`: `.pin-box.err` added (red border, red glow, light red background).
+- `src/services/api.ts`: `isPinVerifyCall` guard added. A 401 from `/auth/verify-pin` now bypasses the token refresh entirely and propagates the backend error message directly to the page handler. Prevents wrong-PIN 401 from triggering token refresh and redirecting to `/workspaces`.
+
+**Status:** Complete. No incomplete items.
+
+**Files changed this session (14):**
+
+New: `services_report_fonts.py`, `services_report_facts.py`, `029_add_linked_decision_at_to_risks.py`
+
+Backend: `models_risk.py`, `services_report.py`, `services_ai_report.py`, `services_pdf_report.py`, `services_auth.py`, `app_main.py`, `routes_reports.py`
+
+Frontend: `types_report.ts`, `reports_BlockSelector.tsx`, `reports_ReportPreview.tsx`, `pages_VerifyPin.tsx`, `pages_TriageQueue.tsx`, `src_index.css`, `services_api.ts`
+
+**Next session starts with:**
+
+1. Read `SMARTRISK_V2_SETUP.md`, `SMARTRISK_V2_DECISIONS.md`, then this file.
+2. Generate a full PDF with all blocks selected and visually inspect every page against the checklist in CLAUDE_REPORT_FIX_IMPLEMENTATION_GUIDE.md Section 72.
+3. Run existing backend tests, confirm no regressions.
+4. Visual upgrade: executive dashboard (Step 18), cover page (Step 19), tables/charts/distribution (Step 20), page breaks and section composition (Step 22).
 
 ---
 

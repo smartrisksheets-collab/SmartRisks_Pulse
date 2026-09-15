@@ -58,6 +58,14 @@ def _band_labels(mc: MatrixConfig | None) -> list[str]:
     return labels[:count]
 
 
+def _residual_max(mc: MatrixConfig | None) -> int:
+    """Max possible residual score for this workspace's matrix.
+    Defaults to 25 (5x5) when matrix config is absent."""
+    if mc is None:
+        return 25
+    return int(mc.likelihood_scale) * int(mc.impact_scale)  # type: ignore[arg-type]
+
+
 def _elevated_phrase(mc: MatrixConfig | None) -> str:
     """Human phrase naming the bands counted as elevated, e.g. 'High or Critical'.
 
@@ -156,7 +164,7 @@ class RiskRow:
     residual:         float
     movement:         str
     score_delta:           float
-    control_effectiveness: int
+    control_effectiveness: int | None
     logged_at:             date | None
     last_reviewed_at:      date | None
     # ── Scoring inputs (needed by facts layer for Pulse engine) ───────────────
@@ -230,7 +238,7 @@ async def _fetch_risks(db: AsyncSession, tenant_id: UUID) -> list[RiskRow]:
             residual=_residual,
             movement=str(r.movement or "Stable"),
             score_delta=_to_float(r.score_delta),                         # type: ignore[arg-type]
-            control_effectiveness=int(r.control_effectiveness or 0),      # type: ignore[arg-type]
+            control_effectiveness=(int(r.control_effectiveness) if r.control_effectiveness is not None else None),  # type: ignore[arg-type]      # type: ignore[arg-type]
             logged_at=_parse_date(r.logged_at),                           # type: ignore[arg-type]
             last_reviewed_at=_parse_date(r.last_reviewed_at),             # type: ignore[arg-type]
             # scoring inputs
@@ -402,7 +410,7 @@ def compute_exposure_index(ctx: ReportContext) -> dict:
 
     residuals = [r.residual for r in risks if r.residual > 0]
     avg = sum(residuals) / len(residuals) if residuals else 0.0
-    score = min(100, round((avg / 25) * 100))
+    score = min(100, round((avg / _residual_max(ctx.matrix_config)) * 100))
 
     label = (
         "Critical" if score >= 75 else
@@ -467,15 +475,19 @@ def compute_risk_snapshot(ctx: ReportContext) -> dict:
     _mc_snap = ctx.matrix_config
     _low_lbl = str(_mc_snap.band_1_label or "Low") if _mc_snap else "Low"
     _mid_lbl = str(_mc_snap.band_2_label or "Medium") if _mc_snap else "Medium"
+    _l_scale = int(_mc_snap.likelihood_scale) if _mc_snap else 5  # type: ignore[arg-type]
+    _i_scale = int(_mc_snap.impact_scale)     if _mc_snap else 5  # type: ignore[arg-type]
+    residual_max = _l_scale * _i_scale
     narrative = (
         f"A total of {len(risks)} risks are currently being tracked across the organization. "
         f"This includes {high_count} elevated, {med} {_mid_lbl.lower()}-risk, "
         f"and {low} {_low_lbl.lower()}-risk items. "
-        f"The distribution reflects a {dominant} risk profile, with concentration in {top_cat}."
+        f"Concentration is highest in {top_cat}."
     )
     return {
         "total": len(risks), "high_count": high_count,
-        "avg_residual": avg_residual, "by_treatment": by_treatment,
+        "avg_residual": avg_residual, "residual_max": residual_max,
+        "by_treatment": by_treatment,
         "by_level": by_level, "narrative": narrative,
     }
 
@@ -608,7 +620,7 @@ def compute_exposure_trend(ctx: ReportContext) -> dict:
         slice_ = [r for r in ctx.all_risks if r.logged_at is None or r.logged_at <= b["to"]]
         residuals = [r.residual for r in slice_ if r.residual > 0]
         avg = sum(residuals) / len(residuals) if residuals else 0.0
-        score = min(100, round((avg / 25) * 100))
+        score = min(100, round((avg / _residual_max(ctx.matrix_config)) * 100))
         points.append({"label": b["label"], "score": score})
 
     first = points[0]["score"] if points else 0
@@ -745,29 +757,36 @@ def compute_incident_trend(ctx: ReportContext) -> dict:
 
 
 def compute_top_risks(ctx: ReportContext) -> dict:
+    mc   = ctx.matrix_config
+    bc   = int(mc.band_count) if mc else 5  # type: ignore[arg-type]
+    # 3-band: show top 1 band only. 4 or 5-band: show top 2 bands.
+    top_n     = 1 if bc <= 3 else 2
+    threshold = bc - top_n + 1          # 5-band->4, 4-band->3, 3-band->3
+
     _appetite_order = {"Exceeds": 0, "Near": 1, "Within": 2, None: 3}
+    filtered = [r for r in ctx.all_risks if r.level_index >= threshold]
     risks = sorted(
-        ctx.all_risks,
+        filtered,
         key=lambda r: (_appetite_order.get(r.appetite_status, 3), -r.level_index, -r.residual),
     )[:10]
     return {
         "risks": [
             {
-                "id":             r.id,
-                "category":       r.category,
-                "desc":           r.desc[:120],
-                "owner":          r.owner or None,
-                "level":          r.level,
-                "level_index":    r.level_index,
-                "residual":       round(r.residual),
-                "treatment":      r.treatment,
-                "movement":       r.movement,
-                "score_delta":    r.score_delta,
+                "id":              r.id,
+                "category":        r.category,
+                "desc":            r.desc[:120],
+                "owner":           r.owner or None,
+                "level":           r.level,
+                "level_index":     r.level_index,
+                "residual":        round(r.residual),
+                "treatment":       r.treatment,
+                "movement":        r.movement,
+                "score_delta":     r.score_delta,
                 "appetite_status": r.appetite_status,
             }
             for r in risks
         ],
-        "intro": "The following represent the highest-ranked risks by appetite status, then severity.",
+        "intro": "The following represent the highest-priority risks requiring immediate attention.",
     }
 
 
@@ -1265,7 +1284,7 @@ def compute_executive_dashboard(ctx: ReportContext) -> dict:
     if len(ctx.snapshots) >= 2:
         prev_snap    = ctx.snapshots[-2]
         prev_avg_res  = _to_float(prev_snap.avg_residual)  # type: ignore[arg-type]
-        prev_exposure = min(100, round((prev_avg_res / 25) * 100))
+        prev_exposure = min(100, round((prev_avg_res / _residual_max(ctx.matrix_config)) * 100))
         _hrc          = prev_snap.high_risk_count
         prev_high     = int(_hrc) if _hrc is not None else None  # type: ignore[arg-type]
         has_snapshot  = True
@@ -1294,7 +1313,7 @@ def compute_executive_dashboard(ctx: ReportContext) -> dict:
     # GAS equivalent: ctrlEffToNum_ in DashboardService.gs, which normalises
     # with (n / max) * 100 against its own 0-100 lookup scale.
     # Risks with 0 (unrated) are excluded so they do not drag the average down.
-    _ctrl_vals     = [r.control_effectiveness for r in risks if r.control_effectiveness > 0]
+    _ctrl_vals     = [r.control_effectiveness for r in risks if r.control_effectiveness is not None]
     _ctrl_strength = round(sum(_ctrl_vals) / len(_ctrl_vals) * 20) if _ctrl_vals else 0
     _ctrl_color    = (
         "#10b981" if _ctrl_strength >= 75 else
@@ -1308,7 +1327,7 @@ def compute_executive_dashboard(ctx: ReportContext) -> dict:
         {"label": "Total Risks",      "value": snapshot["total"],        "unit": "",     "color": "#1F2854",                "direction": None,       "prev": None},
         {"label": "High Risks",       "value": snapshot["high_count"],   "unit": "",     "color": "#ef4444",                "direction": dir_high,   "prev": prev_high},
         {"label": "Control Strength", "value": _ctrl_strength,           "unit": "%",    "color": _ctrl_color,              "direction": None,       "prev": None},
-        {"label": "Avg Residual",     "value": snapshot["avg_residual"], "unit": "",     "color": "#64748b",                "direction": None,       "prev": None},
+        {"label": "Avg Residual",     "value": snapshot["avg_residual"], "unit": f"/{snapshot['residual_max']}",     "color": "#64748b",                "direction": None,       "prev": None},
     ]
 
     trend_dir = (
@@ -1501,7 +1520,6 @@ BLOCK_REGISTRY: dict[str, Any] = {
     "risk-ownership":      compute_risk_ownership,
     "incident-analytics":  compute_incident_analytics,
     "executive-dashboard": compute_executive_dashboard,
-    "key-risk-movements":  compute_key_risk_movements,
     "methodology":         compute_methodology,
     "risk-heat-map":       compute_risk_heat_map,
 }

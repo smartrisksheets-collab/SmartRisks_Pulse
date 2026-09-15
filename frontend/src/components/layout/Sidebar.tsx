@@ -47,7 +47,8 @@ export default function Sidebar() {
   const workspaceName = useAuthStore((s) =>
     s.workspaces.find((w) => w.tenant_id === s.claims?.active_tenant_id)?.name ?? 'SmartRisk'
   );
-  const logoUrl      = useSettingsStore((s) => s.logoUrl);
+  const logoUrl    = useSettingsStore((s) => s.logoUrl);
+  const setLogoUrl = useSettingsStore((s) => s.setLogoUrl);
   const quota        = useAuthStore((s) => s.workspaceQuota);
   const isOwner      = claims?.role === 'Owner';
   const showQuota    = isOwner && quota !== null;
@@ -85,7 +86,11 @@ export default function Sidebar() {
         <div className="brand">
           <div className="brand-mark">
           {logoUrl
-            ? <img src={logoUrl} alt={workspaceName} />
+            ? <img
+                src={logoUrl}
+                alt={workspaceName}
+                onError={() => setLogoUrl(null)}
+              />
             : <div className="brand-mark-text">{workspaceName.charAt(0).toUpperCase()}</div>
           }
         </div>
