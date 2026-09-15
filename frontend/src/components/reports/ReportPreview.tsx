@@ -619,7 +619,7 @@ function ExecutiveDashboardBlock({ data, ai, onEdit }: { data: ExecutiveDashboar
         ))}
       </div>
       <div style={{ fontSize: 10, fontWeight: 700, color: '#1F2854', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>
-        {data.heading_text || 'What Leadership Needs To Know'}
+        {data.heading_text || 'Highlights'}
       </div>
       {!ai && bullets.map((b, i) => (
         <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', padding: '5px 0', borderBottom: '1px solid #f1f5f9' }}>
