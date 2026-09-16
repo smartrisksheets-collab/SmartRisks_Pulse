@@ -285,6 +285,7 @@ class RiskVolume(BaseModel):
 class ControlSignal(BaseModel):
     eff_pct:      int
     avg_residual: float
+    residual_max: int
     signal_msg:   str
     signal_class: str   # 'good' | 'warn' | 'bad'
 

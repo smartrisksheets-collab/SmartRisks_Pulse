@@ -106,7 +106,7 @@ export default function VerifyPin() {
 
         <button
           className="btn btn-navy"
-          style={{ width: '100%', padding: '14px', fontSize: 15 }}
+          style={{ width: '100%', padding: '14px', fontSize: 15, justifyContent: 'center', background: '#01b88e' }}
           onClick={handleVerify}
           disabled={!full || loading}
         >

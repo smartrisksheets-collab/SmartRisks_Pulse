@@ -519,6 +519,7 @@ async def get_stats(
         control_signal=ControlSignal(
             eff_pct=avg_eff,
             avg_residual=round(avg_resid, 1),
+            residual_max=_res_max,
             signal_msg=signal_msg,
             signal_class=signal_class,
         ),

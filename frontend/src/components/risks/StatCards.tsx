@@ -99,7 +99,7 @@ export default function StatCards({ stats, loading }: Props) {
         <div className="sr-section-title">Top Owner by Residual</div>
         <div className="sr-row">
           <span className="sr-sub">{top_owner?.name ?? '—'}</span>
-          <strong>{top_owner?.score ?? '—'}</strong>
+          <strong>{top_owner != null ? Math.round(top_owner.score) : '—'}</strong>
         </div>
       </div>
 
@@ -116,7 +116,9 @@ export default function StatCards({ stats, loading }: Props) {
           <div className="sr-split-divider" />
           <div className="sr-split-block">
             <div className="sr-split-label">Avg Residual</div>
-            <div className="sr-split-value">{cs.avg_residual}</div>
+            <div className="sr-split-value">
+              {Math.round(cs.avg_residual)}<span style={{ fontSize: '0.65em', color: '#94a3b8', fontWeight: 500 }}>/{cs.residual_max}</span>
+            </div>
           </div>
         </div>
         <div className={`sr-intel ${cs.signal_class}`}>{cs.signal_msg}</div>

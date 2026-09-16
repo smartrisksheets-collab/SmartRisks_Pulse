@@ -172,12 +172,29 @@ async def _get_kpis(db: AsyncSession, tenant_id: UUID) -> KPISummary:
         )
     )).scalar_one()
 
+    import re as _re
+    _fin_rows = (await db.execute(
+        select(Risk.financial_exposure).where(
+            Risk.tenant_id == tenant_id,
+            Risk.deleted_at.is_(None),
+            Risk.financial_exposure.isnot(None),
+        )
+    )).scalars().all()
+    _fin_total = 0.0
+    for _val in _fin_rows:
+        if _val:
+            try:
+                _fin_total += float(_re.sub(r'[^\d.]', '', str(_val)))
+            except ValueError:
+                pass
+
     return KPISummary(
         total_risks=int(risk_row.total or 0),
         high_risks=int(risk_row.high or 0),
         open_incidents=int(open_inc or 0),
         risk_severity_avg=round(float(risk_row.avg_residual or 0), 1),
         control_effectiveness_avg=round(float(risk_row.avg_ctrl or 0) * 20, 1),
+        est_financial_exposure=round(_fin_total, 2),
     )
 
 

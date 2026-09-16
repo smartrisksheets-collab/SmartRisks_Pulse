@@ -8,13 +8,13 @@ import { useMatrix } from '../../hooks/useMatrix';
 const FALLBACK_CATEGORIES: string[]        = ['Strategic', 'Operational', 'Financial', 'Compliance', 'Reputational', 'Technical'];
 const FALLBACK_TREATMENTS: RiskTreatment[] = ['Mitigate', 'Transfer', 'Accept', 'Avoid'];
 const CTRL_EFF: { label: string; value: string }[] = [
-  { label: 'None',              value: '' },
-  { label: '0 – Ineffective',   value: '0' },
-  { label: '1 – Minimal',       value: '1' },
-  { label: '2 – Partial',       value: '2' },
-  { label: '3 – Moderate',      value: '3' },
-  { label: '4 – Substantial',   value: '4' },
-  { label: '5 – Full',          value: '5' },
+  { label: 'None',                    value: '' },
+  { label: '0 – No effective control', value: '0' },
+  { label: '1 – Weak',                value: '1' },
+  { label: '2 – Limited',             value: '2' },
+  { label: '3 – Moderate',            value: '3' },
+  { label: '4 – Strong',              value: '4' },
+  { label: '5 – Very strong',         value: '5' },
 ];
 
 export interface RiskFormValues {

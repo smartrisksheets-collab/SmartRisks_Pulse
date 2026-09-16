@@ -1,8 +1,6 @@
 import { useState, type FormEvent } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { useNavigate, Link } from 'react-router-dom';
+import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import { useGoogleLogin } from '@react-oauth/google';
-import { Clock, BarChart2, Activity } from 'lucide-react';
 import { apiPost } from '../services/api';
 import { useAuthStore } from '../store/authStore';
 import type { LoginResult } from '../types/auth';
@@ -10,13 +8,29 @@ import { validateEmail, validatePassword } from '../utils/validation';
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
 
+const STEPS = [
+  {
+    title: 'Import your register',
+    desc:  'Upload the spreadsheet you already maintain, or start from a template. No migration project, no new data entry.',
+  },
+  {
+    title: 'Set your appetite and matrix',
+    desc:  'Your likelihood and impact scales, your severity bands, your tolerance per category. The engine scores to your framework.',
+  },
+  {
+    title: 'Generate the board report',
+    desc:  'Appetite breaches surfaced, assurance gaps named, drafted in plain language and exported as a PDF.',
+  },
+];
+
 interface GoogleBtnProps {
   onSuccess: (accessToken: string) => Promise<void>;
-  onError: (msg: string) => void;
-  loading: boolean;
+  onError:   (msg: string) => void;
+  loading:   boolean;
+  label:     string;
 }
 
-function GoogleSignInButton({ onSuccess, onError, loading }: GoogleBtnProps) {
+function GoogleSignInButton({ onSuccess, onError, loading, label }: GoogleBtnProps) {
   const [googlePending, setGooglePending] = useState(false);
 
   const login = useGoogleLogin({
@@ -49,12 +63,7 @@ function GoogleSignInButton({ onSuccess, onError, loading }: GoogleBtnProps) {
   const busy = loading || googlePending;
 
   return (
-    <button
-      type="button"
-      className="auth-google-btn"
-      disabled={busy}
-      onClick={handleClick}
-    >
+    <button type="button" className="auth-google-btn" disabled={busy} onClick={handleClick}>
       {googlePending
         ? <span className="spinner" />
         : (
@@ -66,7 +75,7 @@ function GoogleSignInButton({ onSuccess, onError, loading }: GoogleBtnProps) {
           </svg>
         )
       }
-      {googlePending ? 'Connecting to Google…' : 'Continue with Google'}
+      {googlePending ? 'Connecting to Google…' : label}
     </button>
   );
 }
@@ -113,50 +122,40 @@ export default function Login() {
   return (
     <div className="auth-shell">
 
-      {/* Left panel */}
+      {/* ── Left panel ────────────────────────────────────────────────────── */}
       <div className="auth-left">
         <div className="auth-left-brand">
           <img
             src="https://smartrisksheets.com/wp-content/uploads/2025/09/cropped-Smartrisksheets-favicon-v2.png"
-            width="40"
-            height="40"
-            alt="SmartRisk Pulse"
+            width="36" height="36" alt="SmartRisk Pulse"
             style={{ borderRadius: 8, flexShrink: 0 }}
           />
           <span className="auth-brand-name">SmartRisk Pulse</span>
         </div>
 
-        <p className="auth-eyebrow">Pulse Portal</p>
-        <h2>
-          Welcome <span style={{ color: '#01b88e' }}>back.</span>
-        </h2>
+        <p className="auth-eyebrow">Getting started</p>
+        <h2>Your first board report,<br />in three steps.</h2>
         <p className="auth-left-sub">
-          Sign in to pick up right where your risk register left off.
+          Bring the register you already keep. You could have a scored,
+          board-ready report before the end of the afternoon.
         </p>
 
-        <div className="auth-features">
-          <div className="auth-feature">
-            <Clock size={17} className="auth-feature-icon" />
-            <div>
-              <div className="auth-feature-title">Fresh, aging, stale</div>
-              <div className="auth-feature-sub">Know which risks have actually been reviewed, not just edited.</div>
+        <div className="auth-steps">
+          {STEPS.map((s, i) => (
+            <div className="auth-step" key={i}>
+              <div className="auth-step-n">{i + 1}</div>
+              <div>
+                <p className="auth-step-title">{s.title}</p>
+                <p className="auth-step-desc">{s.desc}</p>
+              </div>
             </div>
-          </div>
-          <div className="auth-feature">
-            <BarChart2 size={17} className="auth-feature-icon" />
-            <div>
-              <div className="auth-feature-title">Live board reporting</div>
-              <div className="auth-feature-sub">Generated from your current register, not last month's slide deck.</div>
-            </div>
-          </div>
-          <div className="auth-feature">
-            <Activity size={17} className="auth-feature-icon" />
-            <div>
-              <div className="auth-feature-title">Continuous monitoring</div>
-              <div className="auth-feature-sub">Not a static spreadsheet snapshot frozen at last quarter's review.</div>
-            </div>
-          </div>
+          ))}
         </div>
+
+        <span className="auth-left-note">
+          <i />
+          2 weeks full access &middot; no card required
+        </span>
 
         <div className="auth-left-footer">
           <div>NDPC/DCP/12625 registered &middot; Aligned to ISO 31000 &amp; COSO ERM principles</div>
@@ -164,14 +163,46 @@ export default function Login() {
         </div>
       </div>
 
-      {/* Right panel */}
+      {/* ── Right panel ───────────────────────────────────────────────────── */}
       <div className="auth-right">
         <div className="auth-form-wrap">
-          <p className="auth-form-eyebrow">Secure Sign In</p>
+
+          {/* Mobile only: brand + condensed note */}
+          <div className="auth-mobile-tag">
+            <img
+              src="https://smartrisksheets.com/wp-content/uploads/2025/09/cropped-Smartrisksheets-favicon-v2.png"
+              width="30" height="30" alt="" style={{ borderRadius: 6 }}
+            />
+            <span>SmartRisk Pulse</span>
+          </div>
+          <p className="auth-mobile-note">
+            Import your register, set your appetite and matrix, and generate a board report — 2 weeks full access, no card required.
+          </p>
+
+          <p className="auth-form-eyebrow">Secure sign in</p>
           <h1>Welcome back</h1>
           <p className="auth-form-sub">
-            Sign in to your workspace to continue managing risk.
+            Sign in to your workspace to pick up where your register left off.
           </p>
+
+          {/* Segmented tabs */}
+          <div className="auth-seg" role="tablist" aria-label="Sign in or create an account">
+            <button
+              role="tab"
+              aria-selected="true"
+              type="button"
+            >
+              Sign in
+            </button>
+            <button
+              role="tab"
+              aria-selected="false"
+              type="button"
+              onClick={() => navigate('/register')}
+            >
+              Create account
+            </button>
+          </div>
 
           {error && <div className="auth-error">{error}</div>}
 
@@ -180,6 +211,7 @@ export default function Login() {
               <>
                 <GoogleSignInButton
                   loading={loading}
+                  label="Continue with Google"
                   onSuccess={async (accessToken) => {
                     setError('');
                     setLoading(true);
@@ -201,6 +233,7 @@ export default function Login() {
                 <div className="auth-or-divider">or continue with email</div>
               </>
             )}
+
             <div className="auth-field">
               <label htmlFor="email">Email address</label>
               <input
@@ -215,6 +248,7 @@ export default function Login() {
               />
               {emailErr && <p className="form-error">{emailErr}</p>}
             </div>
+
             <div className="auth-field">
               <label htmlFor="password">Password</label>
               <div className="input-wrap">
@@ -228,7 +262,12 @@ export default function Login() {
                   autoComplete="current-password"
                   className={passwordErr ? 'invalid' : ''}
                 />
-                <button type="button" className="input-eye" onClick={() => setShowPwd(v => !v)} aria-label="Toggle password visibility">
+                <button
+                  type="button"
+                  className="input-eye"
+                  onClick={() => setShowPwd(v => !v)}
+                  aria-label={showPwd ? 'Hide password' : 'Show password'}
+                >
                   {showPwd
                     ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
                     : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -237,14 +276,13 @@ export default function Login() {
               </div>
               {passwordErr && <p className="form-error">{passwordErr}</p>}
             </div>
-            <div style={{ display: 'flex', gap: 16, marginBottom: 16, justifyContent: 'flex-end' }}>
-              <Link to="/register" style={{ fontSize: 13, color: '#01b88e', fontWeight: 600 }}>
-                Create account
-              </Link>
-              <Link to="/forgot-password" style={{ fontSize: 13, color: '#01b88e', fontWeight: 600 }}>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 20 }}>
+              <Link to="/forgot-password" style={{ fontSize: 13, color: '#00967a', fontWeight: 700, textDecoration: 'none' }}>
                 Forgot password?
               </Link>
             </div>
+
             <button type="submit" className="auth-btn" disabled={loading}>
               {loading && <span className="spinner" />}
               {loading ? 'Signing in...' : 'Sign in'}
@@ -252,6 +290,7 @@ export default function Login() {
           </form>
         </div>
       </div>
+
     </div>
   );
 }

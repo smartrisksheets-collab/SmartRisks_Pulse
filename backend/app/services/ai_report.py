@@ -81,6 +81,41 @@ def _guard_rules(fs: dict) -> str:
         lines.append(
             "- incidents_enabled is FALSE. Do NOT reference incidents in any form."
         )
+
+    posture = fs.get("governance", {}).get("posture", "controlled")
+    if posture == "controlled":
+        lines.append(
+            "- POSTURE is CONTROLLED: no appetite breaches, exposure not elevated. "
+            "Do NOT use alarm language (demands, urgent, critical, dangerous, immediate, "
+            "escalation) and do NOT predict future breaches or exceedances beyond what the "
+            "evidence states. If elevated inherent-severity counts are present alongside "
+            "this controlled posture, say plainly that control effectiveness is what is "
+            "holding residual exposure down — do not present the inherent count alone as "
+            "alarming. Name at most one item warranting ordinary monitoring, in a measured tone."
+        )
+    elif posture == "watch":
+        lines.append(
+            "- POSTURE is WATCH: no breach yet, but exposure or near-limit risks are present. "
+            "Name the specific driver worth monitoring. Use a measured, monitoring-oriented "
+            "tone — this is closer to routine oversight than crisis, and the language should "
+            "reflect that."
+        )
+    elif posture == "elevated":
+        lines.append(
+            "- POSTURE is ELEVATED: exposure or the proportion of high-severity risks is "
+            "materially high. Urgency language is warranted here and should name the "
+            "specific driver — do not generalise to 'the portfolio' when a specific "
+            "category or pattern is identifiable in the evidence."
+        )
+    elif posture == "breach":
+        lines.append(
+            "- POSTURE is BREACH: one or more risks exceed their configured appetite "
+            "threshold. State this plainly and name the affected category from the evidence. "
+            "Urgency is warranted specifically because a breach is a recorded fact, not an "
+            "inference — do not extrapolate beyond the breach itself to predict further "
+            "exceedances unless the evidence states a second risk is also over threshold."
+        )
+
     return "\n".join(lines)
 
 
@@ -295,8 +330,11 @@ def _build_prompt(
         )
         user = (
             "Write exactly 3 to 4 short, standalone sentences for a leadership briefing panel "
-            "titled 'What Leadership Needs To Know'.\n"
-            "Each sentence must communicate a distinct business consequence, strategic implication, or decision prompt.\n"
+            "titled 'Highlights'.\n"
+            "Each sentence must communicate a distinct business consequence, strategic implication, "
+            "monitoring point, or decision prompt — calibrated strictly to the POSTURE guard above. "
+            "Do not manufacture urgency the posture guard does not support, and do not soften a "
+            "posture of WATCH, ELEVATED, or BREACH.\n"
             f"Do not state scores, counts, or percentages. Translate the data into what it means "
             f"for {org}'s ability to protect its objectives and manage its exposure.\n"
             "Each sentence goes on its own line. No labels, no numbering, no preamble.\n\n"
