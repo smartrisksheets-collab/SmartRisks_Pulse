@@ -16,6 +16,8 @@ import {
 } from 'recharts';
 import type { DashboardData, KPISummary, TopRisk, TrendPoint } from '../../types/dashboard';
 import ActivityFeed from './ActivityFeed';
+import { useSettingsStore } from '../../store/settingsStore';
+import { formatMoneyCompact } from '../../utils/format';
 import { useQuery } from '@tanstack/react-query';
 import { fetchExecInsight } from '../../services/dashboard';
 import type { ExecInsight, ActionItem } from '../../types/dashboard';
@@ -426,6 +428,7 @@ interface Props {
 
 export default function RiskSection({ data }: Props) {
   const { kpis, snapshot_delta, risks_by_category, top_risks, residual_trend, activity_feed } = data;
+  const currency = useSettingsStore(s => s.currency);
 
   const navigate = useNavigate();
   const [pressureOpen, setPressureOpen] = useState(false);
@@ -538,7 +541,7 @@ export default function RiskSection({ data }: Props) {
               <span>Est Financial Exposure</span>
               <strong>
                 {kpis.est_financial_exposure > 0
-                  ? `₦${kpis.est_financial_exposure.toLocaleString('en-NG', { maximumFractionDigits: 0 })}`
+                  ? formatMoneyCompact(kpis.est_financial_exposure, currency)
                   : '—'
                 }
               </strong>
