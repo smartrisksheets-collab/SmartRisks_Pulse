@@ -1,11 +1,36 @@
 // src/components/risks/RiskTable.tsx
 
-// import { useState } from 'react';
+import { useState } from 'react';
 import type { Risk } from '../../types/risk';
 import type { AppetiteThreshold } from '../../types/settings';
 import { formatDate, formatExposure } from '../../utils/format';
+import { freshnessClass } from '../../utils/scoring';
 import { useSettingsStore } from '../../store/settingsStore';
 
+
+const _FRESH_META: Record<string, { label: string; sub: string; color: string }> = {
+  Fresh:       { label: 'FRESH',       sub: 'Reviewed recently. Risk data is current.',              color: '#059669' },
+  Aging:       { label: 'AGING',       sub: 'Review overdue. Data may be becoming outdated.',        color: '#b45309' },
+  Stale:       { label: 'STALE',       sub: 'Not reviewed in a long time. Treat with caution.',      color: '#dc2626' },
+  Unevidenced: { label: 'UNEVIDENCED', sub: 'No review date on record for this risk.',               color: '#475569' },
+};
+
+function FreshTip({ risk, x, y }: { risk: Risk; x: number; y: number }) {
+  const f    = risk.freshness as string;
+  const meta = _FRESH_META[f] ?? _FRESH_META['Unevidenced'];
+  return (
+    <div className={`fresh-tip ${f.toLowerCase()}`} style={{ top: y - 8, left: x + 16 }}>
+      <div className="fresh-tip-title" style={{ color: meta.color }}>{meta.label}</div>
+      <div className="fresh-tip-sub">{meta.sub}</div>
+      <div className="fresh-tip-row">
+        <span className="fresh-tip-lbl">Last reviewed</span>
+        <span className={`fresh-tip-val${risk.last_reviewed_at ? ' accent' : ''}`}>
+          {risk.last_reviewed_at ? formatDate(risk.last_reviewed_at) : 'Not recorded'}
+        </span>
+      </div>
+    </div>
+  );
+}
 
 interface Props {
   risks:        Risk[];
@@ -56,6 +81,7 @@ const APT_LABELS: Record<string, string> = {
 
 
 export default function RiskTable({ risks, loading, onView, onEdit, flashId, aiFlashIds, selectedIds, onToggle, onToggleAll, appetites }: Props) {
+  const [freshTip, setFreshTip] = useState<{ risk: Risk; x: number; y: number } | null>(null);
   const currency = useSettingsStore(s => s.currency);
 
   if (loading && !risks.length) {
@@ -173,9 +199,20 @@ export default function RiskTable({ risks, loading, onView, onEdit, flashId, aiF
                   <span className={`badge ${levelBadgeClass(r.level_index)}`}>{r.level ?? '—'}</span>
                 </td>
 
-                {/* Residual */}
-                <td style={{ textAlign: 'center', fontWeight: 700 }}>
+                {/* Residual + freshness */}
+                <td
+                  style={{ textAlign: 'center', fontWeight: 700 }}
+                  onMouseMove={r.freshness ? (e) => setFreshTip({ risk: r, x: e.clientX, y: e.clientY }) : undefined}
+                  onMouseLeave={r.freshness ? () => setFreshTip(null) : undefined}
+                >
                   {r.residual != null ? Math.round(r.residual) : '—'}
+                  {r.freshness && (
+                    <div style={{ marginTop: 4 }}>
+                      <span className={`freshness ${freshnessClass(r.freshness)}`}>
+                        {r.freshness}
+                      </span>
+                    </div>
+                  )}
                 </td>
 
                 {/* Financial Exposure */}
@@ -217,6 +254,7 @@ export default function RiskTable({ risks, loading, onView, onEdit, flashId, aiF
           })}
         </tbody>
       </table>
+      {freshTip && <FreshTip risk={freshTip.risk} x={freshTip.x} y={freshTip.y} />}
     </div>
   );
 }
