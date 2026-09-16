@@ -160,5 +160,5 @@ export interface RiskStats {
   risk_volume:     { total: number; high_critical: number; };
   concentration:   ConcentrationItem[];
   top_owner:       TopOwner | null;
-  control_signal:  { eff_pct: number; avg_residual: number; signal_msg: string; signal_class: string; };
+  control_signal:  { eff_pct: number; avg_residual: number; residual_max: number; signal_msg: string; signal_class: string; };
 }

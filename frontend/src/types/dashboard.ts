@@ -18,6 +18,7 @@ export interface KPISummary {
   open_incidents: number;
   risk_severity_avg: number;
   control_effectiveness_avg: number;
+  est_financial_exposure: number;
 }
 
 export interface IncidentHealthSummary {

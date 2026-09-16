@@ -106,7 +106,7 @@ function ExposureGauge({ health, exposure }: { health: number; exposure: number 
       </svg>
       {/* Text overlay */}
       <div className="rs-gauge-overlay">
-        <div className="rs-gauge-num" style={{ color }}>{health}</div>
+        <div className="rs-gauge-num" style={{ color }}>{health}<span style={{ fontSize: '0.55em', fontWeight: 600, opacity: 0.7 }}>%</span></div>
         <div className="rs-gauge-lbl">Health</div>
         <div className="rs-gauge-sub">Exposure: {exposure}%</div>
       </div>
@@ -314,7 +314,7 @@ function PressureModal({
           <div className="dl-panel">
             {[
               { label: 'High-risk concentration', value: `${kpis.high_risks} risks (${highSharePct}%)` },
-              { label: 'Avg residual score',       value: kpis.risk_severity_avg > 0 ? kpis.risk_severity_avg.toFixed(1) : '—' },
+              { label: 'Avg residual score',       value: kpis.risk_severity_avg > 0 ? Math.round(kpis.risk_severity_avg).toString() : '—' },
               { label: 'Pressure level',           value: pressureLevel },
             ].map(({ label, value }) => (
               <div key={label} className="dl-panel-row">
@@ -523,15 +523,26 @@ export default function RiskSection({ data }: Props) {
             <div className="dash-metric-row"><span>High / Critical</span><strong>{kpis.high_risks}</strong></div>
             <div className="dash-metric-row">
               <span>Avg severity score</span>
-              <strong>{avgResidual > 0 ? avgResidual.toFixed(1) : '—'}</strong>
+              <strong>{avgResidual > 0 ? Math.round(avgResidual).toString() : '—'}</strong>
             </div>
             <div className="dash-metric-row">
               <span>Control strength</span>
-              <strong>{kpis.control_effectiveness_avg > 0 ? `${Math.round(kpis.control_effectiveness_avg)}%` : '—'}</strong>
+              <strong>
+                {kpis.control_effectiveness_avg > 0
+                  ? `${Math.round(kpis.control_effectiveness_avg)}%`
+                  : <><span style={{ fontSize: '1.1em', fontWeight: 900 }}>0</span>%</>
+                }
+              </strong>
             </div>
-            {kpis.open_incidents > 0 && (
-              <div className="dash-metric-row"><span>Total incidents</span><strong>{kpis.open_incidents}</strong></div>
-            )}
+            <div className="dash-metric-row">
+              <span>Est Financial Exposure</span>
+              <strong>
+                {kpis.est_financial_exposure > 0
+                  ? `₦${kpis.est_financial_exposure.toLocaleString('en-NG', { maximumFractionDigits: 0 })}`
+                  : '—'
+                }
+              </strong>
+            </div>
           </div>
           {/* GAS: border-top:1px dashed var(--sr-gray-200); font-size:12px */}
           <div className="rs-pressure-footer">{pressureText}</div>

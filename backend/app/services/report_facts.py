@@ -167,6 +167,28 @@ class ReportFacts:
 
     # ── Guards ────────────────────────────────────────────────────────────────
 
+    def _derive_posture(self) -> str:
+        """Classify the current risk posture into one of four levels.
+        Used by the AI guard rules to calibrate narrative tone.
+
+        breach    — one or more risks exceed appetite threshold.
+        elevated  — no breach, but exposure index is high or elevated
+                    risks dominate the register.
+        watch     — no breach, no alarm, but near-limit risks are present.
+        controlled — everything within normal bounds.
+        """
+        if len(self.governance["breaches"]) > 0:
+            return "breach"
+        exposure  = self.scores["exposure_index"]
+        elevated  = self.counts["elevated"]
+        total     = self.counts["active"]
+        near_count = len(self.governance["near_limit"])
+        if exposure >= 55 or (total > 0 and elevated / total > 0.40):
+            return "elevated"
+        if near_count > 0:
+            return "watch"
+        return "controlled"
+
     @property
     def allow_percentages(self) -> bool:
         """Percentage framing is only valid above the small-n threshold."""
@@ -293,6 +315,7 @@ class ReportFacts:
                 "decisions_tracked":   self.governance["decisions_tracked"],
                 "overdue_count":       len(self.governance["overdue"]),
                 "accepted_count":      len(self.governance["accepted"]),
+                "posture":             self._derive_posture(),
             },
             "assurance": {
                 "controls_untested":          self.assurance["controls_untested"],

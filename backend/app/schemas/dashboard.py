@@ -22,6 +22,7 @@ class KPISummary(BaseModel):
     open_incidents: int = 0
     risk_severity_avg: float = 0.0
     control_effectiveness_avg: float = 0.0
+    est_financial_exposure: float = 0.0
 
 
 class IncidentHealthSummary(BaseModel):
