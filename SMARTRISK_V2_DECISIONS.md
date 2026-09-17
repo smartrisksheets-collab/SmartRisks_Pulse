@@ -1692,3 +1692,28 @@ Chosen: `useLookups` imported in `pages/TriageQueue.tsx`. Owner field changed to
 Why: Owner values should come from the configured lookup list to maintain consistency across the register. A free-text field allows arbitrary strings that do not match any existing owner, breaking downstream filtering and reporting.
 
 Why: The cover_body is one large Table. Any overflow causes ReportLab to split it, creating a near-blank page 2 with only the metadata footer. The adjusted estimate brings total height back within the frame.
+
+**Decision: Control effectiveness None and 0 are now semantically distinct (September 17, 2026)**
+Raised by: The dropdown labelled "None" with value 0, meaning not-assessed and zero-effectiveness were indistinguishable in the DB, scoring, and avg control strength calculations.
+Chosen: None sends null (not assessed, excluded from avg), 0 sends integer 0 (assessed, zero effectiveness, included in avg). RiskRow now preserves null instead of collapsing to 0. All numeric comparisons on control_effectiveness guarded with is not None before comparison. Dropdown labels renamed to professional descriptors matching GRC language.
+Why: A risk with no controls assessed and a risk where controls are confirmed ineffective carry different management implications. The distinction is necessary for accurate posture classification and avg control strength calculation.
+
+**Decision: Posture classification layer added to AI report engine (September 17, 2026)**
+Raised by: The AI had no signal about how serious the current risk state was before writing narrative. It could produce alarm language for a controlled register or underplay a real appetite breach.
+Chosen: _derive_posture() in services_report_facts.py computes one of four levels: controlled, watch, elevated, breach. The level is exported in build_fact_slice under governance.posture. _guard_rules in services_ai_report.py maps each level to a specific tone instruction prepended to every AI system prompt.
+Why: Tone calibration must be data-driven. A controlled posture and a breach posture require fundamentally different language. Hard-coding this in the prompt without a computed signal produces inconsistent output.
+
+**Decision: Exposure index denominator uses matrix config instead of hardcoded 25 (September 17, 2026)**
+Raised by: Exposure index was hardcoded to /25, assuming a 5x5 matrix. A workspace with likelihood_scale=4 would never exceed 80% exposure even when all risks were at maximum severity.
+Chosen: _residual_max(mc) helper added to services_report.py. Computes likelihood_scale * impact_scale from MatrixConfig. Used in compute_exposure_index, compute_exposure_trend, snapshot delta, services_risk.py get_stats, and services_report_facts.py.
+Why: The denominator must match the ceiling the workspace's matrix actually permits. Hardcoding 25 is only correct for a 5x5 matrix.
+
+**Decision: FreshTip and HoverTip replace data-tip CSS tooltips in risk table (September 17, 2026)**
+Raised by: The freshness tooltip was missing from the residual column. The appetite and decision columns used a basic CSS data-tip tooltip with a navy background.
+Chosen: FreshTip rebuilt as a fixed-positioned React component using existing CSS classes (fresh-tip, fresh-tip-title, fresh-tip-sub, fresh-tip-row). HoverTip added as a generic variant using the unevidenced neutral style. Both follow mouse position via onMouseMove. All data-tip usages in the table removed.
+Why: The fixed-position custom tooltip avoids z-index and overflow clipping issues that affect CSS ::after tooltips inside table cells. The colour-coded design communicates state at a glance without reading the text.
+
+**Decision: Login page redesigned with numbered steps and segmented tabs (September 17, 2026)**
+Raised by: The left panel used icon bullets that did not clearly communicate the three-step workflow. Create account was a separate link with no visual connection to the sign in form.
+Chosen: Left panel replaced with numbered steps (import register, set matrix, generate report), connector lines between steps, and a "2 weeks full access" badge. Right panel gains a segmented Sign in / Create account tab control. Clicking Create account navigates to /register. All auth submit buttons switched from navy to teal background.
+Why: The steps design communicates value and workflow more directly than feature bullets. The segmented tab gives a clear visual affordance for both paths without duplicating the register form.

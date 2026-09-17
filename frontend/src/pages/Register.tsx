@@ -1,7 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useGoogleLogin } from '@react-oauth/google';
-import { Clock, BarChart2, Activity } from 'lucide-react';
 import { apiPost } from '../services/api';
 import { useAuthStore } from '../store/authStore';
 import type { LoginResult } from '../types/auth';
@@ -11,6 +10,21 @@ import {
 } from '../utils/validation';
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
+
+const STEPS = [
+  {
+    title: 'Import your register',
+    desc:  'Upload the spreadsheet you already maintain, or start from a template. No migration project, no new data entry.',
+  },
+  {
+    title: 'Set your appetite and matrix',
+    desc:  'Your likelihood and impact scales, your severity bands, your tolerance per category. The engine scores to your framework.',
+  },
+  {
+    title: 'Generate the board report',
+    desc:  'Appetite breaches surfaced, assurance gaps named, drafted in plain language and exported as a PDF.',
+  },
+];
 
 interface GoogleBtnProps {
   onSuccess: (accessToken: string) => void;
@@ -160,40 +174,29 @@ export default function Register() {
           <span className="auth-brand-name">SmartRisk Pulse</span>
         </div>
 
-        <p className="auth-eyebrow">Risk Intelligence</p>
-        <h2>
-          Track exposure.<br />
-          Brief the board.<br />
-          <span style={{ color: '#01b88e' }}>In real time.</span>
-        </h2>
+        <p className="auth-eyebrow">Getting started</p>
+        <h2>Your first board report,<br />in three steps.</h2>
         <p className="auth-left-sub">
-          Your risk register, working as live intelligence — health, exposure,
-          and what changed, in one view.
+          Bring the register you already keep. You could have a scored,
+          board-ready report before the end of the afternoon.
         </p>
 
-        <div className="auth-features">
-          <div className="auth-feature">
-            <Clock size={17} className="auth-feature-icon" />
-            <div>
-              <div className="auth-feature-title">Fresh, aging, stale</div>
-              <div className="auth-feature-sub">Know which risks have actually been reviewed, not just edited.</div>
+        <div className="auth-steps">
+          {STEPS.map((s, i) => (
+            <div className="auth-step" key={i}>
+              <div className="auth-step-n">{i + 1}</div>
+              <div>
+                <p className="auth-step-title">{s.title}</p>
+                <p className="auth-step-desc">{s.desc}</p>
+              </div>
             </div>
-          </div>
-          <div className="auth-feature">
-            <BarChart2 size={17} className="auth-feature-icon" />
-            <div>
-              <div className="auth-feature-title">Live board reporting</div>
-              <div className="auth-feature-sub">Generated from your current register, not last month's slide deck.</div>
-            </div>
-          </div>
-          <div className="auth-feature">
-            <Activity size={17} className="auth-feature-icon" />
-            <div>
-              <div className="auth-feature-title">Continuous monitoring</div>
-              <div className="auth-feature-sub">Not a static spreadsheet snapshot frozen at last quarter's review.</div>
-            </div>
-          </div>
+          ))}
         </div>
+
+        <span className="auth-left-note">
+          <i />
+          2 weeks full access &middot; no card required
+        </span>
 
         <div className="auth-left-footer">
           <div>NDPC/DCP/12625 registered &middot; Aligned to ISO 31000 &amp; COSO ERM principles</div>

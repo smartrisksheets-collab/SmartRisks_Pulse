@@ -152,11 +152,6 @@ export default function Login() {
           ))}
         </div>
 
-        <span className="auth-left-note">
-          <i />
-          2 weeks full access &middot; no card required
-        </span>
-
         <div className="auth-left-footer">
           <div>NDPC/DCP/12625 registered &middot; Aligned to ISO 31000 &amp; COSO ERM principles</div>
           <div>SmartRisk Sheets Technologies Limited &middot; RC 9170218</div>

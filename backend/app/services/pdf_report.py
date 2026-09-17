@@ -899,49 +899,42 @@ def _render_risk_table(label: str, risks: list[dict], intro: str | None,
         out.append(Paragraph(intro, _S["narrative"]))
         out.append(Spacer(1, 2 * mm))
 
-    _TREND_MARKUP = {
-        "increasing": '<font color="#ef4444"><b>▲</b></font>',
-        "volatile":   '<font color="#ef4444"><b>▲</b></font>',
-        "improving":  '<font color="#10b981"><b>▼</b></font>',
-    }
-    _trend_s = ParagraphStyle(
-        "trnd", fontName="Helvetica-Bold", fontSize=8,
-        textColor=colors.HexColor("#94a3b8"), alignment=TA_CENTER,
+    _cell_s = ParagraphStyle(
+        "trcell", fontName="Helvetica", fontSize=7,
+        textColor=colors.HexColor("#333333"), leading=9,
     )
     _res_s = ParagraphStyle(
-        "res", fontName="Helvetica", fontSize=8,
-        textColor=colors.HexColor("#333333"), alignment=TA_CENTER,
+        "res", fontName="Helvetica", fontSize=7,
+        textColor=colors.HexColor("#333333"), alignment=TA_CENTER, leading=9,
     )
 
-    headers = ["ID", "Dept / Risk Owner", "Description", "Level", "Residual", "Trend"]
+    headers = ["Risk ID", "Risk Owner", "Description", "Level", "Controls", "Mitigations", "Residual"]
     rows = [headers] + [
         [
-            Paragraph(str(r.get("id", "")), _S["body"]),
-            Paragraph((r.get("owner") or "")[:50], _S["body"]),
-            Paragraph(r.get("desc") or "", _S["body"]),
-            _level_badge_cell(r.get("level", ""), r.get("level_index")),
+            Paragraph(str(r.get("id", "")), _cell_s),
+            Paragraph((r.get("owner") or "")[:30], _cell_s),
+            Paragraph((r.get("desc") or "")[:90], _cell_s),
+            _level_badge_cell(r.get("level", ""), r.get("level_index"), 18 * mm),
+            Paragraph((r.get("controls") or "")[:70], _cell_s),
+            Paragraph((r.get("mitigation_plan") or "")[:70], _cell_s),
             Paragraph(str(r.get("residual", "")), _res_s),
-            Paragraph(
-                _TREND_MARKUP.get((r.get("movement") or "").lower(),
-                                  '<font color="#94a3b8">→</font>'),
-                _trend_s,
-            ),
         ]
         for r in risks
     ]
-    col_w = [22 * mm, 38 * mm, 50 * mm, 22 * mm, 16 * mm, 14 * mm]
+    col_w = [18 * mm, 26 * mm, 38 * mm, 18 * mm, 30 * mm, 30 * mm, 14 * mm]
     tbl = Table(rows, colWidths=col_w, repeatRows=1)
     tbl.setStyle(TableStyle([
-        ("BACKGROUND",   (0, 0), (-1, 0), NAVY),
-        ("TEXTCOLOR",    (0, 0), (-1, 0), WHITE),
-        ("FONTNAME",     (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE",     (0, 0), (-1, -1), 8),
+        ("BACKGROUND",    (0, 0), (-1, 0), NAVY),
+        ("TEXTCOLOR",     (0, 0), (-1, 0), WHITE),
+        ("FONTNAME",      (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE",      (0, 0), (-1, 0), 8),
+        ("FONTSIZE",      (0, 1), (-1, -1), 7),
         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [WHITE, LIGHT]),
-        ("GRID",         (0, 0), (-1, -1), 0.25, BORDER),
-        ("TOPPADDING",   (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING",(0, 0), (-1, -1), 4),
-        ("LEFTPADDING",  (0, 0), (-1, -1), 4),
-        ("VALIGN",       (0, 0), (-1, -1), "MIDDLE"),
+        ("GRID",          (0, 0), (-1, -1), 0.25, BORDER),
+        ("TOPPADDING",    (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 4),
+        ("VALIGN",        (0, 0), (-1, -1), "TOP"),
     ]))
     out.append(tbl)
     if ai_text:
@@ -1108,8 +1101,8 @@ def _render_recommendations(data: dict, ai_text: str | None) -> list:
         if isinstance(rec, str):
             row = Table(
                 [[Paragraph(f"{i}.", ParagraphStyle(
-                    "recnum", fontName="Helvetica-Bold", fontSize=9,
-                    textColor=TEAL,
+                    "recnum", fontName=f_bold(), fontSize=9,
+                    textColor=NAVY,
                  )),
                   Paragraph(rec, _S["body"])]],
                 colWidths=[6 * mm, None],
@@ -1168,7 +1161,7 @@ def _render_rec_card(out: list, index: int, rec: dict) -> None:
 
     inner_rows: list[list] = [
         [Paragraph(title_markup, ParagraphStyle(
-            "at", fontName=f_semibold(), fontSize=9, textColor=TEAL,
+            "at", fontName=f_semibold(), fontSize=9, textColor=NAVY,
         ))],
     ]
     if meta_parts:
@@ -1192,7 +1185,7 @@ def _render_rec_card(out: list, index: int, rec: dict) -> None:
         inner_rows.append([Paragraph(
             f"&#10003; Done when: {completion_criterion}",
             ParagraphStyle("ac", fontName=f_regular(), fontSize=8,
-                           textColor=GREEN, spaceAfter=0),
+                           textColor=NAVY, spaceAfter=0),
         )])
 
     card = Table([[
@@ -1357,52 +1350,6 @@ def _render_executive_dashboard(data: dict, ai_text: str | None) -> list:
         out.append(kpi_tbl)
         out.append(Spacer(1, 2 * mm))
 
-    posture = data.get("posture", {})
-    if posture:
-        p_color = (
-            GREEN if posture.get("trend") == "Improving" else
-            RED   if posture.get("trend") == "Worsening" else
-            AMBER
-        )
-        _col_w3 = (180 * mm) / 3
-        _plbl = ParagraphStyle(
-            "plbl", fontName=f_medium(), fontSize=8,
-            textColor=MUTED, alignment=TA_CENTER, spaceAfter=3,
-        )
-        _pval = ParagraphStyle(
-            "pval", fontName=f_semibold(), fontSize=10,
-            textColor=NAVY, alignment=TA_CENTER,
-        )
-        posture_row = Table(
-            [
-                [
-                    Paragraph("STATUS",     _plbl),
-                    Paragraph("TREND",      _plbl),
-                    Paragraph("CONFIDENCE", _plbl),
-                ],
-                [
-                    Paragraph(posture.get("status", ""), _pval),
-                    Paragraph(posture.get("trend", ""), ParagraphStyle(
-                        "ptrend", fontName=f_semibold(), fontSize=10,
-                        textColor=p_color, alignment=TA_CENTER,
-                    )),
-                    Paragraph(posture.get("confidence", ""), _pval),
-                ],
-            ],
-            colWidths=[_col_w3, _col_w3, _col_w3],
-        )
-        posture_row.setStyle(TableStyle([
-            ("BACKGROUND",   (0, 0), (-1, -1), colors.HexColor("#f8faff")),
-            ("ALIGN",        (0, 0), (-1, -1), "CENTER"),
-            ("VALIGN",       (0, 0), (-1, -1), "MIDDLE"),
-            ("TOPPADDING",   (0, 0), (-1, -1), 5),
-            ("BOTTOMPADDING",(0, 0), (-1, -1), 5),
-            ("LEFTPADDING",  (0, 0), (-1, -1), 8),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-        ]))
-        out.append(posture_row)
-        out.append(Spacer(1, 2 * mm))
-
     heading = (data.get("heading_text") or "Highlights").upper()
     out.append(Paragraph(heading, ParagraphStyle(
         "edhead", fontName=f_semibold(), fontSize=8,
@@ -1438,10 +1385,11 @@ def _render_executive_dashboard(data: dict, ai_text: str | None) -> list:
     return out
 
 
-def _level_badge_cell(level: str, level_index: int | None = None) -> Table:
+def _level_badge_cell(level: str, level_index: int | None = None, col_width: float = 22 * mm) -> Table:
     """Pill badge matching GAS levelBadge_gs_() — used in risk tables and key risk movements.
     When level_index is supplied, colors are assigned by band position (label-agnostic).
-    Falls back to string matching when level_index is not available."""
+    Falls back to string matching when level_index is not available.
+    col_width must match the parent column width to prevent overflow."""
     if level_index is not None:
         idx = min(level_index - 1, len(_BAND_COLORS_BY_POS) - 1)
         c  = colors.HexColor(_BAND_COLORS_BY_POS[idx])
@@ -1456,12 +1404,13 @@ def _level_badge_cell(level: str, level_index: int | None = None) -> Table:
             c, bg = colors.HexColor("#d97706"), colors.HexColor("#fffbeb")
         else:
             c, bg = colors.HexColor("#10b981"), colors.HexColor("#ecfdf5")
+    font_size = 7 if col_width < 20 * mm else 8
     badge = Table(
         [[Paragraph(level or "", ParagraphStyle(
-            "lbg", fontName="Helvetica-Bold", fontSize=8,
+            "lbg", fontName="Helvetica-Bold", fontSize=font_size,
             textColor=c, alignment=TA_CENTER,
         ))]],
-        colWidths=[22 * mm],
+        colWidths=[col_width],
     )
     badge.setStyle(TableStyle([
         ("BACKGROUND",   (0, 0), (-1, -1), bg),
@@ -1973,6 +1922,7 @@ def _make_doc(
     title: str,
     org_name: str,
     is_landscape: bool,
+    period: str = "",
 ) -> BaseDocTemplate:
     page   = landscape(A4) if is_landscape else A4
     margin = 15 * mm          # GAS portrait uses 15mm left/right margins → 180mm content width
@@ -1995,7 +1945,10 @@ def _make_doc(
         canvas.drawString(margin, page[1] - 9 * mm, header_label)
         canvas.setFont("Helvetica", 8)
         canvas.setFillColor(colors.HexColor("#94a3b8"))
-        canvas.drawRightString(page[0] - margin, page[1] - 9 * mm, "Risk Management Report")
+        canvas.drawRightString(page[0] - margin, page[1] - 6.5 * mm, title)
+        if period:
+            canvas.setFont("Helvetica", 7)
+            canvas.drawRightString(page[0] - margin, page[1] - 11 * mm, f"Period: {period}")
         # Footer is drawn by _make_canvas_cls — nothing here
         canvas.restoreState()
 
@@ -2050,7 +2003,26 @@ def build_pdf(
     footer_text       = settings_p.get("footer_text") or "Confidential"
     show_page_numbers = settings_p.get("page_numbering", "Show") != "Hide"
     display_name      = org_name or title
-    doc = _make_doc(buf, title, display_name, is_landscape)
+
+    from datetime import datetime as dt
+    _td       = date.today()
+    today_str = f"{_td.strftime('%B')} {_td.day}, {_td.year}"
+    period    = ""
+    if date_from:
+        try:
+            _df  = dt.fromisoformat(date_from)
+            _dt2 = dt.fromisoformat(date_to) if date_to else dt.now()
+            period = (
+                f"{_df.day} {_df.strftime('%b %Y')}"
+                f" \u2013 "
+                f"{_dt2.day} {_dt2.strftime('%b %Y')}"
+            )
+        except Exception:
+            period = today_str
+    else:
+        period = today_str
+
+    doc = _make_doc(buf, title, display_name, is_landscape, period)
     has_cover  = settings_p.get("cover_page", "Yes") != "No"
     canvas_cls = _make_canvas_cls(
         landscape(A4) if is_landscape else A4,
@@ -2061,28 +2033,8 @@ def build_pdf(
     )
     story: list = []
 
-    _td       = date.today()
-    today_str = f"{_td.strftime('%B')} {_td.day}, {_td.year}"
-
     # ── Cover page ─────────────────────────────────────────────────────────────
     if settings_p.get("cover_page", "Yes") != "No":
-        from datetime import datetime as dt
-
-        period = ""
-        if date_from:
-            try:
-                _df  = dt.fromisoformat(date_from)
-                _dt2 = dt.fromisoformat(date_to) if date_to else dt.now()
-                period = (
-                    f"{_df.day} {_df.strftime('%b %Y')}"
-                    f" \u2013 "
-                    f"{_dt2.day} {_dt2.strftime('%b %Y')}"
-                )
-            except Exception:
-                period = today_str
-        else:
-            period = today_str
-
         brand_label   = org_name or title
         classif_label = settings_p.get("footer_text") or "Confidential"
 
@@ -2168,12 +2120,27 @@ def build_pdf(
         _meta_gap    = max(10 * mm, _frame_h - _top_est - _bot_est)
 
         # ── Logo element: scale proportionally to fit 44×22 mm bounding box ──
+        _logo_el: Image | Paragraph | Table
         if logo_bytes:
             _limg  = Image(io.BytesIO(logo_bytes))
             _scale = min((44 * mm) / _limg.imageWidth, (22 * mm) / _limg.imageHeight)
             _limg.drawWidth  = _limg.imageWidth  * _scale
             _limg.drawHeight = _limg.imageHeight * _scale
-            _logo_el: Image | Paragraph = _limg
+            _name_para = Paragraph(brand_label, ParagraphStyle(
+                "corg_aside", fontName=f_bold(), fontSize=13,
+                textColor=NAVY, leading=16,
+            ))
+            _logo_el = Table(
+                [[_limg, _name_para]],
+                colWidths=[_limg.drawWidth + 4 * mm, None],
+            )
+            _logo_el.setStyle(TableStyle([
+                ("VALIGN",       (0, 0), (-1, -1), "MIDDLE"),
+                ("LEFTPADDING",  (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (0,  -1), 6),
+                ("TOPPADDING",   (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING",(0, 0), (-1, -1), 0),
+            ]))
         else:
             _logo_el = Paragraph(brand_label, ParagraphStyle(
                 "corg", fontName=f_bold(), fontSize=15,

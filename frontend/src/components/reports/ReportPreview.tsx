@@ -2,6 +2,7 @@
 // Translates GAS renderBlockData_() into React JSX per block type.
 // Source: View_ReportBuilder.html renderBlockData_() lines 1200-1778.
 
+import { useState } from 'react';
 import type {
   BlockKey,
   BlockDataMap,
@@ -55,14 +56,81 @@ interface NarrativeTAProps {
   onEdit:   (key: string, val: string) => void;
 }
 
-function NarrativeTA({ blockKey, value, onEdit }: NarrativeTAProps) {
+interface ReviewModalProps {
+  blockKey:     string;
+  initialValue: string;
+  onSave:       (key: string, val: string) => void;
+  onClose:      () => void;
+}
+
+function NarrativeReviewModal({ blockKey, initialValue, onSave, onClose }: ReviewModalProps) {
+  const [draft, setDraft] = useState(initialValue);
+
+  function handleSave() {
+    onSave(blockKey, draft);
+    onClose();
+  }
+
   return (
-    <textarea
-      className="rb-narrative-ta"
-      value={value}
-      placeholder="Edit narrative…"
-      onChange={(e) => onEdit(blockKey, e.target.value)}
-    />
+    <div
+      className="modal-backdrop show"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="modal modal-tall" style={{ maxHeight: 'calc(100vh - 48px)', display: 'flex', flexDirection: 'column' }}>
+        <div className="modal-hd">
+          <h2 className="modal-title">Review &amp; Edit Narrative</h2>
+          <button className="btn btn-ghost" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-bd" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div className="rb-ai-disclaimer">
+            ⚠ AI makes mistakes. Kindly review this text and refer to{' '}
+            <a
+              href="/settings?tab=ai"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="rb-disclaimer-link"
+            >
+              AI Settings
+            </a>
+            {' '}to adjust your prompt policy.
+          </div>
+          <textarea
+            className="rb-narrative-ta"
+            style={{ flex: 1, minHeight: 320, resize: 'vertical' }}
+            value={draft}
+            autoFocus
+            onChange={(e) => setDraft(e.target.value)}
+          />
+        </div>
+        <div className="modal-ft">
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" onClick={handleSave}>Save</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function NarrativeTA({ blockKey, value, onEdit }: NarrativeTAProps) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <div className="rb-review-trigger">
+        {value
+          ? <p className="rb-narrative-preview">{value.substring(0, 160)}{value.length > 160 ? '…' : ''}</p>
+          : <p className="rb-ai-placeholder">AI narrative not yet generated.</p>
+        }
+        <button className="rb-review-btn" onClick={() => setOpen(true)}>Review &amp; Edit</button>
+      </div>
+      {open && (
+        <NarrativeReviewModal
+          blockKey={blockKey}
+          initialValue={value}
+          onSave={onEdit}
+          onClose={() => setOpen(false)}
+        />
+      )}
+    </>
   );
 }
 
@@ -149,28 +217,12 @@ function IncidentStability({ data, onEdit }: { data: IncidentStabilityData; onEd
 
 function AIExecSummary({ data, ai, onEdit }: { data: AIExecSummaryData; ai?: string; onEdit: (k: string, v: string) => void }) {
   const value = ai ?? (data.paragraphs || []).join('\n');
-  return (
-    <textarea
-      className="rb-narrative-ta"
-      style={{ minHeight: 80 }}
-      value={value}
-      placeholder="AI summary will appear here. Edit as needed."
-      onChange={(e) => onEdit('ai-exec-summary', e.target.value)}
-    />
-  );
+  return <NarrativeTA blockKey="ai-exec-summary" value={value} onEdit={onEdit} />;
 }
 
 function ExecutiveCommentary({ data, ai, onEdit }: { data: ExecutiveCommentaryData; ai?: string; onEdit: (k: string, v: string) => void }) {
   const value = ai ?? data.text ?? '';
-  return (
-    <textarea
-      className="rb-narrative-ta"
-      style={{ minHeight: 96 }}
-      value={value}
-      placeholder="Enter executive commentary, or use Generate AI Narrative."
-      onChange={(e) => onEdit('executive-commentary', e.target.value)}
-    />
-  );
+  return <NarrativeTA blockKey="executive-commentary" value={value} onEdit={onEdit} />;
 }
 
 function SimpleTrendChart({ points, valueKey, color }: { points: Array<{ label: string; score?: number; avg?: number; count?: number }>; valueKey: string; color: string }) {
@@ -486,14 +538,7 @@ function RecommendationsBlock({ data, ai, onEdit }: { data: RecommendationsData;
 }
 
 function ConclusionBlock({ data, onEdit }: { data: ConclusionData; onEdit: (k: string, v: string) => void }) {
-  return (
-    <textarea
-      className="rb-narrative-ta"
-      style={{ minHeight: 72 }}
-      value={data.text || ''}
-      onChange={(e) => onEdit('conclusion', e.target.value)}
-    />
-  );
+  return <NarrativeTA blockKey="conclusion" value={data.text || ''} onEdit={onEdit} />;
 }
 
 function RiskOwnershipBlock({ data, onEdit }: { data: RiskOwnershipData; onEdit: (k: string, v: string) => void }) {
@@ -586,12 +631,6 @@ function ExecutiveDashboardBlock({ data, ai, onEdit }: { data: ExecutiveDashboar
     : d === 'down' ? <span style={{ color: '#10b981', fontSize: 10 }}>▼</span>
     : null;
 
-  const postureColor = data.posture.trend === 'Improving' ? '#10b981'
-                     : data.posture.trend === 'Worsening' ? '#ef4444'
-                     : '#f59e0b';
-
-  const bulletsFromAI = ai ? ai.split('\n').filter(Boolean) : null;
-  const bullets = bulletsFromAI ?? (data.bullets || []);
 
   return (
     <>
@@ -606,28 +645,14 @@ function ExecutiveDashboardBlock({ data, ai, onEdit }: { data: ExecutiveDashboar
           </div>
         ))}
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: 12 }}>
-        {[
-          { label: 'Status',     value: data.posture.status,     color: '#1F2854' },
-          { label: 'Trend',      value: data.posture.trend,      color: postureColor },
-          { label: 'Confidence', value: data.posture.confidence,  color: '#1F2854' },
-        ].map((p) => (
-          <div key={p.label} style={{ textAlign: 'center', padding: 10, background: '#f8faff', borderRadius: 8 }}>
-            <div style={{ fontSize: 10, color: '#64748b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 3 }}>{p.label}</div>
-            <div style={{ fontSize: 14, fontWeight: 700, color: p.color }}>{p.value}</div>
-          </div>
-        ))}
-      </div>
       <div style={{ fontSize: 10, fontWeight: 700, color: '#1F2854', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>
         {data.heading_text || 'Highlights'}
       </div>
-      {!ai && bullets.map((b, i) => (
-        <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', padding: '5px 0', borderBottom: '1px solid #f1f5f9' }}>
-          <span style={{ color: '#01b88e', fontWeight: 700, flexShrink: 0 }}>●</span>
-          <span style={{ fontSize: 12, color: '#334155' }}>{b}</span>
-        </div>
-      ))}
-      {ai && <NarrativeTA blockKey="executive-dashboard" value={ai} onEdit={onEdit} />}
+      <NarrativeTA
+        blockKey="executive-dashboard"
+        value={ai ?? (data.bullets || []).join('\n')}
+        onEdit={onEdit}
+      />
     </>
   );
 }

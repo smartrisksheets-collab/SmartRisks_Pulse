@@ -117,7 +117,7 @@ export default function VerifyPin() {
         {ok    && <p className="pin-ok">{ok}</p>}
 
         <p className="pin-foot">
-          Forgot PIN? Contact your workspace Owner to remove it.
+          Forgot PIN? Contact your workspace Admin for access.
         </p>
       </div>
     </div>

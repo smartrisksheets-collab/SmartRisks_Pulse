@@ -82,6 +82,17 @@ def _guard_rules(fs: dict) -> str:
             "- incidents_enabled is FALSE. Do NOT reference incidents in any form."
         )
 
+    lines.append(
+        "- Any industry or sector named in your persona description above is for tone and "
+        "vocabulary only — it is context about the organisation, not evidence about any "
+        "individual risk. Do NOT attribute a specific named risk to that industry, sector, "
+        "business line, or an industry-specific mechanism (e.g. lending volume, borrower "
+        "capacity, trading desk, auto finance, underwriting) unless that risk's own "
+        "description explicitly states it. If a risk's description is generic, describe it "
+        "in equally generic terms — do not manufacture sector-specific detail to make the "
+        "narrative more vivid."
+    )
+
     posture = fs.get("governance", {}).get("posture", "controlled")
     if posture == "controlled":
         lines.append(
@@ -244,7 +255,7 @@ def _build_prompt(
             "risks":             pruned,
         }
         system = (
-            f"You are a senior risk advisor at {org}{ind}. "
+            f"You are a senior risk advisor at {org}. "
             "You identify what is most dangerous and what must be done, not what exists.\n\n"
             + guards
         )
@@ -252,6 +263,8 @@ def _build_prompt(
             f"Write 2-3 sentences on the top risks below. Each sentence must carry a clear "
             "strategic implication or urgency signal.\n"
             f"Do not list or describe risks. Assess the combined exposure they create and what it means for {org}.\n"
+            "Base every claim only on each risk's own description field below — do not infer "
+            "an industry, sector, or business mechanism the description does not state.\n"
             "Use [RISK] at the start of sentences identifying a critical exposure or control gap.\n"
             "Use [OBSERVATION] at the start of sentences identifying a dangerous pattern across multiple risks.\n\n"
             f"Authoritative evidence:\n{json.dumps(data, indent=2)}"
@@ -270,7 +283,7 @@ def _build_prompt(
             "created_in_period": fs.get("counts", {}).get("created_in_period"),
         }
         system = (
-            f"You are a senior risk strategist at {org}{ind}. "
+            f"You are a senior risk strategist at {org}. "
             "You see around corners. Your job is to tell leadership what is coming before it arrives.\n\n"
             + guards
         )
@@ -278,6 +291,8 @@ def _build_prompt(
             f"Write 2-3 sentences on these emerging risks. Focus on future consequence "
             f"and the window {org} has to act before these become critical.\n"
             "Do not describe the risks. State what they threaten and what early action would prevent.\n"
+            "Base every claim only on each risk's own description field below — do not infer "
+            "an industry, sector, or business mechanism the description does not state.\n"
             "Use [RISK] at the start of sentences signalling an emerging threat with high future impact.\n"
             "Use [OBSERVATION] at the start of sentences identifying a converging vulnerability.\n\n"
             f"Authoritative evidence:\n{json.dumps(data, indent=2)}"
@@ -296,7 +311,7 @@ def _build_prompt(
             "incidents":        pruned,
         }
         system = (
-            f"You are a senior operational risk advisor at {org}{ind}. "
+            f"You are a senior operational risk advisor at {org}. "
             "You diagnose control failures and tell leadership what they reveal about systemic weaknesses.\n\n"
             + guards
         )
@@ -304,6 +319,8 @@ def _build_prompt(
             f"Write 2-3 sentences on what these incidents collectively expose about {org}'s "
             "control environment and operational resilience.\n"
             "Do not recount what happened. Assess what the pattern reveals and what leadership must address.\n"
+            "Base every claim only on each incident's own description field below — do not infer "
+            "an industry, sector, or business mechanism the description does not state.\n"
             "Use [OBSERVATION] at the start of sentences identifying a systemic pattern or control gap.\n"
             "Use [RISK] at the start of sentences stating the operational or strategic exposure "
             f"this creates for {org}.\n\n"
