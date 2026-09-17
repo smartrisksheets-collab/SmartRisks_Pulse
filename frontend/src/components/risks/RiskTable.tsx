@@ -32,6 +32,27 @@ function FreshTip({ risk, x, y }: { risk: Risk; x: number; y: number }) {
   );
 }
 
+function HoverTip({ title, sub, rows, x, y }: {
+  title: string;
+  sub:   string;
+  rows?: { label: string; value: string; accent?: boolean }[];
+  x: number;
+  y: number;
+}) {
+  return (
+    <div className="fresh-tip unevidenced" style={{ top: y - 8, left: x + 16 }}>
+      <div className="fresh-tip-title" style={{ color: '#1F2854' }}>{title}</div>
+      <div className="fresh-tip-sub">{sub}</div>
+      {rows?.map((row, i) => (
+        <div className="fresh-tip-row" key={i}>
+          <span className="fresh-tip-lbl">{row.label}</span>
+          <span className={`fresh-tip-val${row.accent ? ' accent' : ''}`}>{row.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 interface Props {
   risks:        Risk[];
   loading:      boolean;
@@ -81,7 +102,8 @@ const APT_LABELS: Record<string, string> = {
 
 
 export default function RiskTable({ risks, loading, onView, onEdit, flashId, aiFlashIds, selectedIds, onToggle, onToggleAll, appetites }: Props) {
-  const [freshTip, setFreshTip] = useState<{ risk: Risk; x: number; y: number } | null>(null);
+  const [freshTip,  setFreshTip]  = useState<{ risk: Risk; x: number; y: number } | null>(null);
+  const [hoverTip,  setHoverTip]  = useState<{ title: string; sub: string; rows?: { label: string; value: string; accent?: boolean }[]; x: number; y: number } | null>(null);
   const currency = useSettingsStore(s => s.currency);
 
   if (loading && !risks.length) {
@@ -148,7 +170,7 @@ export default function RiskTable({ risks, loading, onView, onEdit, flashId, aiF
                 </td>
                 {/* Risk ID + control effectiveness prompt */}
                 <td>
-                  <span style={{ fontWeight: 900, color: '#01b88e', fontSize: 13 }}>{r.id}</span>
+                  <span style={{ fontWeight: 700, color: '#1F2854', fontSize: 13 }}>{r.id}</span>
                   <br />
                   {(r.control_effectiveness === null) && (
                     <span
@@ -170,22 +192,22 @@ export default function RiskTable({ risks, loading, onView, onEdit, flashId, aiF
                 </td>
 
                 {/* Date Logged */}
-                <td className="date-col" style={{ fontSize: 12, fontWeight: 700 }}>
+                <td className="date-col" style={{ fontSize: 12, color: '' }}>
                   {formatDate(r.logged_at)}
                 </td>
 
                 {/* Description */}
                 <td className="risk-desc-cell">
-                  <span className="risk-desc-text" style={{ fontWeight: 700 }} title={r.description ?? ''}>
+                  <span className="risk-desc-text" style={{ color: 'var(--muted)' }} title={r.description ?? ''}>
                     {r.description ?? '—'}
                   </span>
                 </td>
 
                 {/* Owner */}
-                <td style={{ fontSize: 12, fontWeight: 700 }}>{r.owner ?? '—'}</td>
+                <td style={{ fontSize: 12, color: 'var(--muted)' }}>{r.owner ?? '—'}</td>
 
                 {/* Business Impact */}
-                <td className="risk-impact-cell" style={{ fontSize: 12 }}>
+                <td className="risk-impact-cell" style={{ fontSize: 12, color: 'var(--muted)' }}>
                   {r.primary_impact
                     ? <span className="risk-impact-text" title={r.primary_impact}>{r.primary_impact}</span>
                     : <span className="not-est">Not entered</span>}
@@ -216,7 +238,7 @@ export default function RiskTable({ risks, loading, onView, onEdit, flashId, aiF
                 </td>
 
                 {/* Financial Exposure */}
-                <td style={{ fontSize: 12, fontWeight: 700 }}>
+                <td style={{ fontSize: 12, color: 'var(--muted)' }}>
                   {r.financial_exposure
                     ? formatExposure(r.financial_exposure, currency)
                     : <span className="not-est">Not estimated</span>}
@@ -229,7 +251,15 @@ export default function RiskTable({ risks, loading, onView, onEdit, flashId, aiF
                       a => a.category.trim().toLowerCase() === (r.category ?? '').trim().toLowerCase()
                     );
                     const status = appetiteStatus(r.residual, rec?.threshold ?? null);
-                    if (status === 'unset') return <span className="apt-pill apt-pill-unset tooltip-wrap" data-tip="Visit settings to set risk appetite.">No threshold</span>;
+                    if (status === 'unset') return (
+                      <span
+                        className="apt-pill apt-pill-unset"
+                        onMouseMove={(e) => setHoverTip({ title: 'NO THRESHOLD', sub: 'Visit settings to configure an appetite threshold for this category.', x: e.clientX, y: e.clientY })}
+                        onMouseLeave={() => setHoverTip(null)}
+                      >
+                        No threshold
+                      </span>
+                    );
                     return <span className={APT_PILL_CLS[status]}>{APT_LABELS[status]}</span>;
                   })()}
                 </td>
@@ -239,7 +269,12 @@ export default function RiskTable({ risks, loading, onView, onEdit, flashId, aiF
                   {r.linked_decision
                     ? <span className="dec-linked">Linked</span>
                     : (
-                      <div className="dec-warn tooltip-wrap" data-tip="Edit risk to link a decision to the risk." style={{ position: 'relative' }}>
+                      <div
+                        className="dec-warn"
+                        style={{ position: 'relative' }}
+                        onMouseMove={(e) => setHoverTip({ title: 'DECISION PENDING', sub: 'This risk has no linked governance decision.', rows: [{ label: 'Days open', value: `${decisionDays(r.logged_at)}d`, accent: true }], x: e.clientX, y: e.clientY })}
+                        onMouseLeave={() => setHoverTip(null)}
+                      >
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#b9762a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                           <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
                           <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
@@ -254,7 +289,8 @@ export default function RiskTable({ risks, loading, onView, onEdit, flashId, aiF
           })}
         </tbody>
       </table>
-      {freshTip && <FreshTip risk={freshTip.risk} x={freshTip.x} y={freshTip.y} />}
+      {freshTip  && <FreshTip  risk={freshTip.risk} x={freshTip.x}  y={freshTip.y} />}
+      {hoverTip  && <HoverTip  title={hoverTip.title} sub={hoverTip.sub} rows={hoverTip.rows} x={hoverTip.x} y={hoverTip.y} />}
     </div>
   );
 }

@@ -3,7 +3,7 @@
 **Product:** SmartRisk Pulse v2
 **Stack:** FastAPI + React + Supabase + Render + Vercel
 **Setup document:** SMARTRISK_V2_SETUP.md
-**Last updated:** September 11, 2026
+**Last updated:** September 17, 2026
  
 ---
  
@@ -15,9 +15,118 @@ At the end of every session Claude outputs a fresh version of this file with all
  
 ---
  
-**Phase:** Report engine upgrade complete. Visual polish, testing, and final PDF inspection remain.
-**Status:** Session 22, September 11, 2026: Report engine rebuilt with central facts layer, Jakarta Sans font, risk heat map, module gate, AI prohibition rules, and frontend block selector restructured. See session log below.
-**Next action:** Begin next session by reading SMARTRISK_V2_SETUP.md, SMARTRISK_V2_DECISIONS.md, then this file. First task: generate a full PDF with all new blocks and visually inspect every page (cover, dashboard, heat map, findings, recommendations, methodology, conclusion). Second task: run existing backend tests and confirm no regressions. Third task: visual upgrade of executive dashboard, cover page, tables, charts, and distribution block (Steps 18-22 from CLAUDE_REPORT_FIX_IMPLEMENTATION_GUIDE.md).
+**Phase:** Product polish, AI calibration, and UI refinement.
+**Status:** Session 23, September 17, 2026: Risk register, report PDF, AI report engine, dashboard, auth pages, and multiple UX gaps addressed. See session log below.
+**Next action:** Begin next session by reading SMARTRISK_V2_SETUP.md, SMARTRISK_V2_DECISIONS.md, then this file. First task: run backend tests and confirm no regressions from control_effectiveness None changes and exposure index fix. Second task: visual QA pass on the new login page, freshness tooltips, and risk pressure card on a live environment.
+
+---
+
+### Session 23: September 17, 2026 — Risk Register, Report, AI, Dashboard, Auth Polish
+
+**Completed:**
+
+**Risk Register**
+- Sort: added Risk.id ASC tiebreaker — eliminates row jumping on refetch
+- Edit risk: clear filters on successful edit so updated risk stays visible; removed erroneous setPage(1) after user correction
+- Appetite filter: server-side filter added to list endpoint via LEFT JOIN on appetite_thresholds; dropdown added next to risk level filter
+- Replace Internal/External source badge with amber "Set Controls" badge when control_effectiveness is None or 0; clicking opens edit modal
+- Freshness tooltip: rebuilt FreshTip component using existing CSS, position: fixed, colour-coded per state; added HoverTip variant for appetite and decision columns; all data-tip tooltips replaced; tooltip box sizing made responsive (auto width, max-width 175px, 10px fonts)
+- Avg Residual stat card: whole number display, shows value/matrix_max using residual_max threaded through ControlSignal schema and type
+- Top Owner stat card: value rounded to whole number
+
+**Control Effectiveness**
+- Distinguish None (not assessed) from 0 (assessed, zero effectiveness) throughout frontend and backend
+- Dropdown labels renamed: None, 0-No effective control, 1-Weak, 2-Limited, 3-Moderate, 4-Strong, 5-Very strong
+- RiskRow preserves None instead of collapsing to 0
+- Fixed all None comparison crash sites in services_report.py, services_report_facts.py
+- Avg control strength now includes 0, excludes None
+
+**Report PDF**
+- Cover page: title font reduced (26→20pt), proper vertical spacing between elements using Spacer rows
+- Avg Residual shown as value/matrix_max in Risk Snapshot and Executive Dashboard KPI strips
+- Top risks: band-count-aware filtering (5/4-band top 2, 3-band top 1); description truncation removed
+- Rename "What Leadership Needs To Know" to "Highlights"
+- Remove key risk movements block from frontend, types, PDF renderer, and compute registry
+- Exposure index denominator now uses likelihood_scale × impact_scale; fixes 80% ceiling on non-5x5 matrices
+- Set Controls amber badge added under risk ID in top risks PDF table
+- Organisation name used instead of workspace name throughout report and AI
+- Executive dashboard not rendering fixed (None comparison crash in compute_executive_dashboard)
+
+**AI Report**
+- Four-level posture classification added to report_facts: controlled, watch, elevated, breach
+- posture key exported in build_fact_slice governance dict
+- _guard_rules upgraded with posture-aware tone instructions per level
+- Executive dashboard prompt calibrated to POSTURE guard; section retitled to Highlights
+
+**Dashboard**
+- Risk pressure card: Total Incidents replaced with Est Financial Exposure; respects currency setting via formatMoneyCompact
+- Control Strength shows 0% with prominent 0 instead of dash
+- Risk Health gauge shows % suffix at all values
+- Avg residual score rounded to whole number in card and pressure modal
+- KPISummary: est_financial_exposure field added to schema, service, and frontend type
+
+**Auth / Login**
+- Login page redesigned: numbered steps left panel, segmented tabs, mobile layout
+- All auth submit buttons background changed to teal (#01b88e) with #00967a hover
+- PIN page Unlock button text centred, button background teal
+- External submissions: org name and logo pulled from workspace settings and displayed in page headers
+- Logo removal bug fixed: undefined → null sent to backend; sidebar onError clears broken logo
+- New public endpoint /external/brand/{tenant_id} for ExternalRisk and ExternalIncident branding
+
+**External Submissions**
+- TokenResolveResponse extended with org_name and logo_url
+- ExternalSubmit Brandbar shows logo and org name
+- ExternalRisk and ExternalIncident fetch brand on mount
+
+**Misc**
+- ReportPreview.tsx build error fixed (KeyRiskMovementsData removal)
+- Risk table sort stable (created_at DESC, id ASC)
+- services_report_facts.py _derive_posture method added
+- Residual max helper _residual_max used consistently across all report and stats computations
+
+**Status:** Complete
+
+**Files touched this session:**
+
+Backend new/modified:
+- `app/services/risk.py` — sort tiebreaker, exposure fix, residual_max in ControlSignal, est_financial_exposure
+- `app/services/report.py` — all report block compute changes, top risks, exec dashboard unit, org name
+- `app/services/report_facts.py` — _derive_posture, posture in fact slice, None comparison fixes
+- `app/services/pdf_report.py` — cover page, Set Controls badge, description truncation, avg residual unit, exec dashboard
+- `app/services/ai_report.py` — posture guard, executive prompt calibration
+- `app/services/dashboard.py` — est_financial_exposure computation
+- `app/services/settings.py` — org name preference over workspace name
+- `app/services/submission.py` — org_name and logo_url in token resolve
+- `app/schemas/risk.py` — ControlSignal residual_max
+- `app/schemas/dashboard.py` — KPISummary est_financial_exposure
+- `app/schemas/submission.py` — TokenResolveResponse org_name, logo_url
+- `app/models/risk.py` — no change (read only)
+- `app/routes/risks.py` — appetite filter param
+- `app/routes/reports.py` — org name pass-through
+- `app/routes/external.py` — /external/brand/{tenant_id} endpoint
+- `app/routes/submissions.py` — no change (read only)
+
+Frontend new/modified:
+- `src/pages/Login.tsx` — full redesign
+- `src/pages/VerifyPin.tsx` — button centred, teal background
+- `src/pages/ExternalSubmit.tsx` — brandbar org_name, logo_url
+- `src/pages/ExternalRisk.tsx` — brand fetch and display
+- `src/pages/ExternalIncident.tsx` — brand fetch and display
+- `src/components/risks/RiskTable.tsx` — Set Controls badge, FreshTip, HoverTip, sort, filter clear on edit, appetite filter render
+- `src/components/risks/RiskForm.tsx` — CTRL_EFF labels, None/null type, dropdown values
+- `src/components/risks/StatCards.tsx` — residual_max display, whole number top owner
+- `src/components/risks/EditRiskModal.tsx` — null init for control_effectiveness
+- `src/components/dashboard/RiskSection.tsx` — Est Financial Exposure, control strength 0%, health %, currency
+- `src/components/reports/ReportPreview.tsx` — KeyRiskMovementsData removal
+- `src/components/reports/BlockSelector.tsx` — key-risk-movements removed
+- `src/components/layout/Sidebar.tsx` — onError logo clear
+- `src/components/settings/WorkspaceSettings.tsx` — logo removal null fix
+- `src/store/settingsStore.ts` — no change (read only)
+- `src/types/risk.ts` — control_effectiveness null, residual_max in ControlSignal, RiskCreate fix
+- `src/types/report.ts` — KeyRiskMovementsData removed, BlockKey updated
+- `src/types/dashboard.ts` — est_financial_exposure in KPISummary
+- `src/utils/scoring.ts` — no change (read only)
+- `src/index.css` — fresh-tip sizing, auth button teal, auth steps, auth seg, login redesign classes
  
 ---
 

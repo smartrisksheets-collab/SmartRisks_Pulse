@@ -5,7 +5,7 @@ import BlockSelector   from '../components/reports/BlockSelector';
 import BlockCanvas     from '../components/reports/BlockCanvas';
 import { useReports }  from '../hooks/useReports';
 import { useCanDo }    from '../utils/permissions';
-import type { BlockKey, DatePreset } from '../types/report';
+import { AI_BLOCKS, type BlockKey, type DatePreset } from '../types/report';
 
 // ── Simple toast (reuses existing .toast CSS classes) ──────────────────────────
 function useToast() {
@@ -396,6 +396,14 @@ export default function ReportBuilder() {
 
   // Step 3: Download PDF
   async function handleDownloadPDF() {
+    const aiNotRun = rb.activeBlocks.some(b => AI_BLOCKS.has(b)) && Object.keys(rb.aiData).length === 0;
+    if (aiNotRun) {
+      const proceed = await confirm(
+        'AI Narratives Not Generated',
+        'It looks like you haven\'t run Generate AI. Your report will export without AI narratives. Continue anyway?',
+      );
+      if (!proceed) return;
+    }
     const ok = await confirm(
       'Confirm Download',
       `Download "${rb.settings.report_title || 'Risk Report'}" report?`,
@@ -405,7 +413,15 @@ export default function ReportBuilder() {
   }
 
   // Step 3: Send by email
-  function handleEmailClick() {
+  async function handleEmailClick() {
+    const aiNotRun = rb.activeBlocks.some(b => AI_BLOCKS.has(b)) && Object.keys(rb.aiData).length === 0;
+    if (aiNotRun) {
+      const proceed = await confirm(
+        'AI Narratives Not Generated',
+        'It looks like you haven\'t run Generate AI. Your report will export without AI narratives. Continue anyway?',
+      );
+      if (!proceed) return;
+    }
     setShowEmail(true);
   }
 

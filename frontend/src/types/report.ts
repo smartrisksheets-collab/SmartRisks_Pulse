@@ -346,3 +346,12 @@ export const BLOCK_LABELS: Record<BlockKey, string> = {
   'risk-heat-map':        'Risk Heat Map',
   'methodology':          'Methodology',
 };
+
+export const AI_BLOCKS = new Set<BlockKey>([
+  'ai-exec-summary',
+  'executive-commentary',
+  'top-risks',
+  'top-emerging-risks',
+  'major-incidents',
+  'executive-dashboard',
+]);

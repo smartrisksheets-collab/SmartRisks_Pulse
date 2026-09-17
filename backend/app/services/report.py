@@ -180,6 +180,7 @@ class RiskRow:
     # ── Assurance fields ──────────────────────────────────────────────────────
     control_last_tested:      date | None
     control_assertion_source: str
+    mitigation_plan:          str
 
 
 @dataclass
@@ -256,6 +257,7 @@ async def _fetch_risks(db: AsyncSession, tenant_id: UUID) -> list[RiskRow]:
             # assurance
             control_last_tested=_parse_date(r.control_last_tested),       # type: ignore[arg-type]
             control_assertion_source=str(r.control_assertion_source or ""),
+            mitigation_plan=str(r.mitigation_plan or ""),
         ))
     return rows
 
@@ -782,7 +784,9 @@ def compute_top_risks(ctx: ReportContext) -> dict:
                 "treatment":       r.treatment,
                 "movement":        r.movement,
                 "score_delta":     r.score_delta,
-                "appetite_status": r.appetite_status,
+                "appetite_status":  r.appetite_status,
+                "controls":         r.controls,
+                "mitigation_plan":  r.mitigation_plan,
             }
             for r in risks
         ],
@@ -809,7 +813,9 @@ def compute_top_emerging_risks(ctx: ReportContext) -> dict:
                 "residual":    round(r.residual),
                 "logged":      r.logged_at.isoformat() if r.logged_at else None,
                 "movement":    r.movement,
-                "score_delta": r.score_delta,
+                "score_delta":     r.score_delta,
+                "controls":        r.controls,
+                "mitigation_plan": r.mitigation_plan,
             }
             for r in risks
         ],

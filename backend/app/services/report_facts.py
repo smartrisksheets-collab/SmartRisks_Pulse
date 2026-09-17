@@ -244,7 +244,7 @@ class ReportFacts:
         """True when every supplied residual agrees with the Pulse engine within 0.05."""
         eligible = [
             r for r in self.ctx.all_risks
-            if r.severity_raw > 0 and r.control_effectiveness > 0
+            if r.severity_raw > 0 and r.control_effectiveness is not None and r.control_effectiveness > 0
         ]
         if not eligible:
             return True
@@ -254,7 +254,7 @@ class ReportFacts:
         """True when supplied residual = severity - control_effectiveness (additive subtraction)."""
         eligible = [
             r for r in self.ctx.all_risks
-            if r.severity_raw > 0 and r.control_effectiveness > 0
+            if r.severity_raw > 0 and r.control_effectiveness is not None and r.control_effectiveness > 0
         ]
         if not eligible:
             return False
@@ -268,7 +268,7 @@ class ReportFacts:
         Used by the methodology block."""
         out = []
         for r in self.ctx.all_risks:
-            if r.severity_raw <= 0 or r.control_effectiveness <= 0:
+            if r.severity_raw <= 0 or r.control_effectiveness is None or r.control_effectiveness <= 0:
                 continue
             pr   = _pulse_residual(r)
             diff = round(r.residual - pr, 1)
