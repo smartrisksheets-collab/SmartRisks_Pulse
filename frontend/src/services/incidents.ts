@@ -76,3 +76,7 @@ export async function suggestSeverity(description: string): Promise<string> {
   const res = await apiPost<{ suggestion: string }>('/api/v1/incidents/ai/suggest-severity', { description });
   return res.suggestion;
 }
+
+export async function getIncidentPageInsights(): Promise<import('../types/incident').IncidentPageInsight> {
+  return apiPost('/api/v1/incidents/ai/page-insights', {});
+}

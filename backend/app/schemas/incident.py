@@ -195,6 +195,7 @@ class IncidentTotals(BaseModel):
     open_count: int
     overdue_count: int
     high_or_above: int
+    open_over_150d: int = 0
     flag: str | None = None
 
 class IncidentLifecycle(BaseModel):
@@ -220,11 +221,32 @@ class IncidentResolution(BaseModel):
     impact_total_count: int = 0
     flag: str | None = None
 
+class MonthlyTrend(BaseModel):
+    month: str
+    count: int
+
+class TopDriver(BaseModel):
+    id: str
+    title: str | None = None
+    severity: str | None = None
+    age_days: int
+    category: str | None = None
+    status: str | None = None
+
+class IncidentInsightAction(BaseModel):
+    badge: str
+    text: str
+
+class IncidentPageInsightResponse(BaseModel):
+    actions: list[IncidentInsightAction]
+
 class IncidentStatsResponse(BaseModel):
     health: IncidentHealth
     totals: IncidentTotals
     lifecycle: IncidentLifecycle
     resolution: IncidentResolution
+    monthly_trend: list[MonthlyTrend] = []
+    top_drivers: list[TopDriver] = []
 
 
 class AIIncidentRequest(BaseModel):

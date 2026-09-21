@@ -15,6 +15,7 @@ from app.schemas.incident import (
 )
 from app.services import incident as incident_service
 from app.services import ai_incident as ai_incident_service
+from app.services import ai_incident_page as ai_incident_page_service
 
 router = APIRouter(prefix="/incidents", tags=["incidents"])
 
@@ -168,4 +169,17 @@ async def suggest_severity(
 ):
     tenant_id = UUID(claims["active_tenant_id"])
     result = await ai_incident_service.suggest_severity(db, tenant_id, payload.description)
+    return {"data": result, "error": None, "meta": {}}
+
+
+@router.post("/ai/page-insights")
+@limiter.limit("10/minute")
+async def get_page_insights(
+    request: Request,
+    db:      AsyncSession = Depends(get_db),
+    claims:  dict         = Depends(require_permission("generate_ai")),
+    _:       dict         = Depends(require_module("incident")),
+):
+    tenant_id = UUID(claims["active_tenant_id"])
+    result = await ai_incident_page_service.generate_page_insights(db, tenant_id)
     return {"data": result, "error": None, "meta": {}}

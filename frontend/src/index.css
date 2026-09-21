@@ -233,12 +233,13 @@
 .modal-section-label:first-child { margin-top: 0; }
 
 .linkage-panel {
-  background: #efeafc; border: 1.5px solid #d5c8f5; border-radius: 12px;
+  background: var(--bg-secondary); border: 1px solid var(--line); border-radius: 12px;
   padding: 14px 16px; margin-bottom: 14px;
 }
 .linkage-badge {
-  display: inline-block; font-size: 10px; font-weight: 800; color: #fff;
-  background: #6a3fc9; padding: 2px 9px; border-radius: 100px; letter-spacing: .03em;
+  display: inline-block; font-size: 10px; font-weight: 800; color: var(--muted);
+  background: var(--card); border: 1px solid var(--line);
+  padding: 2px 9px; border-radius: 100px; letter-spacing: .03em;
   margin-bottom: 6px;
 }
 .linkage-sub { font-size: 11.5px; color: var(--muted); line-height: 1.5; margin-bottom: 14px; }
@@ -4328,6 +4329,38 @@ tr.row-flash { animation: rowFlash 2.2s ease; }
 
 /* Pressure card dashed footer */
 .rs-pressure-footer { padding-top: 8px; border-top: 1px dashed var(--line); font-size: 12px; color: var(--muted); }
+
+/* ── Incident page panels ─────────────────────────────────────────────────── */
+.inc-panel-row   { display:grid; grid-template-columns:1.1fr 1fr; gap:16px; margin-bottom:16px; }
+.inc-panel       { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px; }
+.inc-panel-title { font-size:14px; font-weight:700; color:var(--navy); margin:0 0 2px; }
+.inc-panel-sub   { font-size:12px; color:var(--muted); margin-bottom:14px; }
+
+.inc-driver-table { width:100%; border-collapse:collapse; font-size:13px; }
+.inc-driver-table th { text-align:left; font-size:11px; font-weight:700; color:var(--muted); padding:0 8px 8px 0; text-transform:uppercase; letter-spacing:.04em; border-bottom:1px solid var(--line); }
+.inc-driver-table td { padding:8px 8px 8px 0; border-bottom:1px solid var(--line); vertical-align:middle; color:var(--text); }
+.inc-driver-table tr:last-child td { border-bottom:none; }
+
+/* ── Incident AI Insights card ────────────────────────────────────────────── */
+.inc-insight-card    { background:var(--accent); border-radius:12px; padding:20px; margin-bottom:16px; }
+.inc-insight-head    { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
+.inc-insight-title   { font-size:15px; font-weight:700; color:#fff; }
+.inc-exec-tag        { font-size:11px; background:rgba(1,184,142,.2); border:1px solid rgba(1,184,142,.5); color:#7fe8cf; padding:3px 10px; border-radius:100px; font-weight:700; }
+.inc-insight-stats   { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:16px; }
+.inc-insight-stat    { background:rgba(255,255,255,.06); border-radius:8px; padding:12px; }
+.inc-insight-stat-n  { font-size:22px; font-weight:800; color:#01b88e; line-height:1; }
+.inc-insight-stat-l  { font-size:11px; color:#b7bfe0; text-transform:uppercase; letter-spacing:.04em; margin-top:4px; line-height:1.4; }
+.inc-action-list     { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:8px; }
+.inc-action-item     { display:flex; gap:10px; align-items:flex-start; font-size:13px; background:rgba(255,255,255,.05); border-left:3px solid #01b88e; padding:9px 12px; border-radius:6px; color:#e7eaf6; line-height:1.5; }
+.inc-action-badge    { font-size:10.5px; font-weight:700; background:#01b88e; color:var(--accent); padding:2px 8px; border-radius:100px; white-space:nowrap; flex-shrink:0; margin-top:1px; }
+.inc-insight-gen-btn { display:inline-flex; align-items:center; gap:8px; background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.2); color:#fff; border-radius:8px; padding:10px 16px; font-size:13px; font-weight:600; cursor:pointer; }
+.inc-insight-gen-btn:hover:not(:disabled) { background:rgba(255,255,255,.15); }
+.inc-insight-gen-btn:disabled { opacity:.6; cursor:not-allowed; }
+
+@media (max-width:900px) {
+  .inc-panel-row   { grid-template-columns:1fr; }
+  .inc-insight-stats { grid-template-columns:repeat(2,1fr); }
+}
 .rs-appetite-row { display:flex; align-items:center; gap:7px; flex-wrap:wrap; }
 .rs-appetite-dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
 .rs-appetite-dot.within  { background:#01b88e; }

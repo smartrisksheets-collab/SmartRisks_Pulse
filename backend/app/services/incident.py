@@ -23,6 +23,8 @@ from app.schemas.incident import (
     IncidentLifecycle,
     IncidentResolution,
     HealthComponent,
+    MonthlyTrend,
+    TopDriver,
 )
 from app.services.recycle import soft_delete
 from app.services.incident_severity import compute_breach, get_sla_map
@@ -258,6 +260,7 @@ async def get_stats(db: AsyncSession, tenant_id: UUID) -> IncidentStatsResponse:
     result = await db.execute(
         select(
             Incident.id,
+            Incident.title,
             Incident.status,
             Incident.severity,
             Incident.category,
@@ -329,15 +332,19 @@ async def get_stats(db: AsyncSession, tenant_id: UUID) -> IncidentStatsResponse:
     overdue_rows = [r for r in open_rows if compute_breach(_age_h(r), _tgt_h(r))]
     overdue_count = len(overdue_rows)
     high_or_above = sum(1 for r in rows if str(r.severity or '') in {'High', 'Very High'})
-    linked_count  = sum(1 for r in rows if r.linked_risk_id is not None)
-    within_sla    = total - sum(1 for r in rows if _breached(r))
+    linked_count   = sum(1 for r in rows if r.linked_risk_id is not None)
+    within_sla     = total - sum(1 for r in rows if _breached(r))
+    open_over_150d = sum(1 for r in open_rows if _age_d(r) > 150)
 
     # Oldest open incident
     oldest = max(open_rows, key=_age_d, default=None)
     oldest_open_days = _age_d(oldest) if oldest else None
     oldest_open_id   = str(oldest.id) if oldest else None
     oldest_open_sev  = str(oldest.severity or '') if oldest else None
-    oldest_open_date = oldest.reported_at.strftime('%-d %b %Y') if oldest and oldest.reported_at else None
+    oldest_open_date = (
+        f"{oldest.reported_at.day} {oldest.reported_at.strftime('%b %Y')}"
+        if oldest and oldest.reported_at else None
+    )
 
     # ── MTTR and breach vs own target ─────────────────────────────────────────
     mttr_list: list[float] = []
@@ -464,7 +471,51 @@ async def get_stats(db: AsyncSession, tenant_id: UUID) -> IncidentStatsResponse:
 
     res_flag: str | None = None
     if worst_r:
-        res_flag = f"Worst overrun: {worst_r.id}, {_age_d(worst_r) if _is_open(worst_r) else int(mttr_list[0] if mttr_list else 0)}d against a {_tgt_d(worst_r)}-day target."
+        if _is_open(worst_r):
+            wr_days = _age_d(worst_r)
+        elif worst_r.reported_at and worst_r.resolved_at:
+            wr_rd = worst_r.resolved_at.date() if isinstance(worst_r.resolved_at, datetime) else worst_r.resolved_at
+            wr_days = (wr_rd - worst_r.reported_at).days
+        else:
+            wr_days = 0
+        res_flag = f"Worst overrun: {worst_r.id}, {wr_days}d against a {_tgt_d(worst_r)}-day target."
+
+    # ── Monthly trend (last 6 months) ─────────────────────────────────────────
+    trend_keys: list[tuple[date, str]] = []
+    for i in range(5, -1, -1):
+        m = today.month - i
+        y = today.year
+        while m <= 0:
+            m += 12
+            y -= 1
+        d0 = date(y, m, 1)
+        trend_keys.append((d0, d0.strftime('%b %Y')))
+
+    monthly_bucket: dict[str, int] = defaultdict(int)
+    for r in rows:
+        if r.reported_at:
+            monthly_bucket[r.reported_at.isoformat()[:7]] += 1
+
+    monthly_trend = [
+        MonthlyTrend(month=lbl, count=monthly_bucket.get(d0.isoformat()[:7], 0))
+        for d0, lbl in trend_keys
+    ]
+
+    # ── Top drivers: open incidents ranked by age × recurrence factor ──────────
+    def _rfactor(r) -> int:  # type: ignore[no-untyped-def]
+        return 2 if pair_ct.get(f"{r.category or ''}|{r.business_unit or ''}", 0) >= 2 else 1
+
+    top_drivers = [
+        TopDriver(
+            id=str(r.id),
+            title=str(r.title or '') or None,
+            severity=str(r.severity or '') or None,
+            age_days=_age_d(r),
+            category=str(r.category or '') or None,
+            status=str(r.status or '') or None,
+        )
+        for r in sorted(open_rows, key=lambda r: _age_d(r) * _rfactor(r), reverse=True)[:5]
+    ]
 
     return IncidentStatsResponse(
         health=IncidentHealth(
@@ -484,6 +535,7 @@ async def get_stats(db: AsyncSession, tenant_id: UUID) -> IncidentStatsResponse:
             open_count=open_count,
             overdue_count=overdue_count,
             high_or_above=high_or_above,
+            open_over_150d=open_over_150d,
             flag=totals_flag,
         ),
         lifecycle=IncidentLifecycle(
@@ -509,4 +561,6 @@ async def get_stats(db: AsyncSession, tenant_id: UUID) -> IncidentStatsResponse:
             impact_total_count=total,
             flag=res_flag,
         ),
+        monthly_trend=monthly_trend,
+        top_drivers=top_drivers,
     )

@@ -3,6 +3,7 @@
 import { useState, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Link2, RefreshCw, Printer } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { useFeedbackStore } from '../store/feedbackStore';
 import { useIncidents } from '../hooks/useIncidents';
 import type { ListIncidentsParams } from '../services/incidents';
@@ -14,7 +15,8 @@ import IncidentDetailDrawer from '../components/incidents/IncidentDetailDrawer';
 import IncidentPrintModal from '../components/incidents/IncidentPrintModal';
 import IncidentExternalLinkModal from '../components/incidents/IncidentExternalLinkModal';
 import AddIncidentModal from '../components/incidents/AddIncidentModal';
-import type { Incident, IncidentCreate } from '../types/incident';
+import type { Incident, IncidentCreate, IncidentStats, IncidentPageInsight, MonthlyTrend, TopDriver } from '../types/incident';
+import { getIncidentPageInsights } from '../services/incidents';
 import { useCanDo } from '../utils/permissions';
 import { useIncidentSeverity } from '../hooks/useIncidentSeverity';
 
@@ -22,6 +24,138 @@ const PAGE_SIZE = 10;
 
 const STATUSES   = ['New', 'Open', 'In Progress', 'Under Review', 'Resolved', 'Closed'];
 const CHANNELS   = ['Email', 'Phone', 'Walk-in', 'Monitoring', 'Other'];
+
+// ── Severity color helper ──────────────────────────────────────────────────────
+function incSevColor(sev: string | null): string {
+  const s = (sev ?? '').toLowerCase();
+  if (s === 'very high') return '#dc2626';
+  if (s === 'high')      return '#d97706';
+  if (s === 'medium')    return '#059669';
+  return '#64748b';
+}
+
+// ── AI Insights card ──────────────────────────────────────────────────────────
+function IncidentInsightSection({ stats }: { stats: IncidentStats }) {
+  const [insight, setInsight]   = useState<IncidentPageInsight | null>(null);
+  const [loading, setLoading]   = useState(false);
+  const [err,     setErr]       = useState<string | null>(null);
+
+  async function generate() {
+    setLoading(true);
+    setErr(null);
+    try {
+      setInsight(await getIncidentPageInsights());
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Failed to generate insights.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const breachCount  = stats.totals.count - stats.health.within_sla;
+  const breachPct    = stats.totals.count > 0 ? Math.round((breachCount / stats.totals.count) * 100) : 0;
+
+  return (
+    <div className="inc-insight-card">
+      <div className="inc-insight-head">
+        <span className="inc-insight-title">AI Insights — Recommended Actions</span>
+        <span className="inc-exec-tag">Executive summary</span>
+      </div>
+      <div className="inc-insight-stats">
+        <div className="inc-insight-stat">
+          <div className="inc-insight-stat-n">{stats.health.score}</div>
+          <div className="inc-insight-stat-l">Health Index ({stats.health.label})</div>
+        </div>
+        <div className="inc-insight-stat">
+          <div className="inc-insight-stat-n">{breachPct}%</div>
+          <div className="inc-insight-stat-l">SLA breach rate · {breachCount} of {stats.totals.count}</div>
+        </div>
+        <div className="inc-insight-stat">
+          <div className="inc-insight-stat-n">{stats.totals.open_over_150d}</div>
+          <div className="inc-insight-stat-l">Open &gt;150 days</div>
+        </div>
+      </div>
+      {insight ? (
+        <ul className="inc-action-list">
+          {insight.actions.map((a, i) => (
+            <li key={i} className="inc-action-item">
+              <span className="inc-action-badge">{a.badge}</span>
+              <span dangerouslySetInnerHTML={{ __html: a.text }} />
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <>
+          {err && <p style={{ color: '#fca5a5', fontSize: 12, marginBottom: 8 }}>{err}</p>}
+          <button className="inc-insight-gen-btn" onClick={generate} disabled={loading} type="button">
+            {loading
+              ? <><span className="spinner" />Generating…</>
+              : <>✦ Generate AI Insights</>
+            }
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── Incident Trend panel ───────────────────────────────────────────────────────
+function IncidentTrendPanel({ trend }: { trend: MonthlyTrend[] }) {
+  return (
+    <div className="inc-panel">
+      <div className="inc-panel-title">Incident Trend</div>
+      <div className="inc-panel-sub">6-month rolling count</div>
+      {trend.some(t => t.count > 0) ? (
+        <ResponsiveContainer width="100%" height={130}>
+          <BarChart data={trend} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
+            <XAxis dataKey="month" tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} />
+            <YAxis tick={{ fontSize: 10, fill: 'var(--muted)' }} allowDecimals={false} axisLine={false} tickLine={false} />
+            <Tooltip contentStyle={{ fontSize: 12, borderRadius: 6 }} />
+            <Bar dataKey="count" name="Incidents" fill="#01b88e" radius={[3, 3, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      ) : (
+        <div className="dash-empty" style={{ padding: '30px 0', textAlign: 'center', fontSize: 13 }}>No incidents logged in the last 6 months.</div>
+      )}
+    </div>
+  );
+}
+
+// ── Top Incident Drivers panel ─────────────────────────────────────────────────
+function IncidentDriversPanel({ drivers }: { drivers: TopDriver[] }) {
+  return (
+    <div className="inc-panel">
+      <div className="inc-panel-title">Top Incident Drivers</div>
+      <div className="inc-panel-sub">Open incidents ranked by age and recurrence</div>
+      {drivers.length > 0 ? (
+        <table className="inc-driver-table">
+          <thead>
+            <tr><th>Incident</th><th>Severity</th><th>Age</th></tr>
+          </thead>
+          <tbody>
+            {drivers.map(d => (
+              <tr key={d.id}>
+                <td title={d.title ?? d.id}>
+                  {d.title ? (d.title.length > 45 ? `${d.title.slice(0, 45)}…` : d.title) : d.id}
+                </td>
+                <td>
+                  <span style={{ color: incSevColor(d.severity), fontWeight: 700, fontSize: 12 }}>
+                    {d.severity || '—'}
+                  </span>
+                </td>
+                <td style={{ whiteSpace: 'nowrap', fontWeight: 700, color: d.age_days > 90 ? '#dc2626' : 'var(--text)' }}>
+                  {d.age_days}d
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <div className="dash-empty" style={{ padding: '30px 0', textAlign: 'center', fontSize: 13 }}>No open incidents.</div>
+      )}
+    </div>
+  );
+}
 
 export default function Incidents() {
   const { claims } = useAuth();
@@ -107,6 +241,15 @@ export default function Incidents() {
   return (
     <>
       <IncidentStatCards stats={stats} loading={statsLoading} />
+
+      {stats && <IncidentInsightSection stats={stats} />}
+
+      {stats && (
+        <div className="inc-panel-row">
+          <IncidentTrendPanel trend={stats.monthly_trend} />
+          <IncidentDriversPanel drivers={stats.top_drivers} />
+        </div>
+      )}
 
       <div className="card">
         {/* Toolbar */}
