@@ -23,6 +23,10 @@ class KPISummary(BaseModel):
     risk_severity_avg: float = 0.0
     control_effectiveness_avg: float = 0.0
     est_financial_exposure: float = 0.0
+    appetite_configured: bool = False
+    risks_within_appetite: int = 0
+    risks_near_appetite: int = 0
+    risks_exceeds_appetite: int = 0
 
 
 class IncidentHealthSummary(BaseModel):

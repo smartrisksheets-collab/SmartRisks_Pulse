@@ -19,6 +19,10 @@ export interface KPISummary {
   risk_severity_avg: number;
   control_effectiveness_avg: number;
   est_financial_exposure: number;
+  appetite_configured: boolean;
+  risks_within_appetite: number;
+  risks_near_appetite: number;
+  risks_exceeds_appetite: number;
 }
 
 export interface IncidentHealthSummary {

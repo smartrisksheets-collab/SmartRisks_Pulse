@@ -347,15 +347,18 @@ export default function ReportBuilder() {
   const [showSaveTemplate, setShowSaveTemplate] = useState(false);
   const [showLoadTemplate, setShowLoadTemplate] = useState(false);
   const [showEmail,           setShowEmail]           = useState(false);
-  const [dropdownOpen,        setDropdownOpen]        = useState(false);
+  const [dateMenuOpen,        setDateMenuOpen]        = useState(false);
+  const [tplMenuOpen,         setTplMenuOpen]         = useState(false);
   const [showManageTemplates, setShowManageTemplates] = useState(false);
 
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const dateMenuRef = useRef<HTMLDivElement>(null);
+  const tplMenuRef  = useRef<HTMLDivElement>(null);
 
-  // Close dropdown on outside click
+  // Close menus on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (!dropdownRef.current?.contains(e.target as Node)) setDropdownOpen(false);
+      if (!dateMenuRef.current?.contains(e.target as Node)) setDateMenuOpen(false);
+      if (!tplMenuRef.current?.contains(e.target as Node))  setTplMenuOpen(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
@@ -476,106 +479,182 @@ export default function ReportBuilder() {
         />
       )}
 
-      {/* Header */}
-      <div className="rb-header">
-        <div className="rb-header-title">Report Builder</div>
-        <div className="rb-header-controls">
+      {/* Header card */}
+      <div className="rb-card">
 
-          {/* New report */}
-          <button
-            className="btn btn-ghost btn-compact"
-            onClick={async () => {
-              const ok = await confirm(
-                'Start a new report?',
-                'This will clear your current canvas, settings, and preview data.',
-              );
+        {/* Top row */}
+        <div className="rb-top">
+          <div className="rb-mark">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#01b88e" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+              <line x1="9" y1="17" x2="9" y2="13"/><line x1="12" y1="17" x2="12" y2="11"/><line x1="15" y1="17" x2="15" y2="14"/>
+            </svg>
+          </div>
+
+          <div className="rb-title">
+            <h1>Report Builder</h1>
+            <p>Create insightful reports from your risk data.</p>
+          </div>
+
+          <div className="rb-actions">
+            {/* New report */}
+            <button className="btn btn-soft" type="button" onClick={async () => {
+              const ok = await confirm('Start a new report?', 'This will clear your current canvas, settings, and preview data.');
               if (ok) rb.reset();
-            }}
-          >
-            + New report
-          </button>
-
-          {/* Date preset */}
-          <select
-            value={preset}
-            className="rb-preset-select"
-            onChange={(e) => setPreset(e.target.value as DatePreset)}
-          >
-            <option>Last 30 days</option>
-            <option>Last 3 months</option>
-            <option>Last 6 months</option>
-            <option>Last 12 months</option>
-            <option value="custom">Custom range…</option>
-          </select>
-
-          {preset === 'custom' && (
-            <div className="rb-date-custom show">
-              <input type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} />
-              <span className="rb-overlay-text">to</span>
-              <input type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)} />
-            </div>
-          )}
-
-          {/* Templates dropdown */}
-          <div className="rb-dropdown" ref={dropdownRef}>
-            <button className="btn btn-secondary btn-compact" onClick={() => setDropdownOpen(!dropdownOpen)}>
-              Templates ▾
+            }}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+                <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+              </svg>
+              New report
             </button>
-            <div className={`rb-dropdown-menu${dropdownOpen ? ' open' : ''}`}>
-              <button className="rb-dropdown-item" onClick={() => { setDropdownOpen(false); setShowLoadTemplate(true); }}>Load template</button>
-              <button className="rb-dropdown-item" onClick={() => { setDropdownOpen(false); setShowSaveTemplate(true); }}>Save template</button>
-              <button className="rb-dropdown-item" onClick={() => { setDropdownOpen(false); setShowManageTemplates(true); }}>Manage templates</button>
+
+            {/* Date range dropdown */}
+            <div className={`rb-menu-wrap${dateMenuOpen ? ' open' : ''}`} ref={dateMenuRef}>
+              <button className="btn btn-outline" type="button" aria-haspopup="true" aria-expanded={dateMenuOpen}
+                onClick={() => { setDateMenuOpen(o => !o); setTplMenuOpen(false); }}>
+                <span className="lead">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="4" width="18" height="18" rx="2"/>
+                    <line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/>
+                    <line x1="3" y1="10" x2="21" y2="10"/>
+                  </svg>
+                  <span>{preset === 'custom' ? 'Custom range' : preset}</span>
+                </span>
+                <svg className="chev" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="6 9 12 15 18 9"/>
+                </svg>
+              </button>
+              <ul className="rb-menu" role="listbox" aria-label="Reporting period">
+                {(['Last 30 days', 'Last 3 months', 'Last 6 months', 'Last 12 months'] as DatePreset[]).map(opt => (
+                  <li key={opt}>
+                    <button type="button" role="option" aria-selected={preset === opt}
+                      onClick={() => { setPreset(opt); setDateMenuOpen(false); }}>
+                      {opt}
+                    </button>
+                  </li>
+                ))}
+                <li className="rb-menu-sep" />
+                <li>
+                  <button type="button" role="option" aria-selected={preset === 'custom'}
+                    onClick={() => { setPreset('custom'); setDateMenuOpen(false); }}>
+                    Custom range…
+                  </button>
+                </li>
+              </ul>
+            </div>
+
+            {/* Templates dropdown */}
+            <div className={`rb-menu-wrap${tplMenuOpen ? ' open' : ''}`} ref={tplMenuRef}>
+              <button className="btn btn-outline" type="button" aria-haspopup="true" aria-expanded={tplMenuOpen}
+                onClick={() => { setTplMenuOpen(o => !o); setDateMenuOpen(false); }}>
+                <span className="lead">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/>
+                    <rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>
+                  </svg>
+                  Templates
+                </span>
+                <svg className="chev" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="6 9 12 15 18 9"/>
+                </svg>
+              </button>
+              <ul className="rb-menu" role="menu" aria-label="Templates">
+                <li><button type="button" role="menuitem" onClick={() => { setTplMenuOpen(false); setShowLoadTemplate(true); }}>Load template</button></li>
+                <li><button type="button" role="menuitem" onClick={() => { setTplMenuOpen(false); setShowSaveTemplate(true); }}>Save template</button></li>
+                <li><button type="button" role="menuitem" onClick={() => { setTplMenuOpen(false); setShowManageTemplates(true); }}>Manage templates</button></li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        {/* Custom date inputs */}
+        {preset === 'custom' && (
+          <div className="rb-date-custom show">
+            <input type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} />
+            <span className="rb-overlay-text">to</span>
+            <input type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)} />
+          </div>
+        )}
+
+        {/* Steps */}
+        <div className="rb-steps">
+
+          {/* Step 1 */}
+          <div className="rb-step">
+            <div className="rb-step-head">
+              <div className={`rb-num${rb.step > 1 ? ' done' : rb.step === 1 ? ' active' : ''}`}>1</div>
+              <h2>Build your report</h2>
+            </div>
+            <p>Select and arrange the sections you want to include.</p>
+            <div className="rb-step-btns">
+              <button className="btn btn-primary btn-cta" type="button" onClick={handlePreview} disabled={rb.previewing}>
+                {rb.previewing
+                  ? <><span className="spinner" />Loading…</>
+                  : <><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v3"/>
+                      <path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h4"/>
+                      <path d="M21.4 12.6a2 2 0 0 1 0 2.83L16 20.82l-3.54.71.71-3.54 5.4-5.4a2 2 0 0 1 2.83 0z"/>
+                    </svg>Build</>
+                }
+              </button>
             </div>
           </div>
 
-          {/* 3-step flow */}
-          <div className="rb-step-flow">
-            {/* Step 1 */}
-            <div className="rb-step">
-              <span className={`rb-step-num ${rb.step === 1 ? 'active' : 'done'}`}>1</span>
-              <button className="btn btn-ghost btn-compact" onClick={handlePreview} disabled={rb.previewing}>
-                {rb.previewing ? <><span className="spinner" />Loading…</> : 'Preview & Edit'}
+          {/* Step 2 */}
+          <div className="rb-step">
+            <div className="rb-step-head">
+              <div className={`rb-num${rb.step > 2 ? ' done' : rb.step === 2 ? ' active' : ''}`}>2</div>
+              <h2>Add AI narrative</h2>
+              <span className="rb-tag">Recommended</span>
+            </div>
+            <p>Generate a clear, executive-ready summary with AI.</p>
+            <div className="rb-step-btns">
+              <button className="btn btn-ai btn-cta" type="button" onClick={handleGenerateAI} disabled={step2Disabled || rb.generatingAI}>
+                {rb.generatingAI
+                  ? <><span className="spinner" />Generating…</>
+                  : <><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                      <polygon points="12 2 15.1 8.6 22 9.6 17 14.4 18.2 21.2 12 18 5.8 21.2 7 14.4 2 9.6 8.9 8.6 12 2"/>
+                    </svg>Generate AI Narrative</>
+                }
               </button>
             </div>
+          </div>
 
-            <span className="rb-step-arrow">→</span>
-
-            {/* Step 2 */}
-            <div className="rb-step">
-              <span className={`rb-step-num ${rb.step === 2 ? 'active' : rb.step > 2 ? 'done' : ''}`}>2</span>
-              <button
-                className="btn btn-ai btn-compact"
-                onClick={handleGenerateAI}
-                disabled={step2Disabled || rb.generatingAI}
-              >
-                {rb.generatingAI ? <><span className="spinner" />Generating…</> : 'Generate AI Narrative'}
-              </button>
-              <span className="rb-step-tag">Optional</span>
+          {/* Step 3 */}
+          <div className="rb-step">
+            <div className="rb-step-head">
+              <div className={`rb-num${rb.step >= 2 ? ' active' : ''}`}>3</div>
+              <h2>Share your report</h2>
             </div>
-
-            <span className="rb-step-arrow">→</span>
-
-            {/* Step 3 */}
-            <div className="rb-step">
-              <span className={`rb-step-num ${rb.step >= 2 ? 'active' : ''}`}>3</span>
-              <button
-                className="btn btn-navy btn-compact"
+            <p>Send it by email or download a PDF.</p>
+            <div className="rb-step-btns">
+              <button className="btn btn-secondary" type="button"
                 onClick={handleEmailClick}
                 disabled={step3Disabled || rb.exporting || !canPrint}
-                title={!canPrint ? 'Requires Manager or Owner role' : undefined}
-              >
-                {rb.exporting ? <><span className="spinner" />Sending…</> : 'Send by Email'}
+                title={!canPrint ? 'Requires Manager or Owner role' : undefined}>
+                {rb.exporting
+                  ? <><span className="spinner" />Sending…</>
+                  : <><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="2" y="4" width="20" height="16" rx="2"/><polyline points="22,6 12,13 2,6"/>
+                    </svg>Send by Email</>
+                }
               </button>
-              <button
-                className="btn btn-primary btn-compact"
+              <button className="btn btn-navy" type="button"
                 onClick={handleDownloadPDF}
                 disabled={step3Disabled || rb.exporting || !canPrint}
-                title={!canPrint ? 'Requires Manager or Owner role' : undefined}
-              >
-                {rb.exporting ? <><span className="spinner" />Exporting…</> : 'Download PDF'}
+                title={!canPrint ? 'Requires Manager or Owner role' : undefined}>
+                {rb.exporting
+                  ? <><span className="spinner" />Exporting…</>
+                  : <><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                      <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>Download PDF</>
+                }
               </button>
             </div>
           </div>
+
         </div>
       </div>
 
