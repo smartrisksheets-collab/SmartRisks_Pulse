@@ -1,7 +1,8 @@
 # app/services/incident.py
 
 import re
-from datetime import date, datetime, timezone
+from collections import defaultdict
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from uuid import UUID
 
@@ -21,6 +22,7 @@ from app.schemas.incident import (
     IncidentTotals,
     IncidentLifecycle,
     IncidentResolution,
+    HealthComponent,
 )
 from app.services.recycle import soft_delete
 from app.services.incident_severity import compute_breach, get_sla_map
@@ -252,16 +254,19 @@ async def delete_incident(
     )
 
 
-async def get_stats(db: AsyncSession, tenant_id: UUID) -> IncidentStatsResponse:
+async def get_stats(db: AsyncSession, tenant_id: UUID) -> IncidentStatsResponse:  # noqa: C901
     result = await db.execute(
         select(
+            Incident.id,
             Incident.status,
             Incident.severity,
+            Incident.category,
+            Incident.business_unit,
             Incident.reported_at,
             Incident.resolved_at,
             Incident.financial_impact,
+            Incident.linked_risk_id,
             Incident.created_at,
-            Incident.assigned_to,
         )
         .where(Incident.tenant_id == tenant_id)
         .where(Incident.deleted_at.is_(None))
@@ -269,87 +274,239 @@ async def get_stats(db: AsyncSession, tenant_id: UUID) -> IncidentStatsResponse:
     rows = result.all()
     total = len(rows)
 
-    open_statuses = {'New', 'Open', 'In Progress', 'Under Review'}
-    critical_severities = {'High', 'Very High'}
-    today = date.today()
+    OPEN_STATES     = {'New', 'Open', 'In Progress', 'Under Review'}
+    TERMINAL_STATES = {'Resolved', 'Closed'}
+    SEV_WEIGHT      = {'Very High': 8, 'High': 5, 'Medium': 2, 'Low': 1}
+    today   = date.today()
+    now_utc = datetime.now(timezone.utc)
 
-    open_count = sum(1 for r in rows if r.status in open_statuses)
-    critical_count = sum(1 for r in rows if r.severity in critical_severities)
-    new_count = sum(1 for r in rows if r.status == 'New')
-    review_count = sum(1 for r in rows if r.status == 'Under Review')
-    resolved_count = sum(1 for r in rows if r.status in ('Resolved', 'Closed'))
-
-    # SLA breach: use shared compute_breach against workspace SLA config.
-    # Falls back to 5-day hardcoded logic for tenants with no SLA config yet.
     sla_map = await get_sla_map(db, tenant_id)
-    if sla_map:
-        now_utc = datetime.now(timezone.utc)
-        breaches = 0
-        for r in rows:
-            if r.status not in open_statuses or r.created_at is None:
-                continue
-            created = r.created_at
-            if hasattr(created, 'tzinfo') and created.tzinfo is None:
-                created = created.replace(tzinfo=timezone.utc)
-            age_hours = (now_utc - created).total_seconds() / 3600
-            target_h = sla_map.get(str(r.severity or ''))
-            if target_h is not None and compute_breach(age_hours, target_h):
-                breaches += 1
-    else:
-        breaches = sum(
-            1 for r in rows
-            if r.status in open_statuses
-            and r.reported_at
-            and (today - r.reported_at).days > 5
-        )
-    sla_breach_pct = round(breaches / total * 100, 1) if total else 0.0
+    _DEF_H  = {'Very High': 24.0, 'High': 72.0, 'Medium': 120.0, 'Low': 240.0}
+    eff_h   = sla_map if sla_map else _DEF_H
+    sla_d   = {sev: max(1, round(h / 24)) for sev, h in eff_h.items()}
 
-    health_pct = max(0, round(100 - sla_breach_pct))
-    health_label = (
-        'Healthy' if health_pct >= 75
-        else 'At Risk' if health_pct >= 50
-        else 'Critical'
-    )
-    critical_ratio = critical_count / total if total else 0
-    critical_trend = 'Stable' if critical_ratio <= 0.2 else 'Increasing'
+    def _age_h(r) -> float:  # type: ignore[no-untyped-def]
+        if r.reported_at is None:
+            return 0.0
+        ref = datetime(r.reported_at.year, r.reported_at.month, r.reported_at.day, tzinfo=timezone.utc)
+        return (now_utc - ref).total_seconds() / 3600
 
-    # MTTR: resolved/closed incidents with both dates
-    mttr_days: list[float] = []
+    def _age_d(r) -> int:  # type: ignore[no-untyped-def]
+        return (today - r.reported_at).days if r.reported_at else 0
+
+    def _tgt_h(r) -> float:  # type: ignore[no-untyped-def]
+        return eff_h.get(str(r.severity or ''), 120.0)
+
+    def _tgt_d(r) -> int:  # type: ignore[no-untyped-def]
+        return sla_d.get(str(r.severity or ''), 5)
+
+    def _is_open(r) -> bool:  # type: ignore[no-untyped-def]
+        return str(r.status or '') in OPEN_STATES
+
+    def _is_term(r) -> bool:  # type: ignore[no-untyped-def]
+        return str(r.status or '') in TERMINAL_STATES
+
+    def _breached(r) -> bool:  # type: ignore[no-untyped-def]
+        if _is_open(r):
+            return compute_breach(_age_h(r), _tgt_h(r))
+        if _is_term(r) and r.reported_at and r.resolved_at:
+            rd = r.resolved_at.date() if isinstance(r.resolved_at, datetime) else r.resolved_at
+            return (rd - r.reported_at).days * 24 > _tgt_h(r)
+        return False
+
+    # ── Lifecycle ──────────────────────────────────────────────────────────────
+    status_counts: dict[str, int] = {
+        'New': 0, 'Open': 0, 'In Progress': 0,
+        'Under Review': 0, 'Resolved': 0, 'Closed': 0,
+    }
     for r in rows:
-        if r.status in ('Resolved', 'Closed') and r.reported_at and r.resolved_at:
-            resolved_date = (
-                r.resolved_at.date()
-                if isinstance(r.resolved_at, datetime)
-                else r.resolved_at
-            )
-            mttr_days.append((resolved_date - r.reported_at).days)
+        s = str(r.status or '')
+        if s in status_counts:
+            status_counts[s] += 1
 
-    avg_days = round(sum(mttr_days) / len(mttr_days), 1) if mttr_days else None
+    open_rows    = [r for r in rows if _is_open(r)]
+    open_count   = len(open_rows)
+    overdue_rows = [r for r in open_rows if compute_breach(_age_h(r), _tgt_h(r))]
+    overdue_count = len(overdue_rows)
+    high_or_above = sum(1 for r in rows if str(r.severity or '') in {'High', 'Very High'})
+    linked_count  = sum(1 for r in rows if r.linked_risk_id is not None)
+    within_sla    = total - sum(1 for r in rows if _breached(r))
 
-    total_impact: Decimal = sum(
-        (r.financial_impact for r in rows if r.financial_impact is not None),
-        Decimal('0'),
+    # Oldest open incident
+    oldest = max(open_rows, key=_age_d, default=None)
+    oldest_open_days = _age_d(oldest) if oldest else None
+    oldest_open_id   = str(oldest.id) if oldest else None
+    oldest_open_sev  = str(oldest.severity or '') if oldest else None
+    oldest_open_date = oldest.reported_at.strftime('%-d %b %Y') if oldest and oldest.reported_at else None
+
+    # ── MTTR and breach vs own target ─────────────────────────────────────────
+    mttr_list: list[float] = []
+    breach_count = 0
+    worst_over = -1
+    worst_r = None
+    for r in rows:
+        td = _tgt_d(r)
+        if _is_term(r) and r.reported_at and r.resolved_at:
+            rd = r.resolved_at.date() if isinstance(r.resolved_at, datetime) else r.resolved_at
+            actual_d = (rd - r.reported_at).days
+            mttr_list.append(float(actual_d))
+            if actual_d > td:
+                breach_count += 1
+                if actual_d - td > worst_over:
+                    worst_over = actual_d - td
+                    worst_r = r
+        elif _is_open(r) and r.reported_at:
+            actual_d = _age_d(r)
+            if actual_d > td:
+                breach_count += 1
+                if actual_d - td > worst_over:
+                    worst_over = actual_d - td
+                    worst_r = r
+
+    resolved_count = len(mttr_list)
+    median_days: float | None = None
+    if mttr_list:
+        s = sorted(mttr_list)
+        n = len(s)
+        median_days = round(s[n // 2] if n % 2 == 1 else (s[n // 2 - 1] + s[n // 2]) / 2, 1)
+
+    impact_vals = [r.financial_impact for r in rows if r.financial_impact is not None]
+    impact_total = sum(impact_vals, Decimal('0'))
+    impact_count = len(impact_vals)
+
+    # ── Component 1: Backlog pressure (25) ────────────────────────────────────
+    PRESSURE_CEILING = 40
+    pressure = sum(
+        SEV_WEIGHT.get(str(r.severity or ''), 1) * (1 + _age_d(r) / max(1, _tgt_d(r)))
+        for r in open_rows
     )
+    score_1 = max(0, int(100 * max(0.0, 1.0 - pressure / PRESSURE_CEILING)))
+
+    # ── Component 2: SLA conformance (30) ─────────────────────────────────────
+    score_2 = int(100 * within_sla / max(1, total)) if total else 100
+
+    # ── Component 3: Recurrence (15) ──────────────────────────────────────────
+    cutoff_180 = today - timedelta(days=180)
+    recent = [r for r in rows if r.reported_at and r.reported_at >= cutoff_180]
+    pair_ct: dict[str, int] = defaultdict(int)
+    for r in recent:
+        pair_ct[f"{r.category or ''}|{r.business_unit or ''}"] += 1
+    repeat_ct = sum(1 for r in recent if pair_ct[f"{r.category or ''}|{r.business_unit or ''}"] >= 2)
+    score_3 = int(100 * (1 - repeat_ct / max(1, len(recent)))) if recent else 100
+
+    # ── Component 4: Register linkage (20) ────────────────────────────────────
+    score_4 = int(100 * linked_count / max(1, total)) if total else 100
+    unlinked_rate = 1.0 - linked_count / max(1, total)
+
+    # ── Component 5: Volume vs baseline (10) ─────────────────────────────────
+    buckets: dict[int, int] = defaultdict(int)
+    for r in rows:
+        if r.reported_at:
+            b = (today - r.reported_at).days // 30
+            if b < 4:
+                buckets[b] += 1
+    prior_vols = [buckets[i] for i in range(1, 4) if buckets[i] > 0]
+    has_baseline = len(prior_vols) >= 2
+    score_5_raw: int | None = None
+    if has_baseline:
+        baseline_avg = sum(prior_vols) / len(prior_vols)
+        score_5_raw = min(100, int(100 * min(baseline_avg / max(buckets[0], 1), 1.0)))
+
+    # ── Composite health score ─────────────────────────────────────────────────
+    if score_5_raw is not None:
+        weights = [25, 30, 15, 20, 10]
+        scores  = [score_1, score_2, score_3, score_4, score_5_raw]
+        sups    = [False, False, False, False, False]
+    else:
+        weights = [28, 34, 17, 21, 0]
+        scores  = [score_1, score_2, score_3, score_4, 0]
+        sups    = [False, False, False, False, True]
+
+    w_total = sum(weights)
+    health_score = int(sum(sc * w for sc, w in zip(scores, weights)) / w_total) if w_total else 0
+
+    names = ['Backlog pressure', 'SLA conformance', 'Recurrence', 'Register linkage', 'Volume vs baseline']
+    components = [
+        HealthComponent(name=n, weight=w, score=sc, suppressed=sup)
+        for n, w, sc, sup in zip(names, weights, scores, sups)
+    ]
+
+    # ── Label + governance overrides ───────────────────────────────────────────
+    label = (
+        'Healthy'    if health_score >= 76 else
+        'Monitoring' if health_score >= 51 else
+        'At Risk'    if health_score >= 26 else
+        'Critical'
+    )
+    very_high_breach = any(str(r.severity or '') == 'Very High' and compute_breach(_age_h(r), _tgt_h(r)) for r in open_rows)
+    triple_breach    = any(_age_h(r) >= 3 * _tgt_h(r) for r in open_rows)
+    if very_high_breach or triple_breach or overdue_count >= 2 or unlinked_rate > 0.5:
+        if label in ('Healthy', 'Monitoring'):
+            label = 'At Risk'
+
+    # ── Flags ─────────────────────────────────────────────────────────────────
+    health_flag: str | None = None
+    worst_open_r = max(
+        (r for r in open_rows if _age_d(r) > _tgt_d(r)), key=_age_d, default=None
+    )
+    if worst_open_r:
+        health_flag = (
+            f"{worst_open_r.id} ({worst_open_r.severity or '?'}) has been open "
+            f"{_age_d(worst_open_r)}d against a {_tgt_d(worst_open_r)}-day target."
+        )
+
+    totals_flag: str | None = None
+    if overdue_count > 0 and overdue_count == open_count:
+        noun = 'incident is' if open_count == 1 else 'incidents are'
+        totals_flag = f"All {open_count} open {noun} past their severity target."
+    elif overdue_count > 0:
+        totals_flag = f"{overdue_count} of {open_count} open incidents are past their severity target."
+
+    res_flag: str | None = None
+    if worst_r:
+        res_flag = f"Worst overrun: {worst_r.id}, {_age_d(worst_r) if _is_open(worst_r) else int(mttr_list[0] if mttr_list else 0)}d against a {_tgt_d(worst_r)}-day target."
 
     return IncidentStatsResponse(
         health=IncidentHealth(
-            pct=health_pct,
-            label=health_label,
-            sla_pct=sla_breach_pct,
-            critical_trend=critical_trend,
+            score=health_score,
+            label=label,
+            within_sla=within_sla,
+            within_sla_total=total,
+            open_past_target=overdue_count,
+            linked=linked_count,
+            total=total,
+            flag=health_flag,
+            components=components,
+            small_n=total < 5,
         ),
         totals=IncidentTotals(
             count=total,
-            critical_count=critical_count,
             open_count=open_count,
+            overdue_count=overdue_count,
+            high_or_above=high_or_above,
+            flag=totals_flag,
         ),
         lifecycle=IncidentLifecycle(
-            new=new_count,
-            under_review=review_count,
-            resolved=resolved_count,
+            new=status_counts['New'],
+            open=status_counts['Open'],
+            in_progress=status_counts['In Progress'],
+            under_review=status_counts['Under Review'],
+            resolved=status_counts['Resolved'],
+            closed=status_counts['Closed'],
+            oldest_open_days=oldest_open_days,
         ),
         resolution=IncidentResolution(
-            avg_days=avg_days,
-            total_financial_impact=total_impact,
+            oldest_open_days=oldest_open_days,
+            oldest_open_id=oldest_open_id,
+            oldest_open_severity=oldest_open_sev,
+            oldest_open_date=oldest_open_date,
+            median_days=median_days,
+            resolved_count=resolved_count,
+            breach_count=breach_count,
+            breach_total=total,
+            impact_total=impact_total,
+            impact_count=impact_count,
+            impact_total_count=total,
+            flag=res_flag,
         ),
     )

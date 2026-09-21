@@ -5,6 +5,7 @@ import { apiPost } from '../services/api';
 import { useAuthStore } from '../store/authStore';
 import type { LoginResult } from '../types/auth';
 import { validateEmail, validatePassword } from '../utils/validation';
+import { SrLogo } from '../components/layout/SrLogo';
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
 
@@ -125,11 +126,7 @@ export default function Login() {
       {/* ── Left panel ────────────────────────────────────────────────────── */}
       <div className="auth-left">
         <div className="auth-left-brand">
-          <img
-            src="https://smartrisksheets.com/wp-content/uploads/2025/09/cropped-Smartrisksheets-favicon-v2.png"
-            width="36" height="36" alt="SmartRisk Pulse"
-            style={{ borderRadius: 8, flexShrink: 0 }}
-          />
+          <SrLogo size={36} borderRadius={8} />
           <span className="auth-brand-name">SmartRisk Pulse</span>
         </div>
 
@@ -164,10 +161,7 @@ export default function Login() {
 
           {/* Mobile only: brand + condensed note */}
           <div className="auth-mobile-tag">
-            <img
-              src="https://smartrisksheets.com/wp-content/uploads/2025/09/cropped-Smartrisksheets-favicon-v2.png"
-              width="30" height="30" alt="" style={{ borderRadius: 6 }}
-            />
+            <SrLogo size={30} borderRadius={6} alt="" />
             <span>SmartRisk Pulse</span>
           </div>
           <p className="auth-mobile-note">
@@ -282,6 +276,12 @@ export default function Login() {
               {loading && <span className="spinner" />}
               {loading ? 'Signing in...' : 'Sign in'}
             </button>
+            <p className="auth-terms">
+              By continuing, you agree to our{' '}
+              <a href="https://smartrisksheets.com/privacy/" target="_blank" rel="noopener noreferrer">Privacy Policy</a>
+              {' '}and{' '}
+              <a href="https://smartrisksheets.com/terms/" target="_blank" rel="noopener noreferrer">Terms of Service</a>.
+            </p>
           </form>
         </div>
       </div>

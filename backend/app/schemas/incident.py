@@ -172,25 +172,53 @@ class IncidentListResponse(BaseModel):
 
 
 # Stat card shapes, mirrors api_getIncidentCards in View_Incidents.html
+class HealthComponent(BaseModel):
+    name: str
+    weight: int
+    score: int
+    suppressed: bool = False
+
 class IncidentHealth(BaseModel):
-    pct: int
+    score: int
     label: str
-    sla_pct: float
-    critical_trend: str
+    within_sla: int
+    within_sla_total: int
+    open_past_target: int
+    linked: int
+    total: int
+    flag: str | None = None
+    components: list[HealthComponent] = []
+    small_n: bool = False
 
 class IncidentTotals(BaseModel):
     count: int
-    critical_count: int
     open_count: int
+    overdue_count: int
+    high_or_above: int
+    flag: str | None = None
 
 class IncidentLifecycle(BaseModel):
     new: int
+    open: int
+    in_progress: int
     under_review: int
     resolved: int
+    closed: int
+    oldest_open_days: int | None = None
 
 class IncidentResolution(BaseModel):
-    avg_days: float | None
-    total_financial_impact: Decimal
+    oldest_open_days: int | None = None
+    oldest_open_id: str | None = None
+    oldest_open_severity: str | None = None
+    oldest_open_date: str | None = None
+    median_days: float | None = None
+    resolved_count: int = 0
+    breach_count: int = 0
+    breach_total: int = 0
+    impact_total: Decimal = Decimal('0')
+    impact_count: int = 0
+    impact_total_count: int = 0
+    flag: str | None = None
 
 class IncidentStatsResponse(BaseModel):
     health: IncidentHealth

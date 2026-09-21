@@ -4,6 +4,7 @@ import { useGoogleLogin } from '@react-oauth/google';
 import { apiPost } from '../services/api';
 import { useAuthStore } from '../store/authStore';
 import type { LoginResult } from '../types/auth';
+import { SrLogo } from '../components/layout/SrLogo';
 import {
   validateEmail, validatePassword, validateConfirm,
   validateName, getPasswordRules, type PasswordRuleState,
@@ -164,13 +165,7 @@ export default function Register() {
     <div className="auth-shell">
       <div className="auth-left">
         <div className="auth-left-brand">
-          <img
-            src="https://smartrisksheets.com/wp-content/uploads/2025/09/cropped-Smartrisksheets-favicon-v2.png"
-            width="40"
-            height="40"
-            alt="SmartRisk Pulse"
-            style={{ borderRadius: 8, flexShrink: 0 }}
-          />
+          <SrLogo size={40} borderRadius={8} />
           <span className="auth-brand-name">SmartRisk Pulse</span>
         </div>
 
@@ -329,6 +324,12 @@ export default function Register() {
               {loading && <span className="spinner" />}
               {loading ? 'Creating account...' : 'Create account'}
             </button>
+            <p className="auth-terms">
+              By continuing, you agree to our{' '}
+              <a href="https://smartrisksheets.com/privacy/" target="_blank" rel="noopener noreferrer">Privacy Policy</a>
+              {' '}and{' '}
+              <a href="https://smartrisksheets.com/terms/" target="_blank" rel="noopener noreferrer">Terms of Service</a>.
+            </p>
           </form>
         </div>
       </div>

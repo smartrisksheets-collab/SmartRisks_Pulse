@@ -16,8 +16,72 @@ At the end of every session Claude outputs a fresh version of this file with all
 ---
  
 **Phase:** Product polish, AI calibration, and UI refinement.
-**Status:** Session 23, September 17, 2026: Risk register, report PDF, AI report engine, dashboard, auth pages, and multiple UX gaps addressed. See session log below.
-**Next action:** Begin next session by reading SMARTRISK_V2_SETUP.md, SMARTRISK_V2_DECISIONS.md, then this file. First task: run backend tests and confirm no regressions from control_effectiveness None changes and exposure index fix. Second task: visual QA pass on the new login page, freshness tooltips, and risk pressure card on a live environment.
+**Status:** Session 24, September 21, 2026: PDF report improvements, AI sector injection fix, report preview modal, risk table styling, auth page parity, and methodology crash fixed. See session log below.
+**Next action:** Begin next session by reading SMARTRISK_V2_SETUP.md, SMARTRISK_V2_DECISIONS.md, then this file. First task: visual QA pass on PDF report with new top risks table, header period, logo+org name, and recommendation colours. Second task: confirm methodology block loads correctly in preview after the None guard fix.
+
+---
+
+### Session 24: September 21, 2026 — PDF Report, AI Sector Guard, Preview Modal, Risk Table, Auth Parity
+
+**Completed:**
+
+**VerifyPin**
+- Help text changed from "Contact your workspace Owner to remove it" to "Contact your workspace Admin for access"
+
+**PDF Report**
+- Top risks table restructured: columns now Risk ID, Risk Owner, Description, Level, Controls, Mitigations, Residual; Trend column dropped; font reduced to 7pt for data rows, 8pt header; Controls and Mitigations sourced from new fields added to RiskRow and compute_top_risks
+- `mitigation_plan` added to RiskRow dataclass, `_fetch_risks`, `compute_top_risks`, and `compute_top_emerging_risks`
+- `controls` added to `compute_top_risks` and `compute_top_emerging_risks` dicts
+- `_level_badge_cell` now accepts `col_width` parameter (default 22mm); top risks table passes 18mm; font auto-reduces to 7pt when column under 20mm; prevents overflow
+- Org name displayed beside logo on cover page using a 2-column inner Table; previously logo showed alone with no name label
+- Header right side now reads from `title` variable instead of hardcoded "Risk Management Report"
+- Report period added under title in header (7pt, right-aligned); period computation moved before `_make_doc` call so it can be passed as parameter; `_make_doc` receives new `period: str = ""` parameter
+- STATUS, TREND, CONFIDENCE posture block removed from executive dashboard PDF block
+- Recommendations: action title colour changed from TEAL to NAVY; numbered list bullet colour changed from TEAL to NAVY; "Done when" completion criterion colour changed from GREEN to NAVY; hardcoded `Helvetica-Bold` in numbered list changed to `f_bold()`
+
+**AI Report**
+- Sector injection guard added to `_guard_rules`: explicitly demotes industry/sector persona context to tone only; prevents AI from attributing sector-specific mechanisms to generic risk descriptions
+- `{ind}` removed from system prompt persona in `top-risks`, `top-emerging-risks`, and `major-incidents` blocks only; `ai-exec-summary` and `executive-commentary` retain it (they reason about org holistically)
+- Evidence anchor added to user prompts for all three data-specific blocks: "Base every claim only on each risk's/incident's own description field below"
+
+**Methodology Block**
+- `residual_model_matches_engine`, `supplied_model_is_subtractive`, and `pulse_residuals` in `services_report_facts.py` all lacked None guard on `control_effectiveness`; any workspace with an unassessed risk caused a TypeError that silently swallowed the block, leaving it blank in preview
+
+**Report Preview**
+- `NarrativeReviewModal` added as module-scope component; replaces inline textarea with a full-height modal showing AI text with a disclaimer banner and Save/Cancel buttons
+- Disclaimer links to `/settings?tab=ai` in a new tab
+- `AIExecSummary`, `ExecutiveCommentary`, and `ConclusionBlock` converted to use `NarrativeTA` (and therefore the modal)
+- AI-not-run prompt added: before PDF download and before showing the email modal, checks if any AI-capable block is active and `aiData` is empty; shows confirmation if so
+- `AI_BLOCKS` constant added to `src/types/report.ts`; imported in `ReportBuilder`
+- STATUS, TREND, CONFIDENCE posture grid removed from `ExecutiveDashboardBlock` in preview; `postureColor` unused variable removed
+- Highlights (executive dashboard) always editable regardless of whether AI has run; pre-fills with deterministic bullets when AI not run
+
+**Risk Table**
+- Risk ID: bold (`fontWeight: 700`), navy (#1F2854), no longer green
+- Date logged, description, owner, business impact, financial exposure: muted colour (`var(--muted)`), no bold
+- Severity and residual columns: bold retained (numeric values)
+- Level badge and freshness pill: unchanged (class-controlled)
+
+**Auth Pages**
+- Login: `auth-left-note` ("2 weeks full access, no card required") removed; returning users do not need trial messaging
+- Register: left panel replaced with identical steps structure from Login page; `STEPS` constant added; `auth-left-note` retained on register (appropriate for new signups); lucide imports `Clock`, `BarChart2`, `Activity` removed
+
+**CSS**
+- Added: `.rb-review-trigger`, `.rb-narrative-preview`, `.rb-review-btn`, `.rb-review-btn:hover`, `.rb-ai-disclaimer`, `.rb-disclaimer-link`, `.rb-disclaimer-link:hover`
+
+**Status:** Complete. No incomplete items.
+
+**Files changed this session (12):**
+
+Backend: `app/services/pdf_report.py`, `app/services/report.py`, `app/services/ai_report.py`, `app/services/report_facts.py`
+
+Frontend: `src/pages/VerifyPin.tsx`, `src/pages/Login.tsx`, `src/pages/Register.tsx`, `src/pages/ReportBuilder.tsx`, `src/components/reports/ReportPreview.tsx`, `src/components/risks/RiskTable.tsx`, `src/types/report.ts`, `src/index.css`
+
+**Next session starts with:**
+
+1. Read `SMARTRISK_V2_SETUP.md`, `SMARTRISK_V2_DECISIONS.md`, then this file.
+2. Visual QA: generate a PDF with all blocks selected, inspect top risks table, header period, logo+name, recommendation colours, done-when colour.
+3. Confirm methodology block loads in preview on a workspace with at least one risk where control effectiveness is not set.
 
 ---
 

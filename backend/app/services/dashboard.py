@@ -16,6 +16,7 @@ from app.db.session import AsyncSessionLocal
 from app.models.risk import Risk
 from app.models.incident import Incident
 from app.models.activity_feed import ActivityFeed
+from app.models.appetite_threshold import AppetiteThreshold
 from app.schemas.dashboard import (
     DashboardResponse,
     KPISummary,
@@ -188,6 +189,43 @@ async def _get_kpis(db: AsyncSession, tenant_id: UUID) -> KPISummary:
             except ValueError:
                 pass
 
+    apt_configured = (await db.execute(
+        select(func.count(AppetiteThreshold.id)).where(
+            AppetiteThreshold.tenant_id == tenant_id,
+        )
+    )).scalar_one()
+
+    apt_row = (await db.execute(
+        select(
+            func.count(Risk.id).filter(
+                AppetiteThreshold.threshold.isnot(None),
+                Risk.residual.isnot(None),
+                Risk.residual <= AppetiteThreshold.threshold * 0.75,
+            ).label("within"),
+            func.count(Risk.id).filter(
+                AppetiteThreshold.threshold.isnot(None),
+                Risk.residual.isnot(None),
+                Risk.residual > AppetiteThreshold.threshold * 0.75,
+                Risk.residual <= AppetiteThreshold.threshold,
+            ).label("near_apt"),
+            func.count(Risk.id).filter(
+                AppetiteThreshold.threshold.isnot(None),
+                Risk.residual.isnot(None),
+                Risk.residual > AppetiteThreshold.threshold,
+            ).label("exceeds"),
+        )
+        .select_from(Risk)
+        .outerjoin(
+            AppetiteThreshold,
+            (AppetiteThreshold.tenant_id == tenant_id)
+            & (AppetiteThreshold.category == Risk.category),
+        )
+        .where(
+            Risk.tenant_id == tenant_id,
+            Risk.deleted_at.is_(None),
+        )
+    )).one()
+
     return KPISummary(
         total_risks=int(risk_row.total or 0),
         high_risks=int(risk_row.high or 0),
@@ -195,6 +233,10 @@ async def _get_kpis(db: AsyncSession, tenant_id: UUID) -> KPISummary:
         risk_severity_avg=round(float(risk_row.avg_residual or 0), 1),
         control_effectiveness_avg=round(float(risk_row.avg_ctrl or 0) * 20, 1),
         est_financial_exposure=round(_fin_total, 2),
+        appetite_configured=int(apt_configured or 0) > 0,
+        risks_within_appetite=int(apt_row.within or 0),
+        risks_near_appetite=int(apt_row.near_apt or 0),
+        risks_exceeds_appetite=int(apt_row.exceeds or 0),
     )
 
 

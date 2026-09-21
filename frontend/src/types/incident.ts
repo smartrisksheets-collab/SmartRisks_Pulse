@@ -92,28 +92,57 @@ export interface IncidentListMeta {
   page_size: number;
 }
 
+export interface HealthComponent {
+  name: string;
+  weight: number;
+  score: number;
+  suppressed: boolean;
+}
+
 export interface IncidentHealth {
-  pct: number;
+  score: number;
   label: string;
-  sla_pct: number;
-  critical_trend: string;
+  within_sla: number;
+  within_sla_total: number;
+  open_past_target: number;
+  linked: number;
+  total: number;
+  flag: string | null;
+  components: HealthComponent[];
+  small_n: boolean;
 }
 
 export interface IncidentTotals {
   count: number;
-  critical_count: number;
   open_count: number;
+  overdue_count: number;
+  high_or_above: number;
+  flag: string | null;
 }
 
 export interface IncidentLifecycle {
   new: number;
+  open: number;
+  in_progress: number;
   under_review: number;
   resolved: number;
+  closed: number;
+  oldest_open_days: number | null;
 }
 
 export interface IncidentResolution {
-  avg_days: number | null;
-  total_financial_impact: string;
+  oldest_open_days: number | null;
+  oldest_open_id: string | null;
+  oldest_open_severity: string | null;
+  oldest_open_date: string | null;
+  median_days: number | null;
+  resolved_count: number;
+  breach_count: number;
+  breach_total: number;
+  impact_total: string;
+  impact_count: number;
+  impact_total_count: number;
+  flag: string | null;
 }
 
 export interface IncidentStats {

@@ -288,17 +288,17 @@ function ExecInsightCard({ totalRisks }: { totalRisks: number }) {
 // ── Pressure modal ────────────────────────────────────────────────────────────
 
 function PressureModal({
-  open, onClose, kpis, topRisks, pressurePct,
+  open, onClose, kpis, topRisks,
 }: {
   open: boolean; onClose: () => void;
-  kpis: KPISummary; topRisks: TopRisk[]; pressurePct: number;
+  kpis: KPISummary; topRisks: TopRisk[];
 }) {
   if (!open) return null;
   const pressureLevel = kpis.high_risks * 4 >= 60 ? 'Critical' : kpis.high_risks * 4 >= 35 ? 'Elevated' : 'Stable';
   const highSharePct  = kpis.total_risks > 0 ? Math.round((kpis.high_risks / kpis.total_risks) * 100) : 0;
-  const reco = pressurePct > 30
+  const reco = highSharePct > 30
     ? 'High-risk concentration is critical. Prioritize treatment of highest residual risks, review controls below effectiveness thresholds, and escalate immediately.'
-    : pressurePct > 15
+    : highSharePct > 15
       ? 'Risk posture is elevated. Monitor closely and address risks approaching threshold scores before they worsen.'
       : 'Risk posture is within acceptable bounds. Continue routine monitoring.';
 
@@ -439,20 +439,17 @@ export default function RiskSection({ data }: Props) {
   const avgResidual  = kpis.risk_severity_avg;
   const exposure     = Math.min(100, Math.round((avgResidual / 25) * 100));
   const health       = Math.max(0, 100 - exposure);
-  const pressurePct  = kpis.total_risks > 0 ? Math.round((kpis.high_risks / kpis.total_risks) * 100) : 0;
-  const pressureColor = pressurePct > 30 ? '#ef4444' : pressurePct > 15 ? '#f59e0b' : '#10b981';
-  const hStatusCls   = healthStatusCls(health);
-  const hLabel       = healthLabel(health);
+  const ctrlPct  = Math.round(kpis.control_effectiveness_avg);
+  const barColor = ctrlPct >= 76 ? '#059669'
+                 : ctrlPct >= 51 ? '#01b88e'
+                 : ctrlPct >= 26 ? '#f59e0b'
+                 : '#ef4444';
+  const hStatusCls = healthStatusCls(health);
+  const hLabel     = healthLabel(health);
 
   // Donut: top 3 categories only — matches GAS slice(0,3)
   const catData    = Object.entries(risks_by_category).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([name, value]) => ({ name, value }));
   const allCatData = Object.entries(risks_by_category).map(([name, value]) => ({ name, value }));
-
-  const pressureText = pressurePct > 30
-    ? 'High-risk concentration — intervention recommended.'
-    : pressurePct > 15
-      ? 'Risk posture elevated — monitor closely.'
-      : 'Risk posture within acceptable thresholds.';
 
   return (
     <div className="dash-section">
@@ -518,14 +515,14 @@ export default function RiskSection({ data }: Props) {
           </div>
           {/* GAS: height:5px; background:#eef2f7 */}
           <div className="rs-pressure-bar">
-            <div className="rs-pressure-fill" style={{ width: `${pressurePct}%`, background: pressureColor }} />
+            <div className="rs-pressure-fill" style={{ width: `${ctrlPct}%`, background: barColor }} />
           </div>
           {/* GAS: gap:12px between metric rows */}
           <div className="dash-metric-list">
             <div className="dash-metric-row"><span>Active risks</span><strong>{kpis.total_risks}</strong></div>
             <div className="dash-metric-row"><span>High / Critical</span><strong>{kpis.high_risks}</strong></div>
             <div className="dash-metric-row">
-              <span>Avg severity score</span>
+              <span>Avg residual score</span>
               <strong>{avgResidual > 0 ? Math.round(avgResidual).toString() : '—'}</strong>
             </div>
             <div className="dash-metric-row">
@@ -547,8 +544,24 @@ export default function RiskSection({ data }: Props) {
               </strong>
             </div>
           </div>
-          {/* GAS: border-top:1px dashed var(--sr-gray-200); font-size:12px */}
-          <div className="rs-pressure-footer">{pressureText}</div>
+          <div className="rs-pressure-footer">
+            {kpis.appetite_configured ? (
+              <span className="rs-appetite-row">
+                <strong>Within appetite: {kpis.risks_within_appetite}/{kpis.total_risks}</strong>
+                {kpis.risks_exceeds_appetite > 0 && (
+                  <><span className="rs-appetite-dot exceeds" />{kpis.risks_exceeds_appetite} risk{kpis.risks_exceeds_appetite !== 1 ? 's' : ''} exceed{kpis.risks_exceeds_appetite === 1 ? 's' : ''} appetite threshold</>
+                )}
+                {kpis.risks_exceeds_appetite === 0 && kpis.risks_near_appetite > 0 && (
+                  <><span className="rs-appetite-dot near" />{kpis.risks_near_appetite} risk{kpis.risks_near_appetite !== 1 ? 's' : ''} near appetite threshold</>
+                )}
+                {kpis.risks_exceeds_appetite === 0 && kpis.risks_near_appetite === 0 && (
+                  <><span className="rs-appetite-dot within" />All risks within appetite</>
+                )}
+              </span>
+            ) : (
+              'Risk appetite not set — see settings'
+            )}
+          </div>
         </div>
 
         {/* Card 3: Risk Distribution
@@ -736,7 +749,7 @@ export default function RiskSection({ data }: Props) {
       </div>
 
       {/* ── Modals ── */}
-      <PressureModal  open={pressureOpen} onClose={() => setPressureOpen(false)} kpis={kpis} topRisks={top_risks} pressurePct={pressurePct} />
+      <PressureModal open={pressureOpen} onClose={() => setPressureOpen(false)} kpis={kpis} topRisks={top_risks} />
       <DistributionModal open={distOpen} onClose={() => setDistOpen(false)} catData={allCatData} />
       <IncidentUpsellModal open={upsellOpen} onClose={() => setUpsellOpen(false)} />
 
