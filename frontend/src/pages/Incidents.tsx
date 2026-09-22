@@ -133,7 +133,7 @@ function IncidentDriversPanel({ drivers }: { drivers: TopDriver[] }) {
             <tr><th>Incident</th><th>Severity</th><th>Age</th></tr>
           </thead>
           <tbody>
-            {drivers.map(d => (
+            {drivers.slice(0, 3).map(d => (
               <tr key={d.id}>
                 <td title={d.title ?? d.id}>
                   {d.title ? (d.title.length > 45 ? `${d.title.slice(0, 45)}…` : d.title) : d.id}

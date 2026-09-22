@@ -912,11 +912,11 @@ def _render_risk_table(label: str, risks: list[dict], intro: str | None,
     rows = [headers] + [
         [
             Paragraph(str(r.get("id", "")), _cell_s),
-            Paragraph((r.get("owner") or "")[:30], _cell_s),
-            Paragraph((r.get("desc") or "")[:90], _cell_s),
+            Paragraph((r.get("owner") or ""), _cell_s),
+            Paragraph((r.get("desc") or ""), _cell_s),
             _level_badge_cell(r.get("level", ""), r.get("level_index"), 18 * mm),
-            Paragraph((r.get("controls") or "")[:70], _cell_s),
-            Paragraph((r.get("mitigation_plan") or "")[:70], _cell_s),
+            Paragraph((r.get("controls") or ""), _cell_s),
+            Paragraph((r.get("mitigation_plan") or ""), _cell_s),
             Paragraph(str(r.get("residual", "")), _res_s),
         ]
         for r in risks

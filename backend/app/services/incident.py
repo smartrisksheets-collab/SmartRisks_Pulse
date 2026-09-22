@@ -447,7 +447,7 @@ async def get_stats(db: AsyncSession, tenant_id: UUID) -> IncidentStatsResponse:
     )
     very_high_breach = any(str(r.severity or '') == 'Very High' and compute_breach(_age_h(r), _tgt_h(r)) for r in open_rows)
     triple_breach    = any(_age_h(r) >= 3 * _tgt_h(r) for r in open_rows)
-    if very_high_breach or triple_breach or overdue_count >= 2 or unlinked_rate > 0.5:
+    if total > 0 and (very_high_breach or triple_breach or overdue_count >= 2 or unlinked_rate > 0.5):
         if label in ('Healthy', 'Monitoring'):
             label = 'At Risk'
 
