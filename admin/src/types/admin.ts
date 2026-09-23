@@ -40,6 +40,7 @@ export interface WorkspaceListItem {
   payment_active: boolean
   payment_date: string | null
   plan_expires_at: string | null
+  trial_ends_at: string | null
   modules: string[]
   max_users: number
   max_risks: number

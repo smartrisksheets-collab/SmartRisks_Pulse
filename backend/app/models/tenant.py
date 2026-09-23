@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, Boolean, Date, DateTime, ForeignKey, Text
+from sqlalchemy import Column, String, Integer, Boolean, Date, DateTime, ForeignKey, Text, text
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID, JSONB, ARRAY
 from sqlalchemy.sql import func
 import uuid
@@ -13,6 +13,7 @@ class Tenant(Base):
     industry = Column(String)
     plan = Column(String, nullable=False, server_default="TRIAL")
     trial_start_date = Column(Date, nullable=False, server_default=func.current_date())
+    trial_ends_at = Column(Date, nullable=False, server_default=text("(CURRENT_DATE + 14)"))
     payment_active = Column(Boolean, nullable=False, server_default="false")
     payment_date = Column(Date)
     plan_expires_at = Column(Date)

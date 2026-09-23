@@ -1,3 +1,4 @@
+from datetime import date
 from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -42,6 +43,8 @@ class Settings(BaseSettings):
     TRIAL_DURATION_DAYS: int = 14
     PAID_DURATION_DAYS: int = 365
     EXPIRY_REMINDER_DAYS: int = 30
+    TRIAL_CLEANUP_START_DATE: date | None = None
+    TRIAL_CLEANUP_DRY_RUN: bool = True
 
     # Per-workspace limits
     MAX_RISKS: int = 1000

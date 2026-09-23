@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
 logger = logging.getLogger(__name__)
-from datetime import timedelta, datetime, timezone
+from datetime import datetime, timezone
 from uuid import UUID
 from app.core.config import settings
 from app.core.security import create_access_token, create_refresh_token, create_reset_token, verify_pin, decode_token, hash_password, verify_password
@@ -75,8 +75,8 @@ def _build_workspace_token(account: Account, member: WorkspaceMember, tenant: Te
         "perm_version":     int(tenant.perm_version or 1),  # type: ignore[arg-type]
         "plan":             tenant.plan,
         "trial_expires_at": (
-            (tenant.trial_start_date + timedelta(days=14)).isoformat()
-            if str(tenant.plan) == "TRIAL" else None
+            tenant.trial_ends_at.isoformat()
+            if str(tenant.plan) == "TRIAL" and tenant.trial_ends_at is not None else None
         ),
         "modules":          tenant.modules,
         "workspaces":       [],

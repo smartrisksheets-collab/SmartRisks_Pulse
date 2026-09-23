@@ -329,8 +329,29 @@ function WorkspaceDrawer({
   const [tab, setTab] = useState<'settings' | 'payments'>('settings')
   const [payForm, setPayForm] = useState<PaymentForm>(EMPTY_PAY)
   const [payError, setPayError] = useState<string | null>(null)
+  const [extendDays, setExtendDays]   = useState('7')
+  const [trialEnd, setTrialEnd]       = useState<string | null>(state.workspace.trial_ends_at)
+  const [extendError, setExtendError] = useState<string | null>(null)
 
   const qc = useQueryClient()
+
+  const extendMutation = useMutation({
+    mutationFn: () => workspacesApi.extendTrial(state.workspace.id, Number(extendDays)),
+    onSuccess: (res) => {
+      setTrialEnd(res.trial_ends_at)
+      setExtendError(null)
+      qc.invalidateQueries({ queryKey: ['admin', 'workspaces'] })
+      qc.invalidateQueries({ queryKey: ['admin', 'overview'] })
+    },
+    onError: (err: unknown) => {
+      if (err && typeof err === 'object' && 'response' in err) {
+        const data = (err as { response?: { data?: { error?: string } } }).response?.data
+        setExtendError(data?.error ?? 'Failed to extend trial.')
+      } else {
+        setExtendError('Failed to extend trial.')
+      }
+    },
+  })
 
   const { data: payments = [], isLoading: paymentsLoading } = useQuery<Payment[]>({
     queryKey: ['admin', 'payments', state.workspace.id],
@@ -439,6 +460,37 @@ function WorkspaceDrawer({
             <span className="a-detail-label">Current status</span>
             <StatusBadge status={w.status} />
           </div>
+
+          {w.plan === 'TRIAL' && (
+            <>
+              <div className="a-detail-row">
+                <span className="a-detail-label">Trial ends</span>
+                <span className="a-detail-val">{formatDate(trialEnd)}</span>
+              </div>
+              <div className="a-trial-extend">
+                <input
+                  className="a-input"
+                  type="number"
+                  min={1}
+                  max={90}
+                  value={extendDays}
+                  onChange={(e) => setExtendDays(e.target.value)}
+                />
+                <button
+                  className="a-btn a-btn-primary"
+                  onClick={() => extendMutation.mutate()}
+                  disabled={extendMutation.isPending || !(Number(extendDays) >= 1 && Number(extendDays) <= 90)}
+                >
+                  {extendMutation.isPending ? 'Extending...' : 'Extend trial'}
+                </button>
+              </div>
+              {extendError && <div className="a-trial-extend-error">{extendError}</div>}
+              <div className="a-trial-extend-hint">
+                Adds days to the current end date, or to today if the trial has already expired.
+                Signed-in users see the new date on their next session refresh.
+              </div>
+            </>
+          )}
 
           <hr className="a-divider" />
 

@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 from datetime import date
 from html import escape as _esc
+from urllib.parse import quote as _url_quote
 
 import resend
 
@@ -996,20 +997,13 @@ def send_trial_expiry_reminder(
     if not settings.RESEND_FROM_EMAIL:
         raise ValueError("RESEND_FROM_EMAIL is not configured")
 
-    if days_remaining <= 0:
-        subject = f"Your SmartRisk trial for {workspace_name} has expired"
-        urgency = "Your trial period has ended."
-        body_line = (
-            "Your workspace and all its data will be permanently deleted in "
-            f"<strong>{30 - (reminder_num - 1) * 9}</strong> days unless you upgrade."
-        )
-    else:
-        subject = f"Action required: {workspace_name} will be deleted in {days_remaining} day{'s' if days_remaining != 1 else ''}"
-        urgency = f"Only {days_remaining} day{'s' if days_remaining != 1 else ''} remaining."
-        body_line = (
-            "After this period your workspace and all associated data, including risks, "
-            "incidents, reports, and audit logs, will be permanently and irreversibly deleted."
-        )
+    day_word = "day" if days_remaining == 1 else "days"
+    subject = f"Action required: your SmartRisk trial for {workspace_name} has expired"
+    urgency = f"{days_remaining} {day_word} left to upgrade."
+    body_line = (
+        f"If the workspace is not upgraded within <strong>{days_remaining}</strong> {day_word}, "
+        "it may be permanently deleted, together with all its risks, incidents, reports, and audit logs."
+    )
 
     urgency_color = "#dc2626" if days_remaining <= 2 else "#f59e0b" if days_remaining <= 7 else "#1F2854"
 
@@ -1022,21 +1016,22 @@ def send_trial_expiry_reminder(
       <div style="background:#ffffff;padding:32px;border-radius:0 0 10px 10px;border:1px solid #e2e8f0;border-top:none;">
         <p style="font-size:22px;font-weight:800;color:{urgency_color};margin:0 0 8px;">{urgency}</p>
         <p style="font-size:14px;color:#334155;margin:0 0 20px;">
-          Your SmartRisk Pulse trial for <strong>{workspace_name}</strong> has expired.
+          Your SmartRisk Pulse trial for <strong>{_esc(workspace_name)}</strong> has expired.
         </p>
         <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:16px 20px;margin-bottom:24px;">
           <p style="font-size:13px;color:#dc2626;margin:0;">{body_line}</p>
         </div>
         <p style="font-size:13px;color:#64748b;margin:0 0 24px;">
-          To keep your workspace active, contact us to upgrade your plan. Your data is safe until the deletion date.
+          To keep your workspace, contact us to upgrade your plan. Your data stays intact during this period.
         </p>
-        <a href="mailto:support@smartrisksheets.com"
+        <a href="mailto:info@smartrisksheets.com?subject=Upgrade%20request%3A%20{_url_quote(workspace_name)}"
            style="display:inline-block;background:#01b88e;color:#fff;font-weight:700;font-size:14px;
                   padding:12px 28px;border-radius:8px;text-decoration:none;">
-          Contact support to upgrade
+          Contact us to upgrade
         </a>
         <p style="font-size:11px;color:#94a3b8;margin-top:28px;">
-          "This is reminder {reminder_num} of 4. If you believe this is an error, reply to this email."
+          This is reminder {reminder_num} of 4. If you believe this is an error,
+          <a href="mailto:info@smartrisksheets.com" style="color:#01b88e;font-weight:700;text-decoration:none;">contact us at info@smartrisksheets.com</a>.
         </p>
       </div>
     </div>

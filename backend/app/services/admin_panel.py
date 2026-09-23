@@ -4,9 +4,8 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, text, and_, or_
 
-from app.core.exceptions import ResourceNotFoundError
+from app.core.exceptions import ResourceNotFoundError, PermissionDeniedError
 from app.core.security import hash_password
-from app.core.config import settings
 from app.models.admin_account import AdminAccount
 from app.models.admin_audit_log import AdminAuditLog
 from app.models.api_error_log import ApiErrorLog
@@ -35,7 +34,6 @@ from app.core.exceptions import DuplicateResourceError
 async def get_overview_stats(db: AsyncSession) -> AdminOverviewStats:
     today = date.today()
     week_ago = datetime.now(timezone.utc) - timedelta(days=7)
-    trial_cutoff = today - timedelta(days=settings.TRIAL_DURATION_DAYS)
     expiry_window = today + timedelta(days=7)
 
     row = await db.execute(
@@ -55,7 +53,7 @@ async def get_overview_stats(db: AsyncSession) -> AdminOverviewStats:
             func.count().filter(
                 and_(
                     Tenant.plan == "TRIAL",
-                    Tenant.trial_start_date >= trial_cutoff,
+                    Tenant.trial_ends_at >= today,
                     Tenant.status == "ACTIVE",
                 )
             ).label("on_trial"),
@@ -63,7 +61,7 @@ async def get_overview_stats(db: AsyncSession) -> AdminOverviewStats:
                 or_(
                     and_(
                         Tenant.plan == "TRIAL",
-                        Tenant.trial_start_date < trial_cutoff,
+                        Tenant.trial_ends_at < today,
                     ),
                     and_(
                         Tenant.plan == "PAID",
@@ -81,9 +79,7 @@ async def get_overview_stats(db: AsyncSession) -> AdminOverviewStats:
                 and_(
                     Tenant.plan == "TRIAL",
                     Tenant.status == "ACTIVE",
-                    func.date(
-                        Tenant.trial_start_date + text(f"interval '{settings.TRIAL_DURATION_DAYS} days'")
-                    ).between(today, expiry_window),
+                    Tenant.trial_ends_at.between(today, expiry_window),
                 )
             ).label("trials_expiring_7d"),
             func.count().filter(
@@ -118,7 +114,6 @@ async def get_overview_stats(db: AsyncSession) -> AdminOverviewStats:
 
 async def list_workspaces(db: AsyncSession) -> list[AdminWorkspaceListItem]:
     today = date.today()
-    trial_cutoff = today - timedelta(days=settings.TRIAL_DURATION_DAYS)
 
     rows = await db.execute(
         select(
@@ -133,7 +128,7 @@ async def list_workspaces(db: AsyncSession) -> list[AdminWorkspaceListItem]:
             Tenant.modules,
             Tenant.max_users,
             Tenant.max_risks,
-            Tenant.trial_start_date,
+            Tenant.trial_ends_at,
             Tenant.created_at,
             Account.email.label("owner_email"),
             Account.name.label("owner_name"),
@@ -158,8 +153,8 @@ async def list_workspaces(db: AsyncSession) -> list[AdminWorkspaceListItem]:
             expires = r.plan_expires_at
             derived_status = "ACTIVE" if (expires is None or expires >= today) else "EXPIRED"
         else:
-            trial_start = r.trial_start_date
-            derived_status = "TRIAL" if (trial_start is not None and trial_start >= trial_cutoff) else "EXPIRED"
+            trial_end = r.trial_ends_at
+            derived_status = "TRIAL" if (trial_end is not None and trial_end >= today) else "EXPIRED"
 
         items.append(AdminWorkspaceListItem(
             id=str(r.id),
@@ -170,6 +165,7 @@ async def list_workspaces(db: AsyncSession) -> list[AdminWorkspaceListItem]:
             payment_active=bool(r.payment_active),
             payment_date=r.payment_date,
             plan_expires_at=r.plan_expires_at,
+            trial_ends_at=r.trial_ends_at,
             modules=list(r.modules or []),
             max_users=int(r.max_users),
             max_risks=int(r.max_risks),
@@ -183,6 +179,44 @@ async def list_workspaces(db: AsyncSession) -> list[AdminWorkspaceListItem]:
         ))
 
     return items
+
+
+async def extend_trial(
+    tenant_id: str,
+    days: int,
+    admin_id: str,
+    db: AsyncSession,
+) -> date:
+    tenant = (await db.execute(
+        select(Tenant).where(Tenant.id == UUID(tenant_id))
+    )).scalar_one_or_none()
+    if not tenant:
+        raise ResourceNotFoundError("Workspace not found.")
+    if str(tenant.plan or "") != "TRIAL":
+        raise PermissionDeniedError("Only TRIAL workspaces can have their trial extended.")
+
+    today = date.today()
+    current_end: date | None = tenant.trial_ends_at  # type: ignore[assignment]
+    base = current_end if current_end is not None and current_end >= today else today
+    new_end = base + timedelta(days=days)
+
+    tenant.trial_ends_at = new_end  # type: ignore[assignment]
+    await db.flush()
+
+    from app.services.admin_auth import write_audit_log
+    await write_audit_log(
+        admin_id=admin_id,
+        action="extend_trial",
+        target_type="workspace",
+        target_id=tenant_id,
+        db=db,
+        meta={
+            "before": current_end.isoformat() if current_end is not None else None,
+            "after": new_end.isoformat(),
+            "days": days,
+        },
+    )
+    return new_end
 
 
 async def update_workspace(
