@@ -1726,7 +1726,7 @@ Why: Two separate injection paths carry sector information into the prompt: `{in
 **Decision: Narrative review modal replaces inline textarea in report preview (September 21, 2026)**
 Raised by: The inline textarea was too small to comfortably read or edit AI-generated narratives. Users had no clear indication the text was editable or that AI output should be reviewed.
 Chosen: `NarrativeReviewModal` component added at module scope in `ReportPreview.tsx`. Triggered by a "Review & Edit" button on a collapsed preview row. Modal shows full text in a large textarea with an amber disclaimer banner linking to AI Settings. Save writes back via `onEdit`. All blocks that previously used inline textareas or `NarrativeTA` now route through the modal.
-Why: A modal gives the full viewport width for editing long narratives. The disclaimer and AI Settings link address the "AI makes mistakes" communication gap without cluttering the canvas.
+Why: A modal gives the full viewport width for editing long narratives. The disclaimer and AI Settings link address the "AI can make mistakes" communication gap without cluttering the canvas.
 
 **Decision: AI-not-run prompt added before PDF export and email (September 21, 2026)**
 Raised by: Users, especially new ones, could click Download PDF without having run Generate AI, producing a report with no narrative content and no warning.

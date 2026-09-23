@@ -95,6 +95,7 @@ class AdminWorkspaceListItem(BaseModel):
     payment_active: bool
     payment_date: date | None
     plan_expires_at: date | None
+    trial_ends_at: date | None
     modules: list[str]
     max_users: int
     max_risks: int
@@ -105,6 +106,17 @@ class AdminWorkspaceListItem(BaseModel):
     created_at: datetime
     owner_email: str | None = None
     owner_name: str | None = None
+
+
+class AdminTrialExtend(BaseModel):
+    days: int
+
+    @field_validator("days")
+    @classmethod
+    def _valid_days(cls, v: int) -> int:
+        if v < 1 or v > 90:
+            raise ValueError("Days must be between 1 and 90.")
+        return v
 
 
 class AdminWorkspaceUpdate(BaseModel):

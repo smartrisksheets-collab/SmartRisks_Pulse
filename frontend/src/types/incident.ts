@@ -92,6 +92,11 @@ export interface IncidentListMeta {
   page_size: number;
 }
 
+export interface IncidentListResponse {
+  items: Incident[];
+  meta: IncidentListMeta;
+}
+
 export interface HealthComponent {
   name: string;
   weight: number;
@@ -117,7 +122,31 @@ export interface IncidentTotals {
   open_count: number;
   overdue_count: number;
   high_or_above: number;
+  open_over_150d: number;
   flag: string | null;
+}
+
+export interface MonthlyTrend {
+  month: string;
+  count: number;
+}
+
+export interface TopDriver {
+  id: string;
+  title: string | null;
+  severity: string | null;
+  age_days: number;
+  category: string | null;
+  status: string | null;
+}
+
+export interface IncidentInsightAction {
+  badge: string;
+  text: string;
+}
+
+export interface IncidentPageInsight {
+  actions: IncidentInsightAction[];
 }
 
 export interface IncidentLifecycle {
@@ -150,4 +179,6 @@ export interface IncidentStats {
   totals: IncidentTotals;
   lifecycle: IncidentLifecycle;
   resolution: IncidentResolution;
+  monthly_trend: MonthlyTrend[];
+  top_drivers: TopDriver[];
 }

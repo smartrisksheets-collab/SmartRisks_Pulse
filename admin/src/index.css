@@ -322,6 +322,11 @@ body {
 .a-input:focus { border-color: var(--primary); }
 .a-input::placeholder { color: var(--muted); }
 
+.a-trial-extend { display: flex; gap: 8px; align-items: center; margin: 8px 0 6px; }
+.a-trial-extend .a-input { width: 96px; }
+.a-trial-extend-hint { font-size: 11px; color: var(--muted); line-height: 1.5; margin-bottom: 4px; }
+.a-trial-extend-error { font-size: 11px; color: var(--danger); margin-bottom: 4px; }
+
 .a-form-group { margin-bottom: 16px; }
 .a-form-label {
   display: block;

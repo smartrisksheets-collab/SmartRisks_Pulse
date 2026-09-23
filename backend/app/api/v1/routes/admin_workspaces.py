@@ -9,7 +9,7 @@ from app.core.admin_deps import get_current_admin
 from app.core.exceptions import PermissionDeniedError, ResourceNotFoundError
 from app.models.admin_account import AdminAccount
 from app.models.tenant import Tenant
-from app.schemas.admin import AdminWorkspaceUpdate
+from app.schemas.admin import AdminWorkspaceUpdate, AdminTrialExtend
 from app.services import admin_panel as panel_service
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -39,6 +39,23 @@ async def update_workspace(
     )
     await db.commit()
     return {"data": {"message": "Workspace updated."}, "error": None, "meta": {}}
+
+
+@router.post("/workspaces/{tenant_id}/extend-trial")
+async def extend_trial(
+    tenant_id: str,
+    payload: AdminTrialExtend,
+    admin: AdminAccount = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    new_end = await panel_service.extend_trial(
+        tenant_id=tenant_id,
+        days=payload.days,
+        admin_id=str(admin.id),
+        db=db,
+    )
+    await db.commit()
+    return {"data": {"trial_ends_at": new_end.isoformat()}, "error": None, "meta": {}}
 
 
 @router.delete("/workspaces/{tenant_id}")

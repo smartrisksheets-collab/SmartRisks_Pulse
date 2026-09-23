@@ -49,6 +49,8 @@ export const workspacesApi = {
     adminApi.patch(`/api/admin/workspaces/${id}`, data).then(unwrap<{ message: string }>),
   delete: (id: string) =>
     adminApi.delete(`/api/admin/workspaces/${id}`).then(unwrap<{ deleted: boolean }>),
+  extendTrial: (id: string, days: number) =>
+    adminApi.post(`/api/admin/workspaces/${id}/extend-trial`, { days }).then(unwrap<{ trial_ends_at: string }>),
 }
 
 export const usersApi = {

@@ -83,7 +83,7 @@ function NarrativeReviewModal({ blockKey, initialValue, onSave, onClose }: Revie
         </div>
         <div className="modal-bd" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div className="rb-ai-disclaimer">
-            ⚠ AI makes mistakes. Kindly review this text and refer to{' '}
+            ⚠ AI can make mistakes. Kindly review this text and refer to{' '}
             <a
               href="/settings?tab=ai"
               target="_blank"
