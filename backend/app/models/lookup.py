@@ -1,8 +1,8 @@
 # app/models/lookup.py
 
 import uuid
-from sqlalchemy import Column, DateTime, ForeignKey, Text, UniqueConstraint
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID, ARRAY
+from sqlalchemy import Column, DateTime, ForeignKey, Text, UniqueConstraint, text
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID, ARRAY, JSONB
 from sqlalchemy.sql import func
 from app.db.base import Base
 
@@ -21,4 +21,5 @@ class Lookup(Base):
     incident_category = Column(ARRAY(Text), server_default="ARRAY[]::TEXT[]")
     incident_severity = Column(ARRAY(Text), server_default="ARRAY[]::TEXT[]")
     business_unit   = Column(ARRAY(Text), server_default="ARRAY[]::TEXT[]")
+    incident_category_map = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
     updated_at      = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

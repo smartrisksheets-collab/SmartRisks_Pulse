@@ -42,7 +42,7 @@ async def compute_live_kpis(
         select(
             func.count(Risk.id).label("total_risks"),
             func.sum(
-                case((Risk.level.in_(["High", "Critical"]), 1), else_=0)
+                case((Risk.is_elevated, 1), else_=0)  # type: ignore[arg-type]
             ).label("high_risk_count"),
             func.avg(Risk.residual).label("avg_residual"),
             func.avg(

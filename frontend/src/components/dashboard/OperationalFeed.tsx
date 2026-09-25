@@ -1,95 +1,22 @@
 // src/components/dashboard/OperationalFeed.tsx
-// Operational feed card: Risk activity and Incident activity with a toggle.
-// Placed in UnifiedSection between the Distribution row and the AI card.
+// Operational feed card: All, Risk and Incident views with a toggle.
 
 import { useState } from 'react';
 import type { ActivityEntry, IncidentFeedEntry } from '../../types/dashboard';
-import ActivityFeed from './ActivityFeed';
+import ActivityFeed, { ActivityDetailModal } from './ActivityFeed';
+import FeedEventRow from './FeedEventRow';
+import {
+  incidentEventConfig,
+  incidentNarrative,
+  incidentInsight,
+  incidentFlag,
+  riskEventConfig,
+  riskNarrative,
+  mergeFeed,
+  timeAgo,
+} from '../../utils/feedEvents';
 
-// ── Incident event config ─────────────────────────────────────────────────────
-
-interface IncEventConfig {
-  tier: 'critical' | 'escalated' | 'monitoring' | 'improving' | 'informational';
-  badge: string;
-}
-
-const INC_EVENT_CONFIG: Record<string, IncEventConfig> = {
-  incident_resolved:    { tier: 'improving',     badge: 'Resolved'      },
-  incident_escalated:   { tier: 'critical',      badge: 'Escalated'     },
-  incident_in_progress: { tier: 'monitoring',    badge: 'In Progress'   },
-  incident_created:     { tier: 'escalated',     badge: 'New Incident'  },
-};
-
-const TIER_BORDER: Record<string, string> = {
-  critical:      '#dc2626',
-  escalated:     '#f59e0b',
-  monitoring:    '#2563eb',
-  improving:     '#16a34a',
-  informational: '#94a3b8',
-};
-
-const TIER_BADGE: Record<string, { bg: string; color: string }> = {
-  critical:      { bg: '#fee2e2', color: '#991b1b' },
-  escalated:     { bg: '#fef3c7', color: '#92400e' },
-  monitoring:    { bg: '#dbeafe', color: '#1e40af' },
-  improving:     { bg: '#dcfce7', color: '#166534' },
-  informational: { bg: '#f1f5f9', color: '#475569' },
-};
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function timeAgo(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
-}
-
-function resolveIncConfig(entry: IncidentFeedEntry): IncEventConfig {
-  return INC_EVENT_CONFIG[entry.event_type] ?? {
-    tier: 'informational' as const,
-    badge: entry.event_type,
-  };
-}
-
-function buildIncidentNarrative(entry: IncidentFeedEntry): React.ReactNode {
-  const title = entry.incident_title
-    ? <em style={{ color: '#6f7895' }}>{entry.incident_title}</em>
-    : <strong>{entry.incident_id}</strong>;
-  const cat = entry.category ? <> in <strong>{entry.category}</strong></> : null;
-  const sev = entry.severity ? <strong>{entry.severity}</strong> : null;
-
-  switch (entry.event_type) {
-    case 'incident_resolved':
-      return <>Incident resolved{cat} — {title}. Confirm root cause documented and controls validated.</>;
-    case 'incident_escalated':
-      return <>{sev ? <>{sev} incident escalated{cat}</> : <>Critical incident escalated{cat}</>} — {title}. Senior review required.</>;
-    case 'incident_in_progress':
-      return <>Incident under active investigation{cat} — {title}. Monitor resolution progress and SLA.</>;
-    case 'incident_created':
-      return <>New incident logged{cat} — {title}. Assign owner and begin initial assessment.</>;
-    default:
-      return <>Incident updated{cat} — {title}.</>;
-  }
-}
-
-function buildIncidentInsight(entry: IncidentFeedEntry): string {
-  switch (entry.event_type) {
-    case 'incident_resolved':
-      return 'This incident has been resolved. Confirm that a post-incident review was completed and root cause is documented before closing.';
-    case 'incident_escalated':
-      return `This is a ${entry.severity ?? 'high'} severity incident requiring immediate attention. Escalate to senior risk owner if not already done.`;
-    case 'incident_in_progress':
-      return 'This incident is actively being managed. Track resolution time against the applicable SLA and update status regularly.';
-    case 'incident_created':
-      return 'A new incident was logged. Early-stage investigation is recommended. Assign an owner and set the initial severity rating.';
-    default:
-      return 'An update was recorded on this incident.';
-  }
-}
+type FeedTab = 'all' | 'risk' | 'incident';
 
 // ── Incident feed row ─────────────────────────────────────────────────────────
 
@@ -100,28 +27,14 @@ function IncidentFeedRow({
   entry: IncidentFeedEntry
   onClick: (e: IncidentFeedEntry) => void
 }) {
-  const cfg    = resolveIncConfig(entry);
-  const border = TIER_BORDER[cfg.tier] ?? '#94a3b8';
-  const badge  = TIER_BADGE[cfg.tier]  ?? TIER_BADGE.informational;
-
   return (
-    <div className="af-feed-row" onClick={() => onClick(entry)}>
-      <div className="af-feed-tier" style={{ background: border }} />
-      <div className="af-feed-body">
-        <div className="af-feed-text">{buildIncidentNarrative(entry)}</div>
-        <div className="af-feed-meta">
-          {entry.category && (
-            <span className="af-feed-meta-t">
-              {entry.category}{entry.severity ? ` · ${entry.severity}` : ''}
-            </span>
-          )}
-          <span className="af-feed-meta-t">{timeAgo(entry.created_at)}</span>
-        </div>
-      </div>
-      <span className="af-feed-badge" style={{ background: badge.bg, color: badge.color }}>
-        {cfg.badge}
-      </span>
-    </div>
+    <FeedEventRow
+      config={incidentEventConfig(entry)}
+      narrative={incidentNarrative(entry)}
+      meta={[entry.category ? `${entry.category}${entry.severity ? ` · ${entry.severity}` : ''}` : '', timeAgo(entry.created_at)]}
+      flag={incidentFlag(entry)}
+      onClick={() => onClick(entry)}
+    />
   );
 }
 
@@ -165,8 +78,7 @@ function IncidentDetailModal({
   onClose: () => void
 }) {
   if (!open || !entry) return null;
-  const cfg   = resolveIncConfig(entry);
-  const badge = TIER_BADGE[cfg.tier] ?? TIER_BADGE.informational;
+  const cfg = incidentEventConfig(entry);
 
   return (
     <div className="dl-modal-back z-top" onClick={onClose}>
@@ -194,13 +106,13 @@ function IncidentDetailModal({
             </div>
             <div style={{ marginTop: 2 }}>
               <div className="dl-section-lbl">Event Badge</div>
-              <span className="af-feed-badge" style={{ background: badge.bg, color: badge.color, display: 'inline-block', marginTop: 4 }}>
+              <span className={`af-feed-badge af-feed-badge-block t-${cfg.tier}`}>
                 {cfg.badge}
               </span>
             </div>
             <div className="dl-insight-box" style={{ marginTop: 12 }}>
               <div className="dl-insight-lbl">Insight</div>
-              <div className="dl-insight-text">{buildIncidentInsight(entry)}</div>
+              <div className="dl-insight-text">{incidentInsight(entry)}</div>
             </div>
             {entry.incident_title && (
               <div style={{ marginTop: 12 }}>
@@ -299,42 +211,88 @@ function IncidentFeedPanel({ items }: { items: IncidentFeedEntry[] }) {
   );
 }
 
+// ── All view ──────────────────────────────────────────────────────────────────
+
+function AllFeedPanel({ risks, incidents }: { risks: ActivityEntry[]; incidents: IncidentFeedEntry[] }) {
+  const [riskSel, setRiskSel] = useState<ActivityEntry | null>(null);
+  const [incSel, setIncSel]   = useState<IncidentFeedEntry | null>(null);
+  const items = mergeFeed(risks, incidents).slice(0, 6);
+
+  if (!items.length) {
+    return <div className="af-empty">No activity yet. Changes will appear here.</div>;
+  }
+
+  return (
+    <>
+      <div className="af-container">
+        {items.map(it => (it.kind === 'risk' ? (
+          <FeedEventRow
+            key={it.key}
+            config={riskEventConfig(it.entry)}
+            narrative={riskNarrative(it.entry)}
+            meta={['Risk', it.entry.category ?? '', timeAgo(it.at)]}
+            pending={it.entry.action_type === 'ext_submitted'}
+            onClick={() => setRiskSel(it.entry)}
+          />
+        ) : (
+          <FeedEventRow
+            key={it.key}
+            config={incidentEventConfig(it.entry)}
+            narrative={incidentNarrative(it.entry)}
+            meta={['Incident', it.entry.severity ?? '', timeAgo(it.at)]}
+            flag={incidentFlag(it.entry)}
+            onClick={() => setIncSel(it.entry)}
+          />
+        )))}
+      </div>
+      <ActivityDetailModal item={riskSel} open={riskSel !== null} onClose={() => setRiskSel(null)} />
+      <IncidentDetailModal entry={incSel} open={incSel !== null} onClose={() => setIncSel(null)} />
+    </>
+  );
+}
+
 // ── Main export ───────────────────────────────────────────────────────────────
 
 export default function OperationalFeed({
   riskItems,
   incidentItems,
+  exceedsAppetite,
 }: {
   riskItems: ActivityEntry[]
   incidentItems: IncidentFeedEntry[]
+  exceedsAppetite: number
 }) {
-  const [tab, setTab] = useState<'risk' | 'incident'>('risk');
+  const [tab, setTab] = useState<FeedTab>('all');
 
   return (
     <div className="im-card of-card">
       <div className="im-card-head">
-        <span className="im-label">OPERATIONAL FEED</span>
-        <div className="of-toggle-group">
-          <button
-            className={`of-toggle-btn${tab === 'risk' ? ' active' : ''}`}
-            onClick={() => setTab('risk')}
-          >
-            Risk
-          </button>
-          <button
-            className={`of-toggle-btn${tab === 'incident' ? ' active' : ''}`}
-            onClick={() => setTab('incident')}
-          >
-            Incident
-          </button>
+        <span className="im-label">LIVE EVENTS</span>
+        <div className="of-toggle-group" role="group" aria-label="Filter feed">
+          {(['all', 'risk', 'incident'] as const).map(t => (
+            <button
+              key={t}
+              type="button"
+              className={`of-toggle-btn${tab === t ? ' active' : ''}`}
+              aria-pressed={tab === t}
+              onClick={() => setTab(t)}
+            >
+              {t === 'all' ? 'All' : t === 'risk' ? 'Risk' : 'Incident'}
+            </button>
+          ))}
         </div>
       </div>
 
+      {exceedsAppetite > 0 && (
+        <div className="of-alert">
+          {exceedsAppetite} risk{exceedsAppetite === 1 ? ' is' : 's are'} currently outside appetite
+        </div>
+      )}
+
       <div className="of-feed-body">
-        {tab === 'risk'
-          ? <ActivityFeed items={riskItems} />
-          : <IncidentFeedPanel items={incidentItems} />
-        }
+        {tab === 'all' && <AllFeedPanel risks={riskItems} incidents={incidentItems} />}
+        {tab === 'risk' && <ActivityFeed items={riskItems} />}
+        {tab === 'incident' && <IncidentFeedPanel items={incidentItems} />}
       </div>
     </div>
   );

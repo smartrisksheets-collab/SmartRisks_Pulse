@@ -55,6 +55,10 @@ export async function deleteIncident(id: string): Promise<void> {
   await apiDelete(`/api/v1/incidents/${id}`);
 }
 
+export async function getIncident(id: string): Promise<Incident> {
+  return apiGet<Incident>(`/api/v1/incidents/${encodeURIComponent(id)}`);
+}
+
 export async function getIncidentStats(): Promise<IncidentStats> {
   return apiGet<IncidentStats>('/api/v1/incidents/stats');
 }

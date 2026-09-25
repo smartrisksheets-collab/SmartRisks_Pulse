@@ -70,6 +70,22 @@ async def update_config(
             'Update or remove those risks before changing matrix dimensions.'
         )
 
+    new_max = payload.likelihood_scale * payload.impact_scale
+    threshold_result = await db.execute(
+        text("""
+            SELECT COUNT(*) FROM appetite_thresholds
+            WHERE tenant_id = :tid AND threshold > :new_max
+        """),
+        {'tid': str(tenant_id), 'new_max': new_max},
+    )
+    threshold_conflicts = threshold_result.scalar() or 0
+    if threshold_conflicts > 0:
+        raise ValidationError(
+            f'{threshold_conflicts} appetite threshold(s) are above {new_max}, the highest residual '
+            f'score on a {payload.likelihood_scale}x{payload.impact_scale} matrix. '
+            'Lower those thresholds before changing matrix dimensions.'
+        )
+
     row = await _get_or_create(db, tenant_id)
     for field, value in payload.model_dump().items():
         setattr(row, field, value)

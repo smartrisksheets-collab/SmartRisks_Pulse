@@ -1,7 +1,9 @@
 // src/pages/Incidents.tsx
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
+import { useToast } from '../hooks/useToast';
 import { Link2, RefreshCw, Printer } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { useFeedbackStore } from '../store/feedbackStore';
@@ -16,7 +18,7 @@ import IncidentPrintModal from '../components/incidents/IncidentPrintModal';
 import IncidentExternalLinkModal from '../components/incidents/IncidentExternalLinkModal';
 import AddIncidentModal from '../components/incidents/AddIncidentModal';
 import type { Incident, IncidentCreate, IncidentStats, IncidentPageInsight, MonthlyTrend, TopDriver } from '../types/incident';
-import { getIncidentPageInsights } from '../services/incidents';
+import { getIncidentPageInsights, getIncident } from '../services/incidents';
 import { useCanDo } from '../utils/permissions';
 import { useIncidentSeverity } from '../hooks/useIncidentSeverity';
 
@@ -24,15 +26,6 @@ const PAGE_SIZE = 10;
 
 const STATUSES   = ['New', 'Open', 'In Progress', 'Under Review', 'Resolved', 'Closed'];
 const CHANNELS   = ['Email', 'Phone', 'Walk-in', 'Monitoring', 'Other'];
-
-// ── Severity color helper ──────────────────────────────────────────────────────
-function incSevColor(sev: string | null): string {
-  const s = (sev ?? '').toLowerCase();
-  if (s === 'very high') return '#dc2626';
-  if (s === 'high')      return '#d97706';
-  if (s === 'medium')    return '#059669';
-  return '#64748b';
-}
 
 // ── AI Insights card ──────────────────────────────────────────────────────────
 function IncidentInsightSection({ stats }: { stats: IncidentStats }) {
@@ -122,7 +115,7 @@ function IncidentTrendPanel({ trend }: { trend: MonthlyTrend[] }) {
 }
 
 // ── Top Incident Drivers panel ─────────────────────────────────────────────────
-function IncidentDriversPanel({ drivers }: { drivers: TopDriver[] }) {
+function IncidentDriversPanel({ drivers, sevColors }: { drivers: TopDriver[]; sevColors: Record<string, string> }) {
   return (
     <div className="inc-panel">
       <div className="inc-panel-title">Top Incident Drivers</div>
@@ -139,7 +132,7 @@ function IncidentDriversPanel({ drivers }: { drivers: TopDriver[] }) {
                   {d.title ? (d.title.length > 45 ? `${d.title.slice(0, 45)}…` : d.title) : d.id}
                 </td>
                 <td>
-                  <span style={{ color: incSevColor(d.severity), fontWeight: 700, fontSize: 12 }}>
+                  <span style={{ color: sevColors[d.severity ?? ''] ?? 'var(--muted)', fontWeight: 700, fontSize: 12 }}>
                     {d.severity || '—'}
                   </span>
                 </td>
@@ -168,6 +161,9 @@ export default function Incidents() {
     .slice()
     .sort((a, b) => a.sort_order - b.sort_order)
     .map(l => l.label);
+  const sevColors: Record<string, string> = Object.fromEntries(
+    (sevConfig.data?.levels ?? []).map(l => [l.label, l.color]),
+  );
 
   // Pagination + filters
   const [page, setPage]                     = useState(1);
@@ -184,6 +180,23 @@ export default function Incidents() {
   const [showAdd, setShowAdd]         = useState(false);
   const [showPrint, setShowPrint]     = useState(false);
   const [showExtLink, setShowExtLink] = useState(false);
+
+  // Deep link: /incidents?incident=INC-2026-001 opens that incident's drawer
+  const [searchParams, setSearchParams] = useSearchParams();
+  const toast = useToast();
+  const handledLink = useRef<string | null>(null);
+  const linkedIncidentId = searchParams.get('incident');
+
+  useEffect(() => {
+    if (!linkedIncidentId || handledLink.current === linkedIncidentId) return;
+    handledLink.current = linkedIncidentId;
+    const next = new URLSearchParams(searchParams);
+    next.delete('incident');
+    setSearchParams(next, { replace: true });
+    getIncident(linkedIncidentId)
+      .then(setDetailInc)
+      .catch(() => toast(`Incident ${linkedIncidentId} could not be opened. It may have been deleted.`, 'error'));
+  }, [linkedIncidentId, searchParams, setSearchParams, toast]);
 
   // Incident list query — declared after all state is initialised
   const incidentParams: ListIncidentsParams = {
@@ -247,7 +260,7 @@ export default function Incidents() {
       {stats && (
         <div className="inc-panel-row">
           <IncidentTrendPanel trend={stats.monthly_trend} />
-          <IncidentDriversPanel drivers={stats.top_drivers} />
+          <IncidentDriversPanel drivers={stats.top_drivers} sevColors={sevColors} />
         </div>
       )}
 

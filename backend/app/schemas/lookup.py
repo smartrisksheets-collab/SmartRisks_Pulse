@@ -11,6 +11,7 @@ class LookupResponse(BaseModel):
     incident_category: list[str]
     incident_severity: list[str]
     business_unit:     list[str]
+    incident_category_map: dict[str, list[str]] = {}
     updated_at:        datetime | None
 
     model_config = {'from_attributes': True}
@@ -29,3 +30,4 @@ class LookupPatch(BaseModel):
     incident_category: list[str] | None = None
     incident_severity: list[str] | None = None
     business_unit:     list[str] | None = None
+    incident_category_map: dict[str, list[str]] | None = None

@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import { useLookups } from "../../hooks/useLookups";
+import type { LookupPatchResult } from "../../hooks/useLookups";
 import { checkUsage } from "../../services/lookups";
-import type { LookupPatch } from "../../services/lookups";
+import type { LookupPatch, LookupListKey } from "../../services/lookups";
 import UnsavedBanner from "./UnsavedBanner";
 import { useAuthStore } from "../../store/authStore";
 
@@ -11,7 +12,7 @@ import { useAuthStore } from "../../store/authStore";
 const HARD_BLOCK = new Set(['risk_owner']);
 const SOFT_WARN  = new Set(['category', 'treatment', 'incident_category', 'incident_severity']);
 
-const LOOKUP_KEYS: Array<keyof LookupPatch> = [
+const LOOKUP_KEYS: LookupListKey[] = [
   "category",
   "treatment",
   "risk_owner",
@@ -30,12 +31,107 @@ const LOOKUP_LABELS: Record<string, string> = {
 };
 
 type LocalLookups = Record<string, string[]>;
+type CategoryMap = Record<string, string[]>;
+
+function copyMap(map: CategoryMap): CategoryMap {
+  return Object.fromEntries(Object.entries(map).map(([k, v]) => [k, [...v]]));
+}
+
+function mapsEqual(a: CategoryMap, b: CategoryMap): boolean {
+  const ka = Object.keys(a).sort();
+  const kb = Object.keys(b).sort();
+  if (ka.length !== kb.length || ka.some((k, i) => k !== kb[i])) return false;
+  return ka.every((k) => {
+    const va = [...a[k]].sort();
+    const vb = [...(b[k] ?? [])].sort();
+    return va.length === vb.length && va.every((v, i) => v === vb[i]);
+  });
+}
+
+function pruneMap(map: CategoryMap, incidentCats: string[], riskCats: string[]): CategoryMap {
+  const out: CategoryMap = {};
+  Object.entries(map).forEach(([k, v]) => {
+    if (incidentCats.includes(k)) out[k] = v.filter((c) => riskCats.includes(c));
+  });
+  return out;
+}
+
+function CategoryMapCard({ incidentCategories, riskCategories, map, onChange }: {
+  incidentCategories: string[];
+  riskCategories: string[];
+  map: CategoryMap;
+  onChange: (next: CategoryMap) => void;
+}) {
+  const explicitCount = incidentCategories.filter((c) => Object.prototype.hasOwnProperty.call(map, c)).length;
+
+  function toggle(inc: string, rc: string, selected: string[]) {
+    const next = selected.includes(rc) ? selected.filter((c) => c !== rc) : [...selected, rc];
+    onChange({ ...map, [inc]: next });
+  }
+
+  function reset(inc: string) {
+    const next = { ...map };
+    delete next[inc];
+    onChange(next);
+  }
+
+  return (
+    <div className="tax-card">
+      <div className="tax-card-hd">
+        <span className="tax-card-hd-title">Incident to Risk Category Mapping</span>
+        <span className="tiny muted">{explicitCount} set manually</span>
+      </div>
+      <div className="tax-card-bd">
+        <p className="muted small cat-map-intro">
+          Choose which risk categories cover each incident category. The dashboard uses this to tell a real
+          register gap apart from a naming difference. Rows left on automatic match a risk category with the same name.
+        </p>
+        {incidentCategories.map((inc) => {
+          const explicit = Object.prototype.hasOwnProperty.call(map, inc);
+          const auto = riskCategories.filter((c) => c.trim().toLowerCase() === inc.trim().toLowerCase()).slice(0, 1);
+          const selected = explicit ? map[inc] : auto;
+          return (
+            <div key={inc} className="cat-map-row">
+              <div className="cat-map-name">{inc}</div>
+              <div className="cat-map-chips">
+                {riskCategories.map((rc) => {
+                  const on = selected.includes(rc);
+                  return (
+                    <button
+                      key={rc}
+                      type="button"
+                      className={`cat-map-chip${on ? " on" : ""}`}
+                      aria-pressed={on}
+                      onClick={() => toggle(inc, rc, selected)}
+                    >
+                      {rc}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="cat-map-state">
+                {explicit
+                  ? selected.length === 0 && <span className="cat-map-gap">Not covered by any risk category</span>
+                  : <span className="tiny muted">{auto.length ? "Automatic, same-name match" : "Automatic, no same-name match"}</span>}
+                {explicit && (
+                  <button type="button" className="cat-map-reset" onClick={() => reset(inc)}>
+                    Reset to automatic
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 // Inner component — receives lookups as prop, initializes state once via lazy initializer.
 // No useEffect needed. Mounted only after outer gate confirms lookups is non-null.
 function LookupEditorContent({ lookups, patch, visibleKeys }: {
   lookups: import("../../services/lookups").Lookups;
-  patch: (updates: LookupPatch) => Promise<import("../../services/lookups").Lookups | null>;
+  patch: (updates: LookupPatch) => Promise<LookupPatchResult>;
   visibleKeys: Array<keyof LookupPatch>;
 }) {
   const [local, setLocal] = useState<LocalLookups>(() => {
@@ -43,15 +139,19 @@ function LookupEditorContent({ lookups, patch, visibleKeys }: {
     LOOKUP_KEYS.forEach((k) => { seed[k] = [...(lookups[k] ?? [])]; });
     return seed;
   });
+  const [localMap, setLocalMap]     = useState<CategoryMap>(() => copyMap(lookups.incident_category_map ?? {}));
   const [addInputs, setAddInputs]   = useState<Record<string, string>>({});
   const [saving, setSaving]         = useState(false);
   const [msg, setMsg]               = useState("");
 
-  const isDirty = LOOKUP_KEYS.some((k) => {
+  const showMap = visibleKeys.includes("incident_category");
+
+  const listsDirty = LOOKUP_KEYS.some((k) => {
     const a = local[k] ?? [];
     const b = lookups[k] ?? [];
     return a.length !== b.length || a.some((v, i) => v !== b[i]);
   });
+  const isDirty = listsDirty || (showMap && !mapsEqual(localMap, lookups.incident_category_map ?? {}));
   const [checking, setChecking]     = useState<string | null>(null);
   const [blockModal, setBlockModal] = useState<{ value: string; count: number } | null>(null);
   const [warnModal, setWarnModal]   = useState<{ key: string; index: number; value: string; count: number } | null>(null);
@@ -112,7 +212,10 @@ function LookupEditorContent({ lookups, patch, visibleKeys }: {
     LOOKUP_KEYS.forEach((k) => {
       payload[k] = local[k] ?? [];
     });
-    const result = await patch(payload);
+    if (showMap) {
+      payload.incident_category_map = pruneMap(localMap, local.incident_category ?? [], local.category ?? []);
+    }
+    const { data: result, error: saveError } = await patch(payload);
     setSaving(false);
     if (result) {
       setLocal((prev) => {
@@ -120,9 +223,10 @@ function LookupEditorContent({ lookups, patch, visibleKeys }: {
         LOOKUP_KEYS.forEach((k) => { next[k] = [...(result[k] ?? [])]; });
         return next;
       });
+      setLocalMap(copyMap(result.incident_category_map ?? {}));
       setMsg("Configuration saved.");
     } else {
-      setMsg("Save failed. Please try again.");
+      setMsg(saveError ?? "Save failed. Please try again.");
     }
   }
 
@@ -183,10 +287,18 @@ function LookupEditorContent({ lookups, patch, visibleKeys }: {
             </div>
           </div>
         ))}
+        {showMap && (
+          <CategoryMapCard
+            incidentCategories={local.incident_category ?? []}
+            riskCategories={local.category ?? []}
+            map={localMap}
+            onChange={setLocalMap}
+          />
+        )}
       </div>
 
       {msg && (
-        <p style={{ fontSize: 13, color: msg.includes("saved") ? "#01b88e" : "#ef4444", marginTop: 10 }}>
+        <p style={{ fontSize: 13, color: msg.includes("saved") ? "#01b88e" : "#ef4444", marginTop: 10, whiteSpace: "pre-line" }}>
           {msg}
         </p>
       )}
@@ -244,11 +356,11 @@ function LookupEditorContent({ lookups, patch, visibleKeys }: {
 
 // Outer gate — ensures LookupEditorContent only mounts when lookups is non-null.
 export default function LookupEditor() {
-  const { lookups, loading, error, patch } = useLookups();
+  const { lookups, loading, error, patchWithError } = useLookups();
   const modules     = useAuthStore(s => s.claims?.modules ?? []);
   const hasIncident = modules.includes('incident');
 
-  const INCIDENT_KEYS = new Set<keyof LookupPatch>(['incident_category', 'incident_severity']);
+  const INCIDENT_KEYS = new Set<LookupListKey>(['incident_category', 'incident_severity']);
   const visibleKeys   = LOOKUP_KEYS.filter(k => hasIncident || !INCIDENT_KEYS.has(k));
 
   if (loading) return <p className="muted small">Loading configuration…</p>;
@@ -258,7 +370,7 @@ export default function LookupEditor() {
     <LookupEditorContent
       key={lookups.updated_at ?? 'init'}
       lookups={lookups}
-      patch={patch}
+      patch={patchWithError}
       visibleKeys={visibleKeys}
     />
   );

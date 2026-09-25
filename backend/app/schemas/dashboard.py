@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class SnapshotDelta(BaseModel):
@@ -112,7 +112,168 @@ class IncidentFeedEntry(BaseModel):
     category: str | None = None
     status: str | None = None
     old_status: str | None = None
+    linked_risk_id: str | None = None
     created_at: str
+
+
+class ScoreComponent(BaseModel):
+    name: str = ""
+    weight: int = 0
+    score: int = 0
+    suppressed: bool = False
+
+
+class RecommendedAction(BaseModel):
+    key: str = ""
+    title: str = ""
+    detail: str = ""
+    done_when: str = ""
+    owner: str | None = None
+    due: str | None = None
+    refs: list[str] = Field(default_factory=list)
+
+
+class AppetiteComparison(BaseModel):
+    configured: bool = False
+    scored_risks: int = 0
+    avg_residual_scored: float | None = None
+    threshold_avg: float | None = None
+
+
+class EnterpriseHealth(BaseModel):
+    score: int = 0
+    status: str = ""
+    raw_status: str = ""
+    capped_by_appetite: bool = False
+    confidence: str = ""
+    confidence_reasons: list[str] = Field(default_factory=list)
+    components: list[ScoreComponent] = Field(default_factory=list)
+    appetite: AppetiteComparison = Field(default_factory=AppetiteComparison)
+    avg_residual: float = 0.0
+    scale_max: int = 25
+    incident_health_score: int | None = None
+    incident_count: int = 0
+    financial_exposure: float = 0.0
+    financial_quantified: int = 0
+
+
+class PressureCategoryRow(BaseModel):
+    category: str = ""
+    covered: bool = True
+    risks: int = 0
+    elevated: int = 0
+    incidents: int = 0
+    within: int = 0
+    near: int = 0
+    exceeds: int = 0
+    threshold_configured: bool = False
+
+
+class RiskPressure(BaseModel):
+    score: int = 0
+    level: str = ""
+    components: list[ScoreComponent] = Field(default_factory=list)
+    active_risks: int = 0
+    elevated: int = 0
+    exceeds_appetite: int = 0
+    open_incidents: int = 0
+    open_incidents_overdue: int = 0
+    undecided: int = 0
+    past_target: int = 0
+    evidenced: int = 0
+    rated: int = 0
+    by_category: list[PressureCategoryRow] = Field(default_factory=list)
+    actions: list[RecommendedAction] = Field(default_factory=list)
+
+
+class MaterialisedRisk(BaseModel):
+    risk_id: str = ""
+    category: str | None = None
+    description: str | None = None
+    owner: str | None = None
+    residual: float | None = None
+    control_rating: int | None = None
+    contradicted: bool = False
+    incident_count: int = 0
+    latest_incident_id: str | None = None
+    latest_incident_severity: str | None = None
+    latest_incident_reported_at: str | None = None
+    financial_total: float = 0.0
+    financial_quantified: int = 0
+
+
+class UnlinkedIncident(BaseModel):
+    incident_id: str = ""
+    title: str | None = None
+    category: str | None = None
+    severity: str | None = None
+    reported_at: str | None = None
+    covered: bool = False
+    covering_categories: list[str] = Field(default_factory=list)
+    candidate_risks: int = 0
+
+
+class Correlation(BaseModel):
+    risks_total: int = 0
+    risks_materialised: int = 0
+    contradicted: int = 0
+    incidents_total: int = 0
+    incidents_unlinked: int = 0
+    uncovered_categories: list[str] = Field(default_factory=list)
+    materialised_incidents: int = 0
+    materialised_financial_total: float = 0.0
+    materialised_financial_quantified: int = 0
+    repeat_categories: list[str] = Field(default_factory=list)
+    recurring_unlinked_categories: list[str] = Field(default_factory=list)
+    highest_unlinked_severity: str | None = None
+    highest_unlinked_id: str | None = None
+    materialised: list[MaterialisedRisk] = Field(default_factory=list)
+    unlinked: list[UnlinkedIncident] = Field(default_factory=list)
+    materialised_actions: list[RecommendedAction] = Field(default_factory=list)
+    unlinked_actions: list[RecommendedAction] = Field(default_factory=list)
+
+
+class ControlEvidenceRow(BaseModel):
+    risk_id: str = ""
+    category: str | None = None
+    description: str | None = None
+    owner: str | None = None
+    control_rating: int | None = None
+    last_tested: str | None = None
+    assertion_source: str | None = None
+    status: str = ""
+
+
+class ControlEvidence(BaseModel):
+    rated: int = 0
+    with_recent_test: int = 0
+    independently_asserted: int = 0
+    evidenced: int = 0
+    rated_high: int = 0
+    contradicted: int = 0
+    rows: list[ControlEvidenceRow] = Field(default_factory=list)
+    actions: list[RecommendedAction] = Field(default_factory=list)
+
+
+class MovementPoint(BaseModel):
+    month_key: str = ""
+    label: str = ""
+    avg_residual: float | None = None
+    incidents_created: int = 0
+    is_live: bool = False
+
+
+class Movement(BaseModel):
+    snapshots_held: int = 0
+    points: list[MovementPoint] = Field(default_factory=list)
+    trend_findings: list[str] = Field(default_factory=list)
+    overlap_findings: list[str] = Field(default_factory=list)
+
+class UnifiedBriefResponse(BaseModel):
+    paragraphs: list[str] = Field(default_factory=list)
+    generated_at: str = ""
+    generated_by: str | None = None
+    stale: bool = False
 
 
 class DashboardResponse(BaseModel):
@@ -132,6 +293,12 @@ class DashboardResponse(BaseModel):
     incidents_by_category: list[IncidentCategoryBreakdown]
     attention: list[str]
     snapshot_delta: SnapshotDelta
+    enterprise_health: EnterpriseHealth = Field(default_factory=EnterpriseHealth)
+    pressure: RiskPressure = Field(default_factory=RiskPressure)
+    correlation: Correlation = Field(default_factory=Correlation)
+    control_evidence: ControlEvidence = Field(default_factory=ControlEvidence)
+    movement: Movement = Field(default_factory=Movement)
+    unified_brief: UnifiedBriefResponse | None = None
 
 
 class ActionItem(BaseModel):

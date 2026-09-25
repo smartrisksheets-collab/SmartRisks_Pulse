@@ -55,6 +55,32 @@ def compute_breach(age_hours: float, target_hours: float) -> bool:
     return age_hours >= target_hours
 
 
+# ── Severity ranking ───────────────────────────────────────────────────────────
+
+_FALLBACK_RANKS: dict[str, int] = {'Very High': 0, 'High': 1, 'Medium': 2, 'Low': 3}
+HIGH_SEVERITY_TIERS = 2  # the two most severe configured levels count as "high or above"
+
+
+async def get_severity_ranks(db: AsyncSession, tenant_id: UUID) -> dict[str, int]:
+    """{label: rank}, 0 = most severe, from the workspace's configured levels.
+
+    Falls back to the platform defaults when a workspace has not been seeded yet.
+    """
+    rows = (await db.execute(
+        select(IncidentSeverityLevel.label)
+        .where(IncidentSeverityLevel.tenant_id == tenant_id)
+        .order_by(IncidentSeverityLevel.sort_order, IncidentSeverityLevel.label)
+    )).all()
+    if not rows:
+        return dict(_FALLBACK_RANKS)
+    return {str(r.label): i for i, r in enumerate(rows)}
+
+
+def high_severity_labels(ranks: dict[str, int]) -> list[str]:
+    """Labels that count as "high or above" for this workspace."""
+    return [label for label, rank in ranks.items() if rank < HIGH_SEVERITY_TIERS]
+
+
 # ── SLA map loader ─────────────────────────────────────────────────────────────
 
 async def get_sla_map(db: AsyncSession, tenant_id: UUID) -> dict[str, float]:
