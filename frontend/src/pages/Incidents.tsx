@@ -355,15 +355,17 @@ export default function Incidents() {
         />
       </div>
 
-      <AddIncidentModal
-        open={showAdd}
-        onClose={() => setShowAdd(false)}
-        onSubmit={handleAdd}
-        members={members}
-        categories={incidentCategories}
-        severities={severityLabels}
-        channels={CHANNELS}
-      />
+      {showAdd && (
+        <AddIncidentModal
+          open={showAdd}
+          onClose={() => setShowAdd(false)}
+          onSubmit={handleAdd}
+          members={members}
+          categories={incidentCategories}
+          severities={severityLabels}
+          channels={CHANNELS}
+        />
+      )}
 
       {/* Detail / Edit Drawer */}
       {detailInc && (

@@ -100,6 +100,7 @@ export default function AddIncidentModal({
       await onSubmit(payload);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to create incident');
+    } finally {
       setLoading(false);
     }
   }

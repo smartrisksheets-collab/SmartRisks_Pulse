@@ -466,9 +466,11 @@ This reflects a real use case: a risk consultant or an internal risk manager who
  
 **Workspace Member** is the join between an account and a tenant. Holds the role, permissions, and status for that specific account within that specific workspace. One account can have many workspace member records, one per workspace they belong to.
  
-### Strategy: Shared Schema + Row Level Security
- 
-Every table that holds workspace data has a `tenant_id UUID NOT NULL` column. Supabase Row Level Security enforces that queries only return rows matching the active workspace.
+### Strategy: Shared Schema, Tenant Filtering in the API, RLS Lockdown
+
+Every table that holds workspace data has a `tenant_id UUID NOT NULL` column. Tenant isolation is enforced by FastAPI: every query filters on the `tenant_id` resolved from the JWT.
+
+Row Level Security is enabled on every table in the `public` schema with no policies, and all privileges are revoked from the `anon` and `authenticated` roles. This blocks the Supabase Data API entirely, because the anon key is public in the frontend bundle. FastAPI connects as the table owner, which bypasses RLS, so the API is unaffected.
  
 The `tenant_id` is resolved on every request by `middleware/tenant.py` from the JWT's `active_tenant_id` claim. It is never passed from the client in the request body.
  
@@ -1510,6 +1512,25 @@ def upgrade() -> None:
 ```
  
 This applies to all migrations. Every table creation, index, constraint, and column alteration must be a separate `op.execute()` call.
+
+Before numbering a migration, confirm the current head with `alembic heads`. Never number from the files visible in the project folder.
+
+Every new table enables RLS and revokes the Supabase public roles in the same migration. Because `anon` and `authenticated` exist only on Supabase, the revoke must check that the role exists, so the migration also runs on a plain local PostgreSQL:
+
+```python
+op.execute("ALTER TABLE my_table ENABLE ROW LEVEL SECURITY")
+op.execute("""
+    DO $$
+    BEGIN
+      IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+        EXECUTE 'REVOKE ALL ON my_table FROM anon';
+      END IF;
+      IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+        EXECUTE 'REVOKE ALL ON my_table FROM authenticated';
+      END IF;
+    END $$;
+""")
+```
  
 ---
  
@@ -1625,3 +1646,19 @@ className={`form-input${fieldError ? ' invalid' : ''}`}
 ```
  
 Validate all fields on submit as a final pass before the API call. If any field has an error, focus the first failing field and abort the submission.
+
+
+
+---
+
+## 35. Derived Values and Scoring Rules
+
+Every derived value (score, status, label, category coverage) is computed in the backend by one function that every surface calls: dashboard, modals, register filters, PDF report and AI prompts. The frontend only displays.
+
+- **Risk statuses** live in `app/services/risk_status.py`: appetite position (within, near at over 75% of threshold, exceeds), stale (reuses the register's freshness rule), undecided, past target date, evidenced, contradicted.
+- **Evidenced** means tested within 12 months and independently asserted (Independently tested or External audit). Self-assessed does not count. The accepted sources must match the options in `RiskForm.tsx`.
+- **Severity ranking** comes from the workspace's configured incident severity levels (`get_severity_ranks`). The two most severe levels count as "high or above". No code may hardcode severity labels.
+- **Scales** come from the workspace matrix (`likelihood_scale × impact_scale`), never a fixed 25. Appetite thresholds are validated against it, and the matrix cannot shrink below existing thresholds.
+- **Incident to risk category mapping** is stored in `lookups.incident_category_map` and read only through `covering_risk_categories`. An incident category is covered only when a mapped risk category holds at least one risk.
+- **Suppression:** a component with no data is marked suppressed and its weight is redistributed. When every component is suppressed, the status is "No data".
+- **AI output** is escaped server-side with only `<b>` re-allowed, and prompts receive computed figures and record IDs only, never free-text titles.

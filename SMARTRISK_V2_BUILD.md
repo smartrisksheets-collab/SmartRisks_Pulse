@@ -3005,6 +3005,69 @@ Frontend: `types_report.ts`, `reports_BlockSelector.tsx`, `reports_ReportPreview
 
 ---
 
+### Session 23: September 28, 2026 — Unified Dashboard Redesign, Correlation, Trial Controls, RLS Lockdown
+
+**Completed:**
+
+**Security:**
+- RLS lockdown: the Supabase anon key could read and write every table via the Data API (verified by a direct REST call returning account emails). RLS enabled on all public tables with no policies; all privileges and default privileges revoked from `anon` and `authenticated`. Verified 401 on staging and production.
+- Incident `linked_risk_id` validated on create and update: must be a live risk in the same workspace (422 otherwise).
+- Executive brief output escaped server-side, only `<b>` re-allowed; AI prompts receive figures and record IDs only.
+
+**Trial controls:**
+- `tenants.trial_ends_at` (default `CURRENT_DATE + 14`) is the single source for the JWT claim, admin panel counts and trial cleanup.
+- Admin can extend a trial from the workspace drawer (`POST /api/admin/workspaces/{id}/extend-trial`, 1 to 90 days, from today if already lapsed, audit logged).
+- Trial cleanup never deletes: latest due reminder only, markers tied to the trial end date, `TRIAL_CLEANUP_START_DATE` rollout floor, `TRIAL_CLEANUP_DRY_RUN` switch, logs "eligible for manual deletion". Reminder email says "may be deleted" and routes to `info@smartrisksheets.com`.
+
+**Unified dashboard (backend):**
+- `app/services/risk_status.py`: single source for appetite position, stale, undecided, past target, evidenced (independent assertion), contradicted.
+- `services_dashboard.py` `_intel`: Enterprise Risk Health (5 weighted components, suppression, bands, appetite cap, confidence), Risk Pressure (4 components), Correlation, Control Evidence, Movement (monthly snapshots plus live month, trend and overlap findings), rule-based recommended actions with real owners and due dates.
+- Incident health reused from the incident module's `get_stats`; severity ranking from workspace settings (`get_severity_ranks`) in the dashboard and incident health.
+- Exposure uses the workspace matrix maximum; appetite thresholds validated against it and the matrix cannot shrink below them.
+- Snapshot high-risk count uses `is_elevated`.
+- `GET /api/v1/incidents/{incident_id}` added.
+- Executive brief: `POST /api/v1/dashboard/unified-brief`, stored per workspace in `dashboard_briefs`, SHA-256 fingerprint of input facts, `stale` flag returned in the dashboard payload; plain-text paragraphs, 2 paragraphs, 80 words.
+
+**Category mapping:**
+- `lookups.incident_category_map` (JSONB): incident category to risk categories, validated and pruned on save, same-name fallback, `covering_risk_categories` helper. Settings panel under Lookups; real 422 messages shown via `patchWithError`.
+
+**Unified dashboard (frontend):**
+- Health and Pressure cards, correlation row, Movement (composed trend chart, category overlap), four modals (Risk Pressure, Materialised, Unlinked, Control Evidence) with actions and row buttons, Operational Feed with All/Risk/Incident, Unlinked tag and appetite banner, stored executive brief with stale warning.
+- Deep links: `/risks?risk=`, `?edit=`, `?new=1&category=`, `/incidents?incident=`; incident drawer risk picker; links clear themselves.
+- Feed configuration moved to `src/utils/feedEvents.ts`; tier colours as CSS classes; shared `FeedEventRow`.
+- Incident page: composite health cards, all six lifecycle states, AI insights, trend and drivers panels; severity colours from settings.
+
+**Other:** Privacy and Terms links on login and register, `SrLogo` fallback, Report Builder header card, risk pressure bar driven by control strength with appetite row, linkage panel grey, PDF top-risk column caps removed.
+
+**Migrations:** trial end date and RLS lockdown (numbered 051 to 054 locally), `055_add_incident_category_map_to_lookups.py`, `056_create_dashboard_briefs.py`.
+
+**Files changed this session:**
+
+New: `services/risk_status.py`, `services/brief_facts.py`, `services/ai_unified.py`, `services/ai_incident_page.py`, `models/dashboard_brief.py`, `utils/feedEvents.ts`, `components/dashboard/FeedEventRow.tsx`, `components/layout/SrLogo.tsx`
+
+Backend: `services_dashboard.py`, `schemas_dashboard.py`, `routes_dashboard.py`, `services_snapshot.py`, `services_incident.py`, `schemas_incident.py`, `routes_incidents.py`, `services_incident_severity.py`, `models_lookup.py`, `schemas_lookup.py`, `services_lookup.py`, `schemas_appetite.py`, `services_appetite.py`, `services_matrix_config.py`, `models_tenant.py`, `services_auth.py`, `core_config.py`, `services_admin_panel.py`, `routes_admin_workspaces.py`, `schemas_admin.py`, `services_trial_cleanup.py`, `services_email.py`, `services_pdf_report.py`, `models___init__.py`
+
+Frontend: `dashboard_UnifiedSection.tsx`, `dashboard_OperationalFeed.tsx`, `dashboard_ActivityFeed.tsx`, `dashboard_RiskSection.tsx`, `types_dashboard.ts`, `services_dashboard.ts`, `pages_Incidents.tsx`, `incidents_IncidentStatCards.tsx`, `incidents_IncidentDetailDrawer.tsx`, `types_incident.ts`, `services_incidents.ts`, `pages_RiskRegister.tsx`, `risks_AddRiskModal.tsx`, `settings_LookupEditor.tsx`, `settings_AppetiteSettings.tsx`, `services_lookups.ts`, `hooks_useLookups.ts`, `pages_Login.tsx`, `pages_Register.tsx`, `pages_ReportBuilder.tsx`, `src_index.css`
+
+Admin: `admin_src_types_admin.ts`, `admin_src_services_api.ts`, `admin_src_pages_Workspaces.tsx`, `admin_src_index.css`
+
+**Status:** Unified dashboard redesign complete. Incomplete items below.
+
+**Incomplete (first tasks next session):**
+1. Replace hardcoded hex colours in this session's new CSS classes with status colour variables in `:root` (danger, warning, success and their tints), per the CSS variables reminder.
+2. Guard the RLS lockdown migration's `REVOKE ... FROM anon, authenticated` with the role-exists check, so it runs on a fresh local database.
+3. Set `TRIAL_CLEANUP_START_DATE` and `TRIAL_CLEANUP_DRY_RUN` on staging and production; review dry-run logs before switching off dry run.
+
+**Next session starts with:**
+
+1. Read `SMARTRISK_V2_SETUP.md`, `SMARTRISK_V2_DECISIONS.md`, then this file.
+2. The three incomplete items above.
+3. Align `dashboard_RiskSection.tsx` and `dashboard_IncidentSection.tsx` with the new backend rules (incident module health score, snapshot-based movement), then remove the legacy dashboard fields (`incident_health`, `residual_trend`, `incident_velocity` and related).
+4. Route `_get_kpis` and the register appetite filter through `appetite_status`.
+5. Carried from Session 22, not started: full PDF inspection, backend test run, report visual upgrade (Steps 18, 19, 20, 22).
+
+---
+
 **Important reminders:**
 
 - Docker must be running before starting. Run `docker compose ps` to confirm
@@ -3024,9 +3087,15 @@ Frontend: `types_report.ts`, `reports_BlockSelector.tsx`, `reports_ReportPreview
 - All settings not mapped to tenant top-level columns (name, industry, currency_symbol, logo_url) live in the workspace_settings JSONB column on the tenants table
 - JSONB Column[Any] reads: always use is not None for null check, always add # type: ignore[arg-type] on dict() call. Never use the column directly in a boolean condition.
 - External submission URL format: /external/risk?workspace_id= and /external/incident?workspace_id=. Both query params are named workspace_id. Do not use workspace= or any other variant.
-- Public backend endpoints use get_db only, no auth dependency. Auth endpoints use get_active_tenant. Reviewer email is claims["sub"].
+- Public backend endpoints use get_db only, no auth dependency. Auth endpoints use get_active_tenant. `claims["sub"]` is the account ID; the user's email is `claims["email"]`.
 - usePresence(tenantId) requires tenantId as a parameter. Always pass claims?.active_tenant_id ?? '' from the calling component. Never call with no argument.
 - Presence intervals clear automatically when tenantId changes to empty string (logout or workspace switch). No manual cleanup needed in the calling component.
 - ACCESS_TOKEN_EXPIRE_MINUTES=15 is correct. Do not increase it. Silent refresh in useInactivityLogout handles active users. The REFRESH_GAP_MS (10 min) must always be less than ACCESS_TOKEN_EXPIRE_MINUTES.
 - workspace_presence table has no ORM model. The two presence routes use raw SQL via text() only. Do not add an ORM model for this table.
+- Confirm `alembic heads` before numbering a migration. The project folder does not show every migration.
+- Every new table enables RLS and revokes `anon` and `authenticated`, wrapped in a role-exists check so it also runs locally.
+- Derived scores, statuses and labels come from one backend function (`risk_status.py`, `get_severity_ranks`, `covering_risk_categories`). Never recompute them on the frontend.
+- Never hardcode severity labels or a 25-point scale. Use the workspace severity levels and `likelihood_scale × impact_scale`.
+- Deep link parameters are cleared from the URL once handled. Never set React state synchronously inside an effect (react-hooks/set-state-in-effect); derive from the URL or set state inside an async callback.
+- Feed event wording, tiers and badges live in `src/utils/feedEvents.ts`; tier colours are CSS classes, not inline styles.
 

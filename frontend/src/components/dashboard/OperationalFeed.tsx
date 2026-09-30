@@ -216,7 +216,7 @@ function IncidentFeedPanel({ items }: { items: IncidentFeedEntry[] }) {
 function AllFeedPanel({ risks, incidents }: { risks: ActivityEntry[]; incidents: IncidentFeedEntry[] }) {
   const [riskSel, setRiskSel] = useState<ActivityEntry | null>(null);
   const [incSel, setIncSel]   = useState<IncidentFeedEntry | null>(null);
-  const items = mergeFeed(risks, incidents).slice(0, 6);
+  const items = mergeFeed(risks, incidents).slice(0, 3);
 
   if (!items.length) {
     return <div className="af-empty">No activity yet. Changes will appear here.</div>;
