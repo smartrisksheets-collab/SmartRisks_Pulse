@@ -11,10 +11,13 @@ export interface Lookups {
   incident_category: string[];
   incident_severity: string[];
   business_unit:     string[];
+  incident_category_map: Record<string, string[]>;
   updated_at:        string | null;
 }
 
 export type LookupPatch = Partial<Omit<Lookups, 'updated_at'>>;
+
+export type LookupListKey = Exclude<keyof LookupPatch, 'incident_category_map'>;
 
 export async function getLookups(): Promise<Lookups> {
   return apiGet<Lookups>('/api/v1/lookups');

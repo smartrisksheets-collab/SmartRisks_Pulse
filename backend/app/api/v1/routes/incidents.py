@@ -75,6 +75,17 @@ async def create_incident(
     return {"data": inc, "error": None, "meta": {}}
 
 
+@router.get("/{incident_id}")
+async def get_incident(
+    incident_id: str,
+    db: AsyncSession = Depends(get_db),
+    claims: dict = Depends(require_module("incident")),
+):
+    tenant_id = UUID(claims["active_tenant_id"])
+    result = await incident_service.get_incident(db, tenant_id, incident_id)
+    return {"data": result, "error": None, "meta": {}}
+
+
 @router.patch("/{incident_id}")
 @limiter.limit("60/minute")
 async def update_incident(

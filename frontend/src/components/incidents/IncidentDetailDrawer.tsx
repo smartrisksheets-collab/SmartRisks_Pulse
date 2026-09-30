@@ -1,7 +1,9 @@
 // src/components/incidents/IncidentDetailDrawer.tsx
 
 import { useState, useCallback } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { X, Sparkles } from 'lucide-react';
+import { listRisks } from '../../services/risks';
 import { useCanDo } from '../../utils/permissions';
 import { useAuditLog } from '../../hooks/useAudit';
 import { useIncidentSeverity } from '../../hooks/useIncidentSeverity';
@@ -43,6 +45,15 @@ export default function IncidentDetailDrawer({ incident, members, onClose, onSav
   const [financialImpact,   setFinancialImpact]   = useState(String(incident.financial_impact ?? ''));
   const [impactConfidence,  setImpactConfidence]  = useState(incident.impact_confidence ?? 'Unknown');
   const [controlOutcome,    setControlOutcome]    = useState(incident.control_outcome ?? '');
+  const [linkedRiskId,      setLinkedRiskId]      = useState(incident.linked_risk_id ?? '');
+
+  const linkRisksQuery = useQuery({
+    queryKey:  ['risks-for-incident-linkage'],
+    queryFn:   () => listRisks({ page_size: 200 }),
+    enabled:   canReview && !incident.linked_risk_id,
+    staleTime: 2 * 60 * 1000,
+  });
+  const linkRisks = linkRisksQuery.data?.items ?? [];
 
   const { data: auditData } = useAuditLog({ module: 'Incident', page_size: 50 });
   const incidentAudit = (auditData?.data ?? [])
@@ -68,6 +79,7 @@ export default function IncidentDetailDrawer({ incident, members, onClose, onSav
         financial_impact:  financialImpact  || undefined,
         impact_confidence: impactConfidence || undefined,
         control_outcome:   controlOutcome   || undefined,
+        linked_risk_id:    linkedRiskId     || undefined,
       };
       const updated = await incidentsApi.updateIncident(incident.id, patch);
       onSaved(updated);
@@ -90,6 +102,7 @@ export default function IncidentDetailDrawer({ incident, members, onClose, onSav
         financial_impact:  financialImpact  || undefined,
         impact_confidence: impactConfidence || undefined,
         control_outcome:   controlOutcome   || undefined,
+        linked_risk_id:    linkedRiskId     || undefined,
       };
       const updated = await incidentsApi.updateIncident(incident.id, patch);
       onSaved(updated);
@@ -230,6 +243,25 @@ export default function IncidentDetailDrawer({ incident, members, onClose, onSav
                 </select>
               </div>
             </div>
+            {!incident.linked_risk_id && (
+              <div style={{ marginBottom: 12 }}>
+                <label className="srs-label" htmlFor="drw-linked-risk">Link to Register Risk</label>
+                <select
+                  id="drw-linked-risk"
+                  className="srs-select"
+                  style={{ width: '100%' }}
+                  value={linkedRiskId}
+                  onChange={e => setLinkedRiskId(e.target.value)}
+                >
+                  <option value="">Not linked</option>
+                  {linkRisks.map(r => (
+                    <option key={r.id} value={r.id}>
+                      {r.id} · {r.description?.slice(0, 60) ?? ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             {incident.linked_risk_id && (
               <div style={{ marginBottom: 12 }}>
                 <label className="srs-label">Linked Risk</label>

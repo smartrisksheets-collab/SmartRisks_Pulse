@@ -946,6 +946,47 @@ Raised by: Risk distribution donut hardcoded ORDER = ["Low", "Medium", "High", "
 Chosen: Three-layer fix. (1) MatrixConfig fetched in build_context and stored on ReportContext. (2) compute_risk_distribution reads band labels from ctx.matrix_config and includes them as band_labels in the payload. (3) _make_donut_drawing replaced LEVEL_COLORS string-keyed dict with _BAND_COLORS_BY_POS list (green → amber → red → dark red → very dark red by position). Slices built as (label, count, color_hex) tuples keyed by ORDER index. ORDER read from data.get("band_labels") with fallback.
 Why: Level colors must be positional (band 1 = green regardless of label) not nominal (label == "Low" = green). Any string-keyed approach breaks for custom labels. Position-based assignment is the only correct approach for a label-agnostic system.
 
+**Decision: global font-weight base correction (August 21, 2026)**
+Raised by: V2 UI appeared thicker and heavier than V1 across all text, table cells, and inputs.
+Root cause: `body`, `button/input/select/textarea`, and `table/th/td` all had `font-weight: 600` globally in index.css. GAS V1 sets no global font-weight, defaulting to browser 400.
+Chosen: Drop all three selectors to `font-weight: 400`. All component-specific weights (700 on .btn, 900 on thead th, 800 on .card-title) remain and continue to override upward.
+Why: The blanket 600 base was the single cause of the heavy appearance. No component changes needed.
+
+**Decision: im-card hover lift with :has() flicker suppression (August 21, 2026)**
+Raised by: Adding translateY(-4px) lift to im-card:hover caused flickering on cards with interactive children. The card lifts 4px, the cursor exits the child element hit area, hover deactivates, card drops, cursor re-enters, loop repeats.
+Chosen: `.im-card:has(.af-feed-row):hover, .im-card:has(.ap-plan-link):hover { transform: none; box-shadow: var(--shadow); }`. Cards with interactive clickable content do not lift. All other im-cards keep the full hover animation.
+Why: :has() is self-maintaining, requires no JSX class changes, and is supported in all modern browsers as of 2023.
+
+**Decision: gauge mount sweep animation (August 21, 2026)**
+Raised by: Risk Distribution bar chart has Recharts built-in entry animation. Risk Health gauge had no equivalent.
+Chosen: `useState(0)` for animatedFill, `useEffect` with 50ms setTimeout sets animatedFill to real fillLen. Existing CSS transition on strokeDasharray plays the sweep. Extended to 0.8s ease-out.
+Why: 50ms delay is required to allow the browser to paint the initial empty arc before the transition fires. Without it the browser batches the update with the initial render and the animation does not play.
+
+**Decision: health status neutral class for Monitoring badge (August 21, 2026)**
+Raised by: Monitoring badge (51-75 range) returned empty string from healthStatusCls so .sr-delta rendered with no background or color, appearing as plain dark text.
+Chosen: healthStatusCls returns 'neutral' for 51-75. `.sr-delta.neutral { background: #f8fafc; color: #94a3b8; }` matching V1 base .sr-delta gray pill style.
+Why: Named class is cleaner than relying on base class fallback. Matches V1 exactly.
+
+**Decision: control signal scale conversion, two locations (August 21, 2026)**
+Raised by: Control Strength always displayed as single-digit value and never reached the 50 or 70 thresholds.
+Root cause: control_effectiveness column stores 1-5 integers. Both services_risk.py (stat card) and services_dashboard.py (dashboard KPI) passed raw values directly as percentages.
+Chosen: Multiply by 20 in both locations. `avg_eff = round((sum(eff_vals) / len(eff_vals)) * 20)` in services_risk.py. `round(float(risk_row.avg_ctrl or 0) * 20, 1)` in services_dashboard.py.
+Why: 5 * 20 = 100 is the correct ceiling. 1 * 20 = 20 is the correct floor. No cap needed.
+
+**Decision: MatrixSettings preset highlight persistence (August 21, 2026)**
+Raised by: Switching to ISSCL preset and saving works but navigating away and returning resets the highlight to SmartRisk default.
+Root cause: activePreset initialises to 'smartrisk' as hardcoded useState default. On remount local state resets regardless of saved config. Init block populated form but never updated activePreset.
+Chosen: detectPreset(data) iterates PRESETS entries and returns the matching preset name if every key matches, otherwise 'custom'. Called on query.data init and on handleReset.
+Why: Comparing saved values against preset values is the only reliable source of truth.
+
+**Decision: Executive Insights AI rewrite architecture (August 21, 2026)**
+Raised by: Engineering brief (executive-insights-dev-brief.pdf). Current static RiskNarrative produced unsupported claims with no data backing. Brief specifies 4-sentence, 50-word, fact-only summary.
+Chosen: New GET /api/v1/dashboard/exec-insights endpoint. Backend derives all input fields from existing dashboard data via get_dashboard(), no new DB queries except for distinct owners list. Calls claude-haiku-4-5 with exact system prompt from brief. Returns JSON with summary HTML, action items, word count, and owners list. Frontend uses TanStack Query with 30-min staleTime.
+Exposure reduction deduplication: activity feed entries deduplicated by risk_id before counting to mitigate OI feed duplicate-entry bug.
+['exec-insights'] added to useRisks invalidate() so any risk mutation triggers regeneration.
+Action plan modal: xl size (860px), owner dropdown per item (local state only, not persisted), Export as PDF via window.open + print(), white header matching other modals, ap-horizon-tag color corrected from #7fe8cf to #01b88e for white background visibility.
+Why: Single AI call returning JSON covers summary and action plan in one round trip. Haiku is sufficient for structured factual output. 30-min staleTime balances freshness with cost. Lazy load keeps main dashboard latency unaffected.
+
 **Decision: print CSV scope resolution and page_size cap alignment (August 14, 2026)**
 Raised by: CSV export from Print modal only exported the current page (PAGE_SIZE = 5 risks) instead of the full register. Two root causes: scope 'filtered' used the in-memory risks array (current page only); scope 'all' API call used page_size 9999 which exceeded the backend le=200 constraint and returned 422, causing silent fallback to the current page.
 Chosen: Backend routes/risks.py page_size cap raised from le=200 to le=1000, matching the workspace risk limit enforced by the quota system. Frontend page_size changed from 9999 to 1000 in both handlePrint and handleGenerateAI. Both 'all' and 'filtered' scopes in handlePrint now call listRisks with page_size 1000, spreading current filter params for 'filtered' and passing no filters for 'all'. The in-memory risks array is never used as a CSV source. If the API call fails, a toast error fires and the function returns early instead of silently falling back to partial data.
@@ -1737,3 +1778,45 @@ Why: The check is non-blocking. Users who intentionally skip AI (e.g. fully manu
 Raised by: The methodology block silently failed to render in preview for any workspace with at least one risk where control_effectiveness was not assessed (null). The block showed the placeholder text as if preview had not been run.
 Chosen: `residual_model_matches_engine`, `supplied_model_is_subtractive`, and `pulse_residuals` in `services_report_facts.py` all filtered on `r.control_effectiveness > 0` without a prior None check. In Python 3, `None > 0` raises TypeError. The exception was caught by the block dispatch try/except in `get_report_data`, leaving `block_data['methodology']` unset. Fix adds `r.control_effectiveness is not None` guard before the comparison in all three methods.
 Why: The None/0 distinction introduced in session 23 correctly preserved null in RiskRow but the three methods in report_facts were not updated to handle it. Any workspace using the Set Controls feature (which exists specifically for None control_effectiveness) would trigger the crash.
+
+
+
+**Decision: RLS lockdown on every public table (September 28, 2026)**
+Raised by: The anon key is compiled into the frontend bundle, and a direct call to the Supabase REST API with it returned account emails. Every table was readable and writable without going through FastAPI.
+Chosen: RLS enabled on all public tables with no policies. All privileges, and default privileges for future tables, revoked from `anon` and `authenticated`. Every new table enables RLS and revokes those roles in its own migration, inside a role-exists check so it also runs on local PostgreSQL. The setup document was corrected: tenant isolation is enforced by FastAPI, not by RLS.
+Why: FastAPI connects as the table owner, which bypasses RLS, so the API is unaffected while the Data API is closed completely. No frontend code reads tables through the Supabase client, so nothing depended on it.
+
+**Decision: Stored trial end date and manual workspace deletion (September 28, 2026)**
+Raised by: Trial expiry was computed three different ways (hardcoded 14 days in the JWT, a config value in the admin panel, and `plan_expires_at` in the cleanup job, which was never set for trials). Admins also needed to extend trials.
+Chosen: `tenants.trial_ends_at` is the single source. Admins extend from the workspace drawer, from today if the trial has already lapsed. The cleanup job never deletes: it sends only the latest due reminder, ties reminder markers to the trial end date, starts its grace clock no earlier than `TRIAL_CLEANUP_START_DATE`, and supports a dry run. Deletion stays a manual admin action.
+Why: Pointing the old job at a real date would have hard-deleted every long-expired trial on its first run. Manual deletion keeps an irreversible action with a person.
+
+**Decision: One backend function per derived status (September 28, 2026)**
+Raised by: The dashboard computed health, pressure and confidence in the browser, SLA meant three different things, and the "Critical" severity filter matched a level that does not exist by default.
+Chosen: `app/services/risk_status.py` defines appetite position, stale, undecided, past target, evidenced and contradicted. Health (exposure 30, appetite 25, control assurance 20, incident performance 20, register integrity 5) and pressure (elevated 40, appetite breaches 25, open incident load 20, decision backlog 15) are computed in `services_dashboard.py`. Suppressed components are re-weighted; when all are suppressed the status is "No data". Dashboard incident health reuses the incident module's `get_stats`.
+Why: Every surface reads the same function, so the dashboard, modals, reports and AI brief cannot disagree, and a rule changes in one place.
+
+**Decision: Incident to risk category mapping (September 28, 2026)**
+Raised by: Default risk and incident category lists share only "Compliance", so matching by name would have reported almost every incident as a register blind spot.
+Chosen: `lookups.incident_category_map` (JSONB) maps each incident category to one or more risk categories, validated and pruned on save, with a same-name fallback when unmapped. A category is covered only when a mapped risk category holds at least one risk. Read only through `covering_risk_categories`.
+Why: A column beside the lists it connects saves in the same patch and needs no new table. The coverage rule means mapping to an empty category still counts as a gap, because nothing on the register watches it.
+
+**Decision: Severity and scale come from workspace settings (September 28, 2026)**
+Raised by: Severity labels and a 0 to 25 scale were hardcoded, so a renamed level dropped out of scoring and a 4x4 matrix accepted appetite thresholds that could never be exceeded.
+Chosen: `get_severity_ranks` orders configured levels; the two most severe count as "high or above" everywhere. Exposure uses `likelihood_scale × impact_scale`. Appetite thresholds are validated against that maximum, and the matrix cannot shrink below existing thresholds.
+Why: Workspaces configure both, so code that assumes defaults silently produces wrong numbers for anyone who changed them.
+
+**Decision: Evidenced means independently asserted (September 28, 2026)**
+Raised by: The assertion source is a select that defaults to Self-assessed, so a rule of "has an asserter" was true for almost every risk and made evidence meaningless.
+Chosen: A rating is evidenced when tested within 12 months and asserted by Independently tested or External audit. Fields renamed to `independently_asserted` and `assertion_source`.
+Why: A rating of 5 removes all inherent severity from the residual, so an unverified self-assessment is the largest assumption on the register and must be visible as such.
+
+**Decision: Stored executive brief with fingerprint staleness (September 28, 2026)**
+Raised by: The brief lived in component state and was lost on navigation, and JSON output from the model broke on quotes inside prose.
+Chosen: One brief per workspace in `dashboard_briefs`, with a SHA-256 of the exact facts sent to the model. The dashboard payload returns it with `stale` set when the current facts no longer match. The model returns plain paragraphs, at most two and 80 words, escaped server-side with only `<b>` re-allowed.
+Why: A board-level brief must survive navigation and must never silently describe figures that have changed. Plain text removes the escaping failure entirely.
+
+**Decision: Deep links and shared feed configuration (September 28, 2026)**
+Raised by: Dashboard modal rows needed to open a specific risk or incident, and the feed's wording and colours were locked inside two component files, blocking a merged view.
+Chosen: `/risks?risk=`, `?edit=`, `?new=1&category=` and `/incidents?incident=` open the record once and clear themselves from the URL; Add Risk from a link is URL-driven so no state is set inside an effect. Feed wording, tiers and badges moved to `src/utils/feedEvents.ts`, tier colours to CSS classes, with a shared `FeedEventRow` and an All view.
+Why: Clearing the parameters stops refresh or back from reopening records. Moving configuration out of component files follows the project rule and lets one row render both event types identically.

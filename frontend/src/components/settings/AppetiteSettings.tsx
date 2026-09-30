@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useAuthStore } from '../../store/authStore';
 import { useLookups } from '../../hooks/useLookups';
 import { useAppetite } from '../../hooks/useAppetite';
+import { useMatrix } from '../../hooks/useMatrix';
 import { useToast } from '../../hooks/useToast';
 import type { AppetiteThresholdUpsert } from '../../types/settings';
 
@@ -67,7 +68,7 @@ function GuidePanel({ unsetCount, total }: { unsetCount: number; total: number }
             {
               n: 1,
               title: 'Confirm your bands match this scale',
-              body: 'Your policy may define its own Low / Medium / High ranges on the 1–25 scale. If it does, use those. If it doesn\'t, the SmartRisk default is your starting point. Check the Risk Matrix tab to see what\'s currently configured for this workspace.',
+              body: 'Your policy may define its own Low / Medium / High ranges on the risk scale set in the Risk Matrix tab. If it does, use those. If it doesn\'t, the SmartRisk default is your starting point. Check the Risk Matrix tab to see what\'s currently configured for this workspace.',
               table: null,
             },
             {
@@ -191,6 +192,10 @@ export default function AppetiteSettings() {
 
   const { lookups }         = useLookups();
   const { query, save, remove } = useAppetite();
+  const { query: matrixQuery } = useMatrix();
+  const scaleMax = matrixQuery.data
+    ? matrixQuery.data.likelihood_scale * matrixQuery.data.impact_scale
+    : 25;
 
   const [openCat,    setOpenCat]    = useState<string | null>(null);
   const [drafts,     setDrafts]     = useState<Record<string, Draft>>({});
@@ -213,7 +218,7 @@ export default function AppetiteSettings() {
     const rec = getRecord(cat);
     setDrafts((prev) => ({
       ...prev,
-      [cat]: { threshold: rec?.threshold ?? 12, rationale: rec?.rationale ?? '' },
+      [cat]: { threshold: rec?.threshold ?? Math.round(scaleMax / 2), rationale: rec?.rationale ?? '' },
     }));
     setOpenCat(cat);
   }
@@ -259,7 +264,7 @@ export default function AppetiteSettings() {
       <div className="settings-section">
         <div className="settings-title">Risk Appetite Thresholds</div>
         <p className="muted small">
-          Set the maximum residual risk each category is permitted to carry, on your workspace&apos;s 1&ndash;25 risk scale.
+          Set the maximum residual risk each category is permitted to carry, on your workspace&apos;s 1&ndash;{scaleMax} risk scale.
         </p>
       </div>
 
@@ -286,7 +291,7 @@ export default function AppetiteSettings() {
               <div className="apt-right">
                 <div className="apt-value">
                   {rec != null
-                    ? <>{rec.threshold}<span className="apt-value-max">/25</span></>
+                    ? <>{rec.threshold}<span className="apt-value-max">/{scaleMax}</span></>
                     : <span className="apt-meta" style={{ fontStyle: 'italic' }}>—</span>
                   }
                 </div>
@@ -319,7 +324,7 @@ export default function AppetiteSettings() {
                   <input
                     type="range"
                     min={1}
-                    max={25}
+                    max={scaleMax}
                     value={draft.threshold}
                     onChange={(e) =>
                       setDrafts((prev) => ({

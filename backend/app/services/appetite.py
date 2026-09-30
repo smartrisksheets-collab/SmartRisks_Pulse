@@ -5,8 +5,10 @@ from uuid import UUID
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.exceptions import ValidationError
 from app.models.appetite_threshold import AppetiteThreshold
 from app.schemas.appetite import AppetiteThresholdResponse, AppetiteThresholdUpsert
+from app.services.matrix_config import get_config as get_matrix_config
 
 
 async def list_appetites(
@@ -28,6 +30,14 @@ async def upsert_appetite(
     payload: AppetiteThresholdUpsert,
     user_email: str,
 ) -> AppetiteThresholdResponse:
+    matrix = await get_matrix_config(db, tenant_id)
+    max_score = int(matrix.likelihood_scale) * int(matrix.impact_scale)
+    if payload.threshold > max_score:
+        raise ValidationError(
+            f'Threshold {payload.threshold} is above {max_score}, the highest residual score '
+            f'possible on this workspace\'s {matrix.likelihood_scale}x{matrix.impact_scale} matrix.'
+        )
+
     result = await db.execute(
         select(AppetiteThreshold).where(
             AppetiteThreshold.tenant_id == tenant_id,

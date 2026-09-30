@@ -9,8 +9,9 @@ from uuid import UUID
 from sqlalchemy import select, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import ResourceNotFoundError
+from app.core.exceptions import ResourceNotFoundError, ValidationError
 from app.models.incident import Incident
+from app.models.risk import Risk
 from app.models.audit_log import AuditLog
 from app.schemas.incident import (
     IncidentCreate,
@@ -27,7 +28,17 @@ from app.schemas.incident import (
     TopDriver,
 )
 from app.services.recycle import soft_delete
-from app.services.incident_severity import compute_breach, get_sla_map
+from app.services.incident_severity import (
+    compute_breach,
+    get_sla_map,
+    get_severity_ranks,
+    high_severity_labels,
+)
+
+
+# Backlog weight by severity rank, most severe first. Deeper levels weigh 1.
+# Superlinear on purpose: one top-severity incident outweighs several minor ones.
+_RANK_WEIGHTS: tuple[int, ...] = (8, 5, 2, 1)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -70,6 +81,19 @@ async def _generate_id(db: AsyncSession, tenant_id: UUID) -> str:
         if m:
             max_n = max(max_n, int(m.group(1)))
     return f'{prefix}{str(max_n + 1).zfill(3)}'
+
+
+async def _validate_linked_risk(db: AsyncSession, tenant_id: UUID, risk_id: str) -> None:
+    """A linked risk must exist, live, in the same workspace."""
+    exists = await db.scalar(
+        select(Risk.id).where(
+            Risk.tenant_id == tenant_id,
+            Risk.id == risk_id,
+            Risk.deleted_at.is_(None),
+        )
+    )
+    if exists is None:
+        raise ValidationError(f'Risk {risk_id} does not exist in this workspace.')
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
@@ -132,12 +156,31 @@ async def list_incidents(
     )
 
 
+async def get_incident(
+    db: AsyncSession,
+    tenant_id: UUID,
+    incident_id: str,
+) -> IncidentResponse:
+    result = await db.execute(
+        select(Incident)
+        .where(Incident.tenant_id == tenant_id)
+        .where(Incident.id == incident_id)
+        .where(Incident.deleted_at.is_(None))
+    )
+    inc = result.scalar_one_or_none()
+    if not inc:
+        raise ResourceNotFoundError(f'Incident {incident_id} not found')
+    return IncidentResponse.model_validate(inc)
+
+
 async def create_incident(
     db: AsyncSession,
     tenant_id: UUID,
     payload: IncidentCreate,
     created_by: str,
 ) -> IncidentResponse:
+    if payload.linked_risk_id:
+        await _validate_linked_risk(db, tenant_id, payload.linked_risk_id)
     inc_id = await _generate_id(db, tenant_id)
 
     inc = Incident(
@@ -204,6 +247,9 @@ async def update_incident(
     inc = result.scalar_one_or_none()
     if not inc:
         raise ResourceNotFoundError(f'Incident {incident_id} not found')
+
+    if patch.linked_risk_id:
+        await _validate_linked_risk(db, tenant_id, patch.linked_risk_id)
 
     for field, value in patch.model_dump(exclude_none=True).items():
         setattr(inc, field, value)
@@ -279,11 +325,17 @@ async def get_stats(db: AsyncSession, tenant_id: UUID) -> IncidentStatsResponse:
 
     OPEN_STATES     = {'New', 'Open', 'In Progress', 'Under Review'}
     TERMINAL_STATES = {'Resolved', 'Closed'}
-    SEV_WEIGHT      = {'Very High': 8, 'High': 5, 'Medium': 2, 'Low': 1}
     today   = date.today()
     now_utc = datetime.now(timezone.utc)
 
-    sla_map = await get_sla_map(db, tenant_id)
+    sla_map     = await get_sla_map(db, tenant_id)
+    sev_ranks   = await get_severity_ranks(db, tenant_id)
+    high_labels = set(high_severity_labels(sev_ranks))
+    top_labels  = {label for label, rank in sev_ranks.items() if rank == 0}
+
+    def _sev_weight(r) -> int:  # type: ignore[no-untyped-def]
+        rank = sev_ranks.get(str(r.severity or ''))
+        return _RANK_WEIGHTS[rank] if rank is not None and rank < len(_RANK_WEIGHTS) else 1
     _DEF_H  = {'Very High': 24.0, 'High': 72.0, 'Medium': 120.0, 'Low': 240.0}
     eff_h   = sla_map if sla_map else _DEF_H
     sla_d   = {sev: max(1, round(h / 24)) for sev, h in eff_h.items()}
@@ -331,7 +383,7 @@ async def get_stats(db: AsyncSession, tenant_id: UUID) -> IncidentStatsResponse:
     open_count   = len(open_rows)
     overdue_rows = [r for r in open_rows if compute_breach(_age_h(r), _tgt_h(r))]
     overdue_count = len(overdue_rows)
-    high_or_above = sum(1 for r in rows if str(r.severity or '') in {'High', 'Very High'})
+    high_or_above = sum(1 for r in rows if str(r.severity or '') in high_labels)
     linked_count   = sum(1 for r in rows if r.linked_risk_id is not None)
     within_sla     = total - sum(1 for r in rows if _breached(r))
     open_over_150d = sum(1 for r in open_rows if _age_d(r) > 150)
@@ -384,7 +436,7 @@ async def get_stats(db: AsyncSession, tenant_id: UUID) -> IncidentStatsResponse:
     # ── Component 1: Backlog pressure (25) ────────────────────────────────────
     PRESSURE_CEILING = 40
     pressure = sum(
-        SEV_WEIGHT.get(str(r.severity or ''), 1) * (1 + _age_d(r) / max(1, _tgt_d(r)))
+        _sev_weight(r) * (1 + _age_d(r) / max(1, _tgt_d(r)))
         for r in open_rows
     )
     score_1 = max(0, int(100 * max(0.0, 1.0 - pressure / PRESSURE_CEILING)))
@@ -445,9 +497,12 @@ async def get_stats(db: AsyncSession, tenant_id: UUID) -> IncidentStatsResponse:
         'At Risk'    if health_score >= 26 else
         'Critical'
     )
-    very_high_breach = any(str(r.severity or '') == 'Very High' and compute_breach(_age_h(r), _tgt_h(r)) for r in open_rows)
+    top_severity_breach = any(
+        str(r.severity or '') in top_labels and compute_breach(_age_h(r), _tgt_h(r))
+        for r in open_rows
+    )
     triple_breach    = any(_age_h(r) >= 3 * _tgt_h(r) for r in open_rows)
-    if total > 0 and (very_high_breach or triple_breach or overdue_count >= 2 or unlinked_rate > 0.5):
+    if total > 0 and (top_severity_breach or triple_breach or overdue_count >= 2 or unlinked_rate > 0.5):
         if label in ('Healthy', 'Monitoring'):
             label = 'At Risk'
 

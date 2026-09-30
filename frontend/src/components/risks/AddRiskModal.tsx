@@ -9,9 +9,10 @@ interface Props {
   open:     boolean;
   onClose:  () => void;
   onSubmit: (payload: RiskCreate) => Promise<Risk | null>;
+  initialCategory?: string;
 }
 
-export default function AddRiskModal({ open, onClose, onSubmit }: Props) {
+export default function AddRiskModal({ open, onClose, onSubmit, initialCategory }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState<string | null>(null);
 
@@ -41,6 +42,7 @@ export default function AddRiskModal({ open, onClose, onSubmit }: Props) {
           <button className="x" onClick={onClose}>✕</button>
         </div>
         <RiskForm submitLabel="Add Risk" loading={loading} error={error}
+          initial={initialCategory ? { category: initialCategory } : undefined}
           onSubmit={handleSubmit} onCancel={onClose} />
       </div>
     </div>

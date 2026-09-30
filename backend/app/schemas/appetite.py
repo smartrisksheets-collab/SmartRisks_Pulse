@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 class AppetiteThresholdUpsert(BaseModel):
     category:  str
-    threshold: int   = Field(..., ge=1, le=25)
+    threshold: int   = Field(..., ge=1)
     rationale: str | None = None
 
 

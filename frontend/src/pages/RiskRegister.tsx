@@ -1,12 +1,12 @@
 // src/pages/RiskRegister.tsx
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useQueryClient, useQuery, keepPreviousData } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useRisks }        from '../hooks/useRisks';
 import { useLookups } from '../hooks/useLookups';
 import { useCanDo }        from '../utils/permissions';
-import { getStats, listRisks, type StatsParams, type ListRisksParams } from '../services/risks';
+import { getStats, listRisks, getRisk, type StatsParams, type ListRisksParams } from '../services/risks';
 import { useMatrix }   from '../hooks/useMatrix';
 import { useAppetite } from '../hooks/useAppetite';
 import { useTriagePendingCount } from '../hooks/useSubmissions';
@@ -91,6 +91,51 @@ export default function RiskRegister() {
   const [showPrint, setShowPrint]           = useState(false);
   const [selected, setSelected]     = useState<Risk | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  // Deep links from the dashboard:
+  //   /risks?risk=R-002            opens the risk
+  //   /risks?edit=R-002            opens the edit form (re-score, add evidence)
+  //   /risks?new=1&category=Cyber  opens Add Risk, category prefilled when it is a valid risk category
+  const [searchParams, setSearchParams] = useSearchParams();
+  const handledLink = useRef<string | null>(null);
+  const linkKey = searchParams.toString();
+
+  // Add Risk from a link is driven by the URL itself, so no state is set inside an effect.
+  // It waits for lookups, because RiskForm reads its initial category only when it mounts.
+  const linkWantsNew = searchParams.get('new') === '1';
+  const linkCategory = searchParams.get('category');
+  const linkAddOpen  = linkWantsNew && canManage && lookups != null;
+  const linkAddCategory =
+    linkAddOpen && linkCategory && lookups?.category.includes(linkCategory) ? linkCategory : undefined;
+
+  const clearLinkParams = useCallback(() => {
+    const next = new URLSearchParams(searchParams);
+    ['risk', 'edit', 'new', 'category'].forEach(k => next.delete(k));
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
+
+  useEffect(() => {
+    const viewId = searchParams.get('risk');
+    const editId = searchParams.get('edit');
+    const deniedNew = linkWantsNew && !canManage;
+    if (!viewId && !editId && !deniedNew) return;
+    if (handledLink.current === linkKey) return;
+    handledLink.current = linkKey;
+
+    clearLinkParams();
+
+    if (deniedNew) { toast('You do not have permission to add risks.', 'error'); return; }
+    if (editId && !canManage) { toast('You do not have permission to edit risks.', 'error'); return; }
+    const id = editId ?? viewId;
+    if (!id) return;
+    getRisk(id)
+      .then(r => {
+        setSelected(r);
+        if (editId) setShowEdit(true);
+        else setShowDetail(true);
+      })
+      .catch(() => toast(`Risk ${id} could not be opened. It may have been deleted.`, 'error'));
+  }, [linkKey, searchParams, linkWantsNew, canManage, clearLinkParams, toast]);
 
   const handleToggle = useCallback((id: string) => {
     setSelectedIds(prev => {
@@ -449,8 +494,9 @@ export default function RiskRegister() {
 
       {/* Modals */}
       <AddRiskModal
-        open={showAdd}
-        onClose={() => setShowAdd(false)}
+        open={showAdd || linkAddOpen}
+        onClose={() => { setShowAdd(false); if (linkAddOpen) clearLinkParams(); }}
+        initialCategory={linkAddCategory}
         onSubmit={async (payload: RiskCreate) => {
           const r = await create(payload);
           if (r) {
