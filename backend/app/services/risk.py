@@ -1,11 +1,12 @@
 # app/services/risk.py
 
 import logging
+from typing import Any
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import select, delete, func, text
+from sqlalchemy import Select, select, delete, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.risk import Risk
@@ -27,6 +28,7 @@ from app.services.phase_one import (
     log_risk_history, log_activity,
 )
 from app.services.recycle import soft_delete
+from app.services.risk_status import APPETITE_NEAR_RATIO
 
 logger = logging.getLogger(__name__)
 
@@ -140,14 +142,10 @@ def _serialize(risk: Risk) -> dict:
     """Convert Risk ORM object to a JSON-safe dict for recycle bin storage."""
     return RiskResponse.model_validate(risk).model_dump(mode='json')
 
-
-# ── Public API ────────────────────────────────────────────────────────────────
-
-async def list_risks(
-    db: AsyncSession,
+def _apply_risk_filters(
+    q: Select[Any],
     tenant_id: UUID,
-    page: int = 1,
-    page_size: int = 50,
+    *,
     risk_id: str | None = None,
     category: str | None = None,
     level: str | None = None,
@@ -156,9 +154,8 @@ async def list_risks(
     search: str | None = None,
     undecided: bool | None = None,
     appetite: str | None = None,
-) -> RiskListResponse:
-    q = select(Risk).where(Risk.tenant_id == tenant_id)
-
+) -> Select[Any]:
+    """Register filters shared by list_risks and get_stats, so the table and stat cards always agree."""
     if risk_id:
         q = q.where(func.upper(Risk.id).like(f"{risk_id.strip().upper()}%"))
     if category:
@@ -185,24 +182,43 @@ async def list_risks(
             (AppetiteThreshold.category == Risk.category)
             & (AppetiteThreshold.tenant_id == tenant_id),
         )
+        near = AppetiteThreshold.threshold * APPETITE_NEAR_RATIO
         if appetite == "Exceeds":
-            q = q.where(
-                AppetiteThreshold.threshold.isnot(None),
-                Risk.residual > AppetiteThreshold.threshold,
-            )
+            q = q.where(AppetiteThreshold.threshold.isnot(None), Risk.residual > AppetiteThreshold.threshold)
         elif appetite == "Near":
             q = q.where(
                 AppetiteThreshold.threshold.isnot(None),
-                Risk.residual > AppetiteThreshold.threshold * 0.75,
+                Risk.residual > near,
                 Risk.residual <= AppetiteThreshold.threshold,
             )
         elif appetite == "Within":
-            q = q.where(
-                AppetiteThreshold.threshold.isnot(None),
-                Risk.residual <= AppetiteThreshold.threshold * 0.75,
-            )
+            q = q.where(AppetiteThreshold.threshold.isnot(None), Risk.residual <= near)
         elif appetite == "unset":
             q = q.where(AppetiteThreshold.threshold.is_(None))
+    return q
+
+
+# ── Public API ────────────────────────────────────────────────────────────────
+
+async def list_risks(
+    db: AsyncSession,
+    tenant_id: UUID,
+    page: int = 1,
+    page_size: int = 50,
+    risk_id: str | None = None,
+    category: str | None = None,
+    level: str | None = None,
+    treatment: str | None = None,
+    owner: str | None = None,
+    search: str | None = None,
+    undecided: bool | None = None,
+    appetite: str | None = None,
+) -> RiskListResponse:
+    q = _apply_risk_filters(
+        select(Risk).where(Risk.tenant_id == tenant_id), tenant_id,
+        risk_id=risk_id, category=category, level=level, treatment=treatment,
+        owner=owner, search=search, undecided=undecided, appetite=appetite,
+    )
 
     total_result = await db.execute(
         select(func.count()).select_from(q.subquery())
@@ -419,6 +435,9 @@ async def get_stats(
     treatment: str | None = None,
     owner:     str | None = None,
     search:    str | None = None,
+    risk_id:   str | None = None,
+    undecided: bool | None = None,
+    appetite:  str | None = None,
 ) -> RiskStatsResponse:
     q = (
         select(
@@ -432,6 +451,11 @@ async def get_stats(
         )
         .where(Risk.tenant_id == tenant_id)
         .where(Risk.deleted_at.is_(None))
+    )
+    q = _apply_risk_filters(
+        q, tenant_id,
+        risk_id=risk_id, category=category, level=level, treatment=treatment,
+        owner=owner, search=search, undecided=undecided, appetite=appetite,
     )
 
     if category:

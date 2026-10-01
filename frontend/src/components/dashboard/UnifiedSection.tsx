@@ -713,7 +713,7 @@ function HealthCard({ health, delta, exceeds, totalRisks, currency }: HealthCard
       <div className="im-exposure-grid">
         <div className="im-exposure-item">
           <div className="im-exposure-label">Residual risk</div>
-          <div className="im-exposure-value">{totalRisks > 0 ? health.avg_residual.toFixed(1) : '—'}</div>
+          <div className="im-exposure-value">{totalRisks > 0 ? Math.round(health.avg_residual) : '—'}</div>
           <div className="im-exposure-basis">avg of {scale}</div>
         </div>
         <div className="im-exposure-item">
@@ -1034,36 +1034,35 @@ function TrendCard({ movement }: { movement: Movement }) {
     <div className="im-card im-wide">
       <div className="im-card-head">
         <span className="im-label">EXPOSURE &amp; INCIDENT TREND</span>
-        <div className="im-trend-head-right">
-          <div className="im-trend-legend">
-            <span className="im-legend-item"><span className="im-legend-dot navy" />Avg residual</span>
-            <span className="im-legend-item"><span className="im-legend-dot emerald" />Incident volume</span>
-          </div>
-          <span className="im-trend-sub">{held} snapshot{held === 1 ? '' : 's'} held</span>
-          {held < 2 && <span className="im-trend-badge">Baseline</span>}
-        </div>
+        {held < 2 && <span className="im-trend-badge">Baseline</span>}
       </div>
 
       {chartData.length > 0 ? (
-        <div className="dash-chart-wrap">
+        <div className="dash-chart-wrap im-trend-chart">
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={chartData} margin={{ top: 4, right: 10, bottom: 0, left: -22 }}>
               <CartesianGrid strokeDasharray="2 4" stroke="var(--line)" vertical={false} />
               <XAxis dataKey="label" tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} />
-              <YAxis yAxisId="left" tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} />
-              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} allowDecimals={false} />
+              <YAxis tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} />
               <RTooltip
                 contentStyle={{ fontSize: 11, borderRadius: 6, background: '#1F2854', border: 'none', color: '#fff', padding: '6px 10px' }}
                 labelStyle={{ color: '#94a3b8', fontSize: 10 }}
                 itemStyle={{ color: '#fff' }}
               />
-              <Bar yAxisId="right" dataKey="incidents" name="Incident volume" fill="#01b88e" radius={[3, 3, 0, 0]} barSize={18} />
-              <Line yAxisId="left" type="monotone" dataKey="residual" name="Avg residual" stroke="#1F2854" strokeWidth={2} dot={{ fill: '#1F2854', r: 3, strokeWidth: 0 }} activeDot={{ r: 4, strokeWidth: 0 }} connectNulls />
+              <Bar dataKey="incidents" name="Incident volume" fill="#01b88e" radius={[3, 3, 0, 0]} barSize={28} />
+              <Line type="linear" dataKey="residual" name="Avg residual" stroke="#1F2854" strokeWidth={2} dot={{ fill: '#1F2854', r: 3, strokeWidth: 0 }} activeDot={{ r: 4, strokeWidth: 0 }} connectNulls />
             </ComposedChart>
           </ResponsiveContainer>
         </div>
       ) : (
         <div className="dash-empty">Trend data appears once risks are logged.</div>
+      )}
+
+      {chartData.length > 0 && (
+        <div className="im-trend-legend im-trend-foot">
+          <span className="im-legend-item"><span className="im-legend-dot navy" />Avg residual risk</span>
+          <span className="im-legend-item"><span className="im-legend-dot emerald" />Incident volume</span>
+        </div>
       )}
 
       {movement.trend_findings.length > 0
@@ -1258,9 +1257,9 @@ export default function UnifiedSection({ data }: Props) {
               <div className="im-donut-box">
                 <div className="im-donut-title">Risk Categories</div>
                 {riskDonutData.length > 0 ? (
-                  <ResponsiveContainer width={130} height={130}>
+                  <ResponsiveContainer width="100%" height={210}>
                     <PieChart>
-                      <Pie data={riskDonutData} cx="50%" cy="50%" innerRadius={32} outerRadius={54} paddingAngle={2} dataKey="value">
+                      <Pie data={riskDonutData} cx="50%" cy="50%" innerRadius={72} outerRadius={100} paddingAngle={0} startAngle={90} endAngle={-270} dataKey="value">
                         {riskDonutData.map((_, i) => (
                           <Cell key={i} fill={DONUT_PALETTE[i % DONUT_PALETTE.length]} />
                         ))}
@@ -1286,9 +1285,9 @@ export default function UnifiedSection({ data }: Props) {
               <div className="im-donut-box">
                 <div className="im-donut-title">Incident Categories</div>
                 {incDonutData.length > 0 ? (
-                  <ResponsiveContainer width={130} height={130}>
+                  <ResponsiveContainer width="100%" height={210}>
                     <PieChart>
-                      <Pie data={incDonutData} cx="50%" cy="50%" innerRadius={32} outerRadius={54} paddingAngle={2} dataKey="value">
+                      <Pie data={incDonutData} cx="50%" cy="50%" innerRadius={72} outerRadius={100} paddingAngle={0} startAngle={90} endAngle={-270} dataKey="value">
                         {incDonutData.map((_, i) => (
                           <Cell key={i} fill={DONUT_PALETTE[i % DONUT_PALETTE.length]} />
                         ))}
@@ -1310,7 +1309,7 @@ export default function UnifiedSection({ data }: Props) {
               </div>
             </div>
 
-            {movement.overlap_findings.map(f => <p key={f} className="im-finding">{f}</p>)}
+            {movement.overlap_findings.slice(0, 1).map(f => <p key={f} className="im-finding">{f}</p>)}
 
             <InsightFooter label="View distribution detail" onClick={() => setModal('distribution')} />
           </div>

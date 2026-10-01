@@ -13,7 +13,7 @@ from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.exceptions import ResourceNotFoundError
+from app.core.exceptions import DuplicateResourceError, ResourceNotFoundError
 from app.models.account import Account
 from app.models.tenant import Tenant
 from app.models.incident import Incident
@@ -400,36 +400,24 @@ async def get_duplicate_candidates(
 
 
 
-async def _get_sub_or_404(
+async def _get_pending_sub(
     db: AsyncSession,
     workspace_id: UUID,
     submission_id: UUID,
 ) -> RiskSubmission:
+    """Locks the row and rejects anything already triaged."""
     result = await db.execute(
         select(RiskSubmission)
         .where(RiskSubmission.id == submission_id)
         .where(RiskSubmission.workspace_id == workspace_id)
+        .with_for_update()
     )
     row = result.scalar_one_or_none()
-    if not row:
+    if row is None:
         raise ResourceNotFoundError("Submission not found")
+    if str(row.status or "") != "pending":
+        raise DuplicateResourceError("This submission has already been triaged.")
     return row
-
-
-async def triage_accept(
-    db: AsyncSession,
-    workspace_id: UUID,
-    submission_id: UUID,
-    triaged_by_id: UUID,
-    triaged_by_email: str,
-) -> RiskSubmissionResponse:
-    sub = await _get_sub_or_404(db, workspace_id, submission_id)
-    sub.status = "accepted"  # type: ignore[assignment]
-    sub.triaged_by = triaged_by_id  # type: ignore[assignment]
-    sub.triaged_at = datetime.now(timezone.utc)  # type: ignore[assignment]
-    await db.flush()
-    await db.refresh(sub)
-    return RiskSubmissionResponse.model_validate(sub)
 
 
 async def triage_merge(
@@ -440,7 +428,7 @@ async def triage_merge(
     triaged_by_email: str,
     payload: TriageMergeRequest,
 ) -> RiskSubmissionResponse:
-    sub = await _get_sub_or_404(db, workspace_id, submission_id)
+    sub = await _get_pending_sub(db, workspace_id, submission_id)
 
     # Verify target risk exists in this workspace
     risk_result = await db.execute(
@@ -546,12 +534,11 @@ async def promote(
     triaged_by_email: str,
     payload: PromoteRequest,
 ) -> dict[str, str]:
-    sub = await _get_sub_or_404(db, workspace_id, submission_id)
-    if str(sub.status or '') != "accepted":
-        raise ValueError("Only accepted submissions can be promoted")
+    sub = await _get_pending_sub(db, workspace_id, submission_id)
+    category = await lookup_svc.ensure_category(db, workspace_id, payload.category)
 
     risk_payload = RiskCreate(
-        category=payload.category,
+        category=category,
         description=str(sub.description or ''),
         owner=payload.owner,
         treatment=payload.treatment,
@@ -567,8 +554,6 @@ async def promote(
     risk_response = await risk_svc.create_risk(
         db, workspace_id, risk_payload, triaged_by_email
     )
-    await lookup_svc.ensure_category(db, workspace_id, payload.category)
-
     # Link source_submission_id on the new risk
     await db.execute(
         update(Risk)

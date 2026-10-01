@@ -83,6 +83,8 @@ export interface StatsParams {
   owner?:     string;
   search?:    string;
   undecided?: boolean;
+  risk_id?:   string;
+  appetite?:  string;
 }
 
 export async function getStats(params: StatsParams = {}): Promise<RiskStats> {
@@ -92,6 +94,9 @@ export async function getStats(params: StatsParams = {}): Promise<RiskStats> {
   if (params.treatment) qs.set('treatment',  params.treatment);
   if (params.owner)     qs.set('owner',      params.owner);
   if (params.search)    qs.set('search',     params.search);
+  if (params.risk_id)   qs.set('risk_id',    params.risk_id);
+  if (params.undecided) qs.set('undecided',  'true');
+  if (params.appetite)  qs.set('appetite',   params.appetite);
   const query = qs.toString();
   return apiGet<RiskStats>(`/api/v1/risks/stats${query ? `?${query}` : ''}`);
 }

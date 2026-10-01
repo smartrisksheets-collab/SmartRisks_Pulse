@@ -20,6 +20,8 @@ import ImportModal         from '../components/risks/ImportModal';
 import AIModal                  from '../components/risks/AIModal';
 import DeleteModal              from '../components/risks/DeleteModal';
 import PrintModal               from '../components/risks/PrintModal';
+import { buildRiskCsv, downloadCsv } from '../utils/riskExport';
+import type { ExportScope } from '../utils/riskExport';
 import RecycleBinModal          from '../components/recycle/RecycleBinModal';
 import type { Risk, RiskCreate, AIInsightRequest, AIInsightResult } from '../types/risk';
 
@@ -175,6 +177,9 @@ export default function RiskRegister() {
     treatment: treatment       || undefined,
     owner:     owner           || undefined,
     search:    debouncedSearch || undefined,
+    risk_id:   debouncedRiskId || undefined,
+    undecided: filterUndecided || undefined,
+    appetite:  appetite        || undefined,
   };
   const statsQuery   = useQuery({
     queryKey:        ['risks', 'stats', statsParams],
@@ -263,53 +268,24 @@ export default function RiskRegister() {
     return r;
   }
 
-  async function handlePrint(scope: 'all' | 'filtered' | 'single', format: 'pdf' | 'csv') {
+    async function handlePrint(scope: ExportScope, columns: string[]) {
     setShowPrint(false);
-    if (format === 'pdf') {
-      toast('PDF export is available in the Report Builder.', 'info');
-      navigate('/reports');
-      return;
-    }
-    let toExport: Risk[];
+    const PAGE = 1000; // backend max page_size
+    const base: ListRisksParams = scope === 'filtered' ? riskParams : {};
+    const all: Risk[] = [];
     try {
-      const filterParams = {
-        risk_id:   debouncedRiskId || undefined,
-        search:    debouncedSearch || undefined,
-        category:  category        || undefined,
-        level:     level           || undefined,
-        treatment: treatment       || undefined,
-        owner:     owner           || undefined,
-      };
-      const resp = await listRisks({
-        page: 1,
-        page_size: 1000,
-        ...(scope === 'filtered' ? filterParams : {}),
-      });
-      toExport = resp.items;
+      for (let p = 1; ; p++) {
+        const resp = await listRisks({ ...base, page: p, page_size: PAGE });
+        all.push(...resp.items);
+        if (resp.items.length < PAGE || all.length >= resp.meta.total) break;
+      }
     } catch {
       toast('Export failed. Please try again.', 'error');
       return;
     }
-    const header = ['Risk ID', 'Category', 'Description', 'Owner', 'Source', 'Level', 'Treatment', 'Severity', 'Residual', 'Status', 'Logged At'].join(',');
-    const rows = toExport.map(r => [
-      r.id,
-      r.category ?? '',
-      `"${(r.description ?? '').replace(/"/g, '""')}"`,
-      r.owner ?? '',
-      r.source,
-      r.level ?? '',
-      r.treatment ?? '',
-      r.severity ?? '',
-      r.residual != null ? Math.round(r.residual) : '',
-      r.mitigation_status ?? '',
-      r.logged_at ?? '',
-    ].join(','));
-    const csv  = [header, ...rows].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const href = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href = href; a.download = 'risk_register.csv'; a.click();
-    URL.revokeObjectURL(href);
+    const rows = scope === 'selected' ? all.filter(r => selectedIds.has(r.id)) : all;
+    if (!rows.length) { toast('No risks to export.', 'info'); return; }
+    downloadCsv(buildRiskCsv(rows, columns), `risk_register_${new Date().toISOString().slice(0, 10)}.csv`);
   }
 
   return (
@@ -566,7 +542,9 @@ export default function RiskRegister() {
         }}
       />
       <PrintModal
+        key={showPrint ? 'open' : 'closed'}
         open={showPrint}
+        selectedCount={selectedIds.size}
         onClose={() => setShowPrint(false)}
         onGenerate={handlePrint}
       />
