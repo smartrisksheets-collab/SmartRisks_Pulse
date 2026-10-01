@@ -1,11 +1,11 @@
 // src/pages/TriageQueue.tsx
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   useTriageQueue, useSubmission, useDuplicates,
-  useTriageAccept, useTriageMerge, useTriageReroute,
+  useTriageMerge, useTriageReroute,
   useTriageClose, usePromote,
 } from '../hooks/useSubmissions';
 import { useToast } from '../hooks/useToast';
@@ -13,6 +13,8 @@ import { useLookups } from '../hooks/useLookups';
 import { listRisks } from '../services/risks';
 import { useAuthStore } from '../store/authStore';
 import type { RiskSubmissionListItem, TriageStatus, SubmitterUrgency } from '../types/submission';
+import { loadTriageDraft, saveTriageDraft, clearTriageDraft, hasTriageDraft, pruneTriageDrafts } from '../utils/triageDraft';
+import type { TriageDraft, TriageDraftAction } from '../utils/triageDraft';
 
 interface RiskOption { id: string; description: string; category: string | null; }
 
@@ -38,12 +40,13 @@ function urgencyPill(u: SubmitterUrgency | null) {
   return <span className={`status-pill ${map[u]}`}>{labels[u]}</span>;
 }
 
-type TriageAction = 'accept' | 'merge' | 'reroute' | 'close' | 'promote' | null;
+type TriageAction = TriageDraftAction | null;
 
 export default function TriageQueue() {
   const toast    = useToast();
   const navigate = useNavigate();
   const hasIncident = useAuthStore(s => (s.claims?.modules ?? []).includes('incident'));
+  const tenantId    = useAuthStore(s => s.claims?.active_tenant_id ?? null);
   const { data: queue, isLoading } = useTriageQueue();
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -82,20 +85,59 @@ export default function TriageQueue() {
     staleTime: 30_000,
   });
 
-  const acceptMut  = useTriageAccept();
-  const mergeMut   = useTriageMerge();
+    const mergeMut   = useTriageMerge();
   const rerouteMut = useTriageReroute();
   const closeMut   = useTriageClose();
   const promoteMut = usePromote();
 
+  const categoryOptions = lookups?.category ?? [];
+  const isNewCategory = pCategory.trim() !== '' &&
+    !categoryOptions.some(c => c.trim().toLowerCase() === pCategory.trim().toLowerCase());
+
+  const hasContent = Boolean(
+    note.trim() || mergeSelected || pCategory || pOwner || pOwnerEmail || pLikelihood ||
+    pImpact || pTreatment || pControls.trim() || pPlan.trim() || pTargetDate,
+  );
+
+  // Autosave the open panel. Cancel keeps the draft; only Discard or a successful action clears it.
+  useEffect(() => {
+    if (!selectedId || !action) return;
+    if (!hasContent) { clearTriageDraft(tenantId, selectedId); return; }
+    saveTriageDraft(tenantId, selectedId, {
+      action, note, mergeSelected,
+      promote: {
+        category: pCategory, owner: pOwner, ownerEmail: pOwnerEmail, likelihood: pLikelihood,
+        impact: pImpact, treatment: pTreatment, controls: pControls, plan: pPlan, targetDate: pTargetDate,
+      },
+    });
+  }, [tenantId, selectedId, action, hasContent, note, mergeSelected, pCategory, pOwner, pOwnerEmail,
+      pLikelihood, pImpact, pTreatment, pControls, pPlan, pTargetDate]);
+
+  useEffect(() => {
+    if (queue) pruneTriageDrafts(tenantId, queue.map(q => q.id));
+  }, [tenantId, queue]);
+
+  function applyDraft(d: TriageDraft | null) {
+    setAction(d?.action ?? null);
+    setNote(d?.note ?? '');
+    setMergeSelected(d?.mergeSelected ?? null);
+    setMergeRiskId(d?.mergeSelected?.id ?? '');
+    setMergeSearch('');
+    setShowMergeDrop(false);
+    setPCategory(d?.promote.category ?? '');
+    setPOwner(d?.promote.owner ?? '');
+    setPOwnerEmail(d?.promote.ownerEmail ?? '');
+    setPLikelihood(d?.promote.likelihood ?? '');
+    setPImpact(d?.promote.impact ?? '');
+    setPTreatment(d?.promote.treatment ?? '');
+    setPControls(d?.promote.controls ?? '');
+    setPPlan(d?.promote.plan ?? '');
+    setPTargetDate(d?.promote.targetDate ?? '');
+  }
+
   function openDetail(item: RiskSubmissionListItem) {
     setSelectedId(item.id);
-    setAction(null);
-    setNote('');
-    setMergeRiskId('');
-    setMergeSearch('');
-    setMergeSelected(null);
-    setShowMergeDrop(false);
+    applyDraft(loadTriageDraft(tenantId, item.id));
   }
 
   function closeDetail() {
@@ -103,15 +145,14 @@ export default function TriageQueue() {
     setAction(null);
   }
 
-  async function handleAccept() {
-    if (!selectedId) return;
-    try {
-      await acceptMut.mutateAsync(selectedId);
-      setAction('promote');
-    } catch {
-      toast('Failed to accept submission.', 'error');
-      acceptMut.reset();
-    }
+  function discardDraft() {
+    if (selectedId) clearTriageDraft(tenantId, selectedId);
+    applyDraft(null);
+  }
+
+  function finishAction() {
+    if (selectedId) clearTriageDraft(tenantId, selectedId);
+    closeDetail();
   }
 
   async function handleMerge() {
@@ -121,7 +162,7 @@ export default function TriageQueue() {
     try {
       await mergeMut.mutateAsync({ id: selectedId, payload: { target_risk_id: mergeRiskId.trim(), note } });
       toast('Submission merged into risk.', 'success');
-      closeDetail();
+      finishAction();
     } catch {
       toast('Merge failed. Check the Risk ID and try again.', 'error');
     }
@@ -132,7 +173,7 @@ export default function TriageQueue() {
     try {
       await rerouteMut.mutateAsync({ id: selectedId, payload: { note } });
       toast('Submission rerouted to incident register.', 'success');
-      closeDetail();
+      finishAction();
     } catch {
       toast('Reroute failed.', 'error');
     }
@@ -143,7 +184,7 @@ export default function TriageQueue() {
     try {
       await closeMut.mutateAsync({ id: selectedId, payload: { note } });
       toast('Submission closed.', 'success');
-      closeDetail();
+      finishAction();
     } catch {
       toast('Failed to close submission.', 'error');
     }
@@ -170,7 +211,7 @@ export default function TriageQueue() {
         },
       });
       toast(`Promoted to risk register as ${res.risk_id}.`, 'success');
-      closeDetail();
+      finishAction();
     } catch {
       toast('Promotion failed.', 'error');
     }
@@ -241,7 +282,10 @@ export default function TriageQueue() {
                     <td style={{ fontSize: 12, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
                       {new Date(item.submitted_at).toLocaleDateString()}
                     </td>
-                    <td>{statusPill(item.status)}</td>
+                    <td style={{ whiteSpace: 'nowrap' }}>
+                      {statusPill(item.status)}
+                      {hasTriageDraft(tenantId, item.id) && <span className="status-pill triage-draft">Draft</span>}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -341,10 +385,18 @@ export default function TriageQueue() {
                 </div>
               )}
 
+              {hasContent && (
+                <div className="triage-draft-bar">
+                  <span className="status-pill triage-draft">Draft</span>
+                  <span>Unfinished triage saved on this browser.</span>
+                  <button type="button" className="btn btn-secondary btn-compact" onClick={discardDraft}>Discard draft</button>
+                </div>
+              )}
+
               {/* Action panels */}
               {detail.status === 'pending' && !action && (
                 <div className="sub-actions-bar">
-                  <button className="btn btn-primary btn-compact" onClick={handleAccept} disabled={acceptMut.isPending}
+                  <button className="btn btn-primary btn-compact" onClick={() => setAction('promote')}
                     title="Score this submission and add it to the risk register.">
                     Accept
                   </button>
@@ -372,8 +424,16 @@ export default function TriageQueue() {
                     <div className="field" style={{ gridColumn: 'span 6' }}>
                       <label>Category <span style={{ color: '#ef4444' }}>*</span></label>
                       <input value={pCategory} onChange={e => setPCategory(e.target.value)}
-                        placeholder={detail.suggested_category ?? 'e.g. Operational'}
-                        onFocus={() => { if (!pCategory && detail.suggested_category) setPCategory(detail.suggested_category); }} />
+                        list="triage-category-options"
+                        placeholder={detail.suggested_category ? `Suggested: ${detail.suggested_category}` : 'Pick or type a category'} />
+                      <datalist id="triage-category-options">
+                        {categoryOptions.map(c => <option key={c} value={c} />)}
+                      </datalist>
+                      {isNewCategory && (
+                        <span className="field-hint">
+                          New category. It will be added to your list, but has no appetite threshold until you set one in Settings.
+                        </span>
+                      )}
                     </div>
                     <div className="field" style={{ gridColumn: 'span 6' }}>
                       <label>Owner <span style={{ color: '#ef4444' }}>*</span></label>

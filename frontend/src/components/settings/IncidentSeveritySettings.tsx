@@ -541,6 +541,7 @@ export default function IncidentSeveritySettings() {
 
           {preview.data && (
             <>
+              <div className="sev-preview-scroll">
               <table className="sev-preview-table">
                 <thead>
                   <tr>
@@ -584,6 +585,7 @@ export default function IncidentSeveritySettings() {
                   )}
                 </tbody>
               </table>
+              </div>
 
               <div className="sev-kpi-row">
                 <div className="sev-kpi">

@@ -76,12 +76,16 @@ async def get_stats(
     treatment: str | None = Query(None),
     owner:     str | None = Query(None),
     search:    str | None = Query(None),
+    risk_id:   str | None = Query(None),
+    undecided: bool | None = Query(None),
+    appetite:  str | None = Query(None),
     db: AsyncSession      = Depends(get_db),
     claims: dict          = Depends(require_module("risk")),
 ):
     tenant_id = UUID(claims["active_tenant_id"])
     stats = await risk_service.get_stats(
-        db, tenant_id, category, level, treatment, owner, search
+        db, tenant_id, category=category, level=level, treatment=treatment, owner=owner,
+        search=search, risk_id=risk_id, undecided=undecided, appetite=appetite,
     )
     return {"data": stats, "error": None, "meta": {}}
 

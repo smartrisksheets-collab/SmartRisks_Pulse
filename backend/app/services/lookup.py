@@ -150,19 +150,22 @@ async def check_lookup_usage(
     return result.scalar() or 0
 
 
-async def ensure_category(db: AsyncSession, tenant_id: UUID, category: str) -> None:
-    """Append category to the lookup array if it is not already present.
-    Checks case-insensitively to avoid near-duplicate entries."""
-    if not category:
-        return
-    row = await _get_or_create(db, tenant_id)
-    existing: list[str] = list(row.category or [])  # type: ignore[arg-type]
+async def ensure_category(db: AsyncSession, tenant_id: UUID, category: str) -> str:
+    """Return the canonical spelling of category, appending it to the lookup
+    array when new. Matches case-insensitively against the effective list so
+    defaults are kept, not overwritten, when the stored list is empty."""
     normalised = category.strip()
-    already_present = any(e.strip().lower() == normalised.lower() for e in existing)
-    if not already_present:
-        existing.append(normalised)
-        row.category = existing  # type: ignore[assignment]
-        await db.flush()
+    if not normalised:
+        return normalised
+    row = await _get_or_create(db, tenant_id)
+    existing = _effective_list("category", row.category)
+    for e in existing:
+        if e.strip().lower() == normalised.lower():
+            return e
+    existing.append(normalised)
+    row.category = existing  # type: ignore[assignment]
+    await db.flush()
+    return normalised
 
 
 async def get_lookups(db: AsyncSession, tenant_id: UUID) -> LookupResponse:
