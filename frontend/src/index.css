@@ -1397,7 +1397,7 @@ td .triage-draft { margin-left:6px; }
   padding: 14px 16px;
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   border-bottom: 1px solid var(--line);
-  background: linear-gradient(90deg, rgba(1,184,142,.10) 0%, rgba(31,40,84,.06) 100%);
+  background: rgba(1,184,142,.08);
 }
 
 .modal-title { margin: 0; color: var(--navy); font-weight: 900; font-size: 16px; }
@@ -1697,6 +1697,13 @@ td .triage-draft { margin-left:6px; }
   border-bottom: 1px solid var(--line);
 }
 .tax-card-hd-title { font-weight: 800; font-size: 14px; color: var(--navy); }
+.tax-section-divider { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
+.tax-section-divider::before,
+.tax-section-divider::after { content: ""; flex: 1; height: 2px; background: var(--navy); }
+.tax-section-divider span {
+  font-size: 12px; font-weight: 900; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--navy);
+}
 .tax-card-hd-actions { display: flex; gap: 6px; }
 .tax-card-hd-actions button {
   padding: 6px 10px;
@@ -2537,6 +2544,12 @@ td .triage-draft { margin-left:6px; }
 [data-theme="auto"] .tax-card { background: var(--card); border-color: var(--line); }
 [data-theme="dark"] .tax-card-hd,
 [data-theme="auto"] .tax-card-hd { background: var(--card-secondary); border-color: var(--line); }
+[data-theme="dark"] .tax-section-divider span,
+[data-theme="auto"] .tax-section-divider span { color: var(--text); }
+[data-theme="dark"] .tax-section-divider::before,
+[data-theme="dark"] .tax-section-divider::after,
+[data-theme="auto"] .tax-section-divider::before,
+[data-theme="auto"] .tax-section-divider::after { background: var(--line); }
 [data-theme="dark"] .tax-chip,
 [data-theme="auto"] .tax-chip { background: var(--card-secondary); border-color: var(--line); color: var(--text); }
 [data-theme="dark"] .tax-card-hd-actions button,
@@ -4675,6 +4688,15 @@ table.sev-preview-table th:last-child, table.sev-preview-table td:last-child { p
   border-color: var(--primary);
   color: var(--primary);
 }
+
+.mx-chip:disabled { opacity: .5; cursor: not-allowed; }
+.mx-chip:disabled:hover { border-color: var(--line); color: var(--muted); }
+
+/* ── Control effectiveness settings ── */
+.ce-label-row { grid-template-columns: 90px 1fr; }
+.ce-ok { margin-top: 10px; font-size: 13px; font-weight: 700; color: var(--primary); }
+.ce-blocked-list { margin: 10px 0 0; padding-left: 18px; font-size: 13px; color: var(--navy); }
+.ce-blocked-list li { margin: 4px 0; }
 
 /* ── Heatmap ── */
 .mx-hm-wrap {

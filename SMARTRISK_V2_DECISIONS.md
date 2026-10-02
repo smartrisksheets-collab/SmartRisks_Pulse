@@ -1820,3 +1820,48 @@ Why: A board-level brief must survive navigation and must never silently describ
 Raised by: Dashboard modal rows needed to open a specific risk or incident, and the feed's wording and colours were locked inside two component files, blocking a merged view.
 Chosen: `/risks?risk=`, `?edit=`, `?new=1&category=` and `/incidents?incident=` open the record once and clear themselves from the URL; Add Risk from a link is URL-driven so no state is set inside an effect. Feed wording, tiers and badges moved to `src/utils/feedEvents.ts`, tier colours to CSS classes, with a shared `FeedEventRow` and an All view.
 Why: Clearing the parameters stops refresh or back from reopening records. Moving configuration out of component files follows the project rule and lets one row render both event types identically.
+
+**Decision: Unified dashboard visual alignment to mock (October 1, 2026)**
+Raised by: Card titles were too light, residual risk showed one decimal, Category Overlap grew with every finding, donuts were small, and the trend chart used two Y axes.
+Chosen: `.im-label` uses `var(--text)`, weight 700 and letter spacing, which also darkens titles on the Risk and Incident dashboards and IncidentStatCards for consistency. Residual risk on the health card uses `Math.round`, matching the register precedent. Category Overlap renders only the first backend finding. Donuts use a fluid width, 210px height, a 72/100 radius, no padding angle, and start at 12 o'clock. The trend chart uses a single Y axis, the legend sits below the chart, the "snapshots held" text is removed, and the height is 230px via the scoped modifier `.dash-chart-wrap.im-trend-chart`, so IncidentSection keeps 165px. The Operational Feed "All" tab already capped at 3 rows, so no change was needed.
+Why: Matches the approved mock. With a single axis, a very high incident count can flatten the residual line. That trade-off was accepted for readability.
+
+**Decision: Table edge padding standard (October 1, 2026)**
+Raised by: The first column text touched the navy header edge and card border in several tables.
+Chosen: The global `table thead th` paints the navy header with `!important` colours but non-important padding. So `.u-modal-table`, `.apt-guide-table`, `.sev-map-table`, `.sev-preview-table` and `.inc-driver-table` won with zero left padding. A block at the end of `index.css` sets `padding: 10px 12px` on their headers and 12px on the edge cells, using `table.<class>` selectors so it wins regardless of file order. `.sev-preview-table` uses 6px horizontal header padding plus a `.sev-preview-scroll` wrapper, because it sits in a narrow panel and overflowed its card.
+Why: One grouped rule fixes all five tables. Raising specificity avoids order fragility, which caused the first attempt to fail on `.inc-driver-table` (its rule sits later in the file).
+
+**Decision: Triage Accept folded into Promote, accept endpoint removed (October 1, 2026)**
+Raised by: A user filled most of the promote form, cancelled, and returned to find the submission gone and no triage actions available.
+Chosen: Accept previously called the backend immediately, which set the status to `accepted` before the scoring form opened. Cancel only hid the form, so the record was stranded: `accepted` with no linked risk, hidden from the pending-only queue, and with all action buttons hidden. Accept now only opens the form. `promote()` moves a submission from `pending` straight to `accepted` in one transaction. The `/accept` route, `triage_accept` service, `triageAccept` and `useTriageAccept` were removed. Stranded rows were reset with a one-off SQL update (`status = 'accepted' AND promoted_risk_id IS NULL` back to `pending`).
+Why: A half-accepted state can no longer exist. Keeping a standalone accept endpoint would have left the stranding path reachable through the API.
+
+**Decision: Triage status guard with row lock (October 1, 2026)**
+Raised by: Integrity gap. Triage actions did not check the current status, so double clicks or two triagers could create duplicate risks or send duplicate emails.
+Chosen: `_get_pending_sub` replaces `_get_sub_or_404`. It selects with `with_for_update()` and raises `DuplicateResourceError` (409) unless the status is `pending`. Merge, reroute, close and promote all use it.
+Why: The row lock serialises concurrent actions. The second request waits, then fails cleanly. The existing exception map already returns 409 in the standard envelope.
+
+**Decision: Triage drafts stored in browser storage (October 1, 2026)**
+Raised by: Cancelling or navigating away from a triage panel discarded all entered values.
+Chosen: `src/utils/triageDraft.ts` stores one draft per submission under `sr-triage-draft:{tenantId}:{submissionId}`. An effect autosaves while a panel is open and content exists. Cancel and the modal X keep the draft. Only Discard or a successful action clears it. Reopening restores the fields and the panel. The inbox shows a Draft pill. Drafts for submissions no longer pending are pruned when the queue loads. `TriageAction` derives from `TriageDraftAction`.
+Why: Browser storage needs no migration and follows the existing import-mapping pattern. The cost is that drafts are per browser and not shared between triagers, which was accepted. Restoring through one `applyDraft` also fixed promote fields leaking between submissions.
+
+**Decision: Promote category is a combo box with canonical spelling (October 1, 2026)**
+Raised by: Free-text categories created near-duplicates, and risks under a new category silently had no appetite threshold.
+Chosen: The promote form uses an input with a datalist sourced from `lookups.category`, and shows a hint when the value is new (no threshold until one is set). `ensure_category` now returns the canonical spelling, matching case-insensitively, and `promote()` calls it before creating the risk. It also builds on `_effective_list`. Previously an untouched workspace saved a list containing only the new category, which wiped every default category workspace-wide.
+Why: Submitted risks often need categories that do not exist yet, so free text stays available. Canonical matching and the visible hint prevent duplicates and appetite blind spots.
+
+**Decision: Risk register export is CSV only, with user-chosen columns (October 1, 2026)**
+Raised by: The PDF option only redirected to the Report Builder. The CSV exported 11 of 30+ fields, broke on commas, ignored the Selected scope, and silently capped at 1,000 rows.
+Chosen: `src/utils/riskExport.ts` holds a fixed-order column registry (every `Risk` field except `tenant_id` and `level_index`), escapes every cell, guards formula injection (a leading `= + - @`, tab or CR gets a `'` prefix on text cells only), and adds a UTF-8 BOM and CRLF line endings. The column choice is remembered per workspace under `sr-export-cols:{tenantId}`. The export pages through the API, "Current filters" reuses `riskParams`, and "Selected" uses `selectedIds`. Headers for importable fields match the import auto-map: "Date Logged" and "Mitigation Status" replace "Logged At" and "Status". The modal is remounted on open via `key`.
+Why: One registry drives both the picker and the CSV. Formula injection is exploitable through external submissions, so it was fixed immediately. Fixed column order was chosen over drag-to-reorder to start small.
+
+**Decision: Stat cards and register share one filter helper (October 1, 2026)**
+Raised by: Stat cards ignored the appetite, undecided and risk ID filters that the table applied, and `StatsParams.undecided` was declared but never sent.
+Chosen: `_apply_risk_filters` (keyword-only arguments) in `app/services/risk.py` is used by both `list_risks` and `get_stats`. The stats route and `getStats` accept and send all 8 filters. The hardcoded `0.75` near-appetite boundary was replaced with `APPETITE_NEAR_RATIO` from `risk_status.py`.
+Why: A single helper makes the table and cards unable to drift apart. Using the constant restores the rule that each derived status has one backend definition.
+
+**Decision: Configurable control effectiveness scale, design agreed, build deferred to Phase A to C (October 1, 2026)**
+Raised by: Workspaces need to choose a 4-band (25% to 100%) or 5-band (20% to 100%) control effectiveness scale, with custom display labels per level.
+Chosen: Option 2, the full build, over a labels-only version. `ce_scale` (4 or 5, default 5) and `ce_labels` (JSONB keyed by level) go on the matrix config table, with their own Settings tab. One backend function, `ce_fraction(level, scale) = level / scale`, replaces every hardcoded `/5`, `*20` and `>= 4`. Labels are display only, and the API accepts the level number only. Agreed rules: (1) moving from 5 to 4 is blocked while any risk is rated 5, and every scale switch shows the count of risks whose residual will be recalculated and requires confirmation; (2) level 0 stays on both scales and "Not assessed" (null) is fixed; (3) "high rating" means `fraction >= 0.75`; (4) import accepts the number or the label, case-insensitive, and rejects out-of-range values; (5) snapshots and past reports are never rewritten. Until Phase B ships, the scale selector stays locked at 5.
+Why: Long-term correctness over a quick win. A stored level keeps its number but changes meaning when the scale changes, so residuals must be recalculated, and no exact remap between scales exists. Note: `SMARTRISK_V2_SETUP.md` lines 983 to 987 still describe a 0-100 scale and are stale. Phase A updates that section.

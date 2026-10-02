@@ -1,8 +1,8 @@
 // src/hooks/useMatrix.ts
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { fetchMatrixConfig, saveMatrixConfig } from '../services/matrix';
-import type { MatrixConfigUpdate } from '../types/matrix';
+import { fetchMatrixConfig, saveMatrixConfig, saveCeConfig } from '../services/matrix';
+import type { MatrixConfigUpdate, CeConfigUpdate } from '../types/matrix';
 
 export function useMatrix() {
   const qc = useQueryClient();
@@ -22,4 +22,17 @@ export function useMatrix() {
   });
 
   return { query, save };
+}
+
+export function useSaveCeConfig() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: CeConfigUpdate) => saveCeConfig(payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['matrix-config'] });
+      qc.invalidateQueries({ queryKey: ['risks'] });
+      qc.invalidateQueries({ queryKey: ['dashboard'] });
+      qc.invalidateQueries({ queryKey: ['exec-insights'] });
+    },
+  });
 }

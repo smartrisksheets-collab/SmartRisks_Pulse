@@ -19,6 +19,8 @@ from app.models.snapshot import SnapshotMonthly, SnapshotDaily
 from app.models.risk import Risk
 from app.models.incident import Incident
 from app.schemas.dashboard import SnapshotDelta
+from app.services.matrix_config import _get_or_create as _get_matrix
+from app.services.risk_status import ce_fraction, ce_avg_pct
 from decimal import Decimal
 
 
@@ -89,6 +91,7 @@ async def compute_live_kpis(
     month_key = now.strftime("%Y-%m")
     month_label = now.strftime("%b %Y")
 
+    ce_scale = int((await _get_matrix(db, tenant_id)).ce_scale)  # type: ignore[arg-type]
     return {
         "month_key": month_key,
         "month_label": month_label,
@@ -97,6 +100,8 @@ async def compute_live_kpis(
         "high_risk_count": int(risk_row.high_risk_count or 0),
         "avg_residual": float(risk_row.avg_residual or 0),
         "control_effectiveness": float(risk_row.avg_ctrl_eff or 0),
+        "control_strength_pct": round(ce_avg_pct(
+            float(risk_row.avg_ctrl_eff) if risk_row.avg_ctrl_eff is not None else None, ce_scale), 1),
         "open_incidents": int(inc_row.open_incidents or 0),
         "avg_mttr": float(mttr_row.avg_mttr or 0) if mttr_row.avg_mttr else None,
         "financial_impact": float(inc_row.financial_impact or 0),
@@ -151,6 +156,7 @@ async def write_monthly_snapshot(
         high_risk_count=kpis["high_risk_count"],
         total_risks=kpis["total_risks"],
         control_effectiveness=kpis["control_effectiveness"],
+        control_strength_pct=kpis["control_strength_pct"],
         open_incidents=kpis["open_incidents"],
         avg_mttr=kpis["avg_mttr"],
         financial_impact=kpis["financial_impact"],
@@ -195,6 +201,14 @@ def _build_delta_obj(
             return obj.get(key)
         return getattr(obj, key, None)
 
+    def _ctrl_pct(obj) -> float | None:
+        pct = _get(obj, "control_strength_pct")
+        if pct is not None:
+            return float(pct)
+        raw = _get(obj, "control_effectiveness")
+        # Rows written before migration 058 hold the average level on the 5 scale.
+        return ce_avg_pct(float(raw), 5) if raw is not None else None
+
     avg_res_delta = _pct_delta(_get(curr, "avg_residual"), _get(prev, "avg_residual"))
 
     prev_label = _get(prev, "month_label") or _get(prev, "month_key") or ""
@@ -205,7 +219,7 @@ def _build_delta_obj(
         avg_residual=avg_res_delta,
         high_risk_count=_pct_delta(_get(curr, "high_risk_count"), _get(prev, "high_risk_count")),
         total_risks=_pct_delta(_get(curr, "total_risks"), _get(prev, "total_risks")),
-        control_eff=_pct_delta(_get(curr, "control_effectiveness"), _get(prev, "control_effectiveness")),
+        control_eff=_pct_delta(_ctrl_pct(curr), _ctrl_pct(prev)),
         open_incidents=_pct_delta(_get(curr, "open_incidents"), _get(prev, "open_incidents")),
         avg_mttr=_pct_delta(_get(curr, "avg_mttr"), _get(prev, "avg_mttr")),
         financial_impact=_pct_delta(_get(curr, "financial_impact"), _get(prev, "financial_impact")),
@@ -289,6 +303,7 @@ async def write_daily_snapshot(db: AsyncSession, tenant_id: UUID) -> None:
         select(
             Risk.id,
             Risk.residual,
+            Risk.severity,
             Risk.level,
             Risk.control_effectiveness,
             Risk.mitigation_status,
@@ -298,13 +313,21 @@ async def write_daily_snapshot(db: AsyncSession, tenant_id: UUID) -> None:
         )
     )).all()
 
+    cfg = await _get_matrix(db, tenant_id)
+    ce_scale = int(cfg.ce_scale)  # type: ignore[arg-type]
+
     snapshot_data: dict[str, dict] = {}
     for r in risks:
+        ce_level = int(r.control_effectiveness) if r.control_effectiveness is not None else None
         snapshot_data[str(r.id)] = {
             "residual":         float(r.residual or 0),
             "band":             str(r.level or ""),
             "control_eff":      float(r.control_effectiveness or 0),
             "mitigation_status": str(r.mitigation_status or ""),
+            "severity":         float(r.severity or 0),
+            "ce_scale":         ce_scale,
+            "ce_fraction":      ce_fraction(ce_level, ce_scale)
+                                if ce_level is not None and 0 <= ce_level <= ce_scale else None,
         }
 
     snap = SnapshotDaily(
@@ -314,6 +337,20 @@ async def write_daily_snapshot(db: AsyncSession, tenant_id: UUID) -> None:
     )
     db.add(snap)
     await db.flush()
+
+
+def _rebase_residual(entry: dict, new_scale: int) -> float:
+    """Residual of a daily snapshot entry recomputed on new_scale, so deltas exclude a scale switch."""
+    level     = float(entry.get("control_eff") or 0)
+    old_scale = int(entry.get("ce_scale", 5))
+    residual  = float(entry["residual"])
+    severity  = entry.get("severity")
+    if severity is None:
+        old_frac = ce_avg_pct(level, old_scale) / 100
+        if old_frac >= 1:
+            return residual  # severity unrecoverable; leave unadjusted
+        severity = residual / (1 - old_frac)
+    return round(float(severity) * (1 - ce_avg_pct(level, new_scale) / 100), 2)
 
 
 async def get_daily_deltas(
@@ -370,7 +407,10 @@ async def get_daily_deltas(
             })
             continue
 
-        residual_delta = cur["residual"] - prev["residual"]
+        cur_scale      = int(cur.get("ce_scale", 5))
+        scale_changed  = int(prev.get("ce_scale", 5)) != cur_scale
+        prev_residual  = _rebase_residual(prev, cur_scale) if scale_changed else float(prev["residual"])
+        residual_delta = round(cur["residual"] - prev_residual, 2)
         band_crossed   = cur["band"] != prev["band"]
         status_changed = cur["mitigation_status"] != prev["mitigation_status"]
 
@@ -386,6 +426,7 @@ async def get_daily_deltas(
                 "bandDirection":   _band_direction(prev["band"], cur["band"]) if band_crossed else None,
                 "mitigationStatus": cur["mitigation_status"],
                 "controlEffDelta": cur["control_eff"] - prev["control_eff"],
+                "scaleChanged":    scale_changed,
             })
 
     for risk_id, prev in baseline.items():

@@ -27,6 +27,7 @@ class SnapshotMonthly(Base):
     high_risk_count = Column(Integer)
     total_risks = Column(Integer)
     control_effectiveness = Column(Numeric)
+    control_strength_pct  = Column(Numeric)
     open_incidents = Column(Integer)
     avg_mttr = Column(Numeric)
     financial_impact = Column(Numeric)

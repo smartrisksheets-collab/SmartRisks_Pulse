@@ -1,6 +1,6 @@
 // src/components/settings/LookupEditor.tsx
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useLookups } from "../../hooks/useLookups";
 import type { LookupPatchResult } from "../../hooks/useLookups";
 import { checkUsage } from "../../services/lookups";
@@ -245,7 +245,11 @@ function LookupEditorContent({ lookups, patch, visibleKeys }: {
 
       <div style={{ marginTop: 16, display: "grid", gap: 14 }}>
         {visibleKeys.map((key) => (
-          <div key={key} className="tax-card">
+          <Fragment key={key}>
+          {key === "incident_category" && (
+            <div className="tax-section-divider"><span>Incident Configuration</span></div>
+          )}
+          <div className="tax-card">
             <div className="tax-card-hd">
               <span className="tax-card-hd-title">{LOOKUP_LABELS[key]}</span>
               <span className="tiny muted">{(local[key] ?? []).length} values</span>
@@ -286,6 +290,7 @@ function LookupEditorContent({ lookups, patch, visibleKeys }: {
               </div>
             </div>
           </div>
+          </Fragment>
         ))}
         {showMap && (
           <CategoryMapCard

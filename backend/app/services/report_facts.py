@@ -17,28 +17,23 @@ from datetime import date
 from typing import Any
 
 from app.services.report import ReportContext, RiskRow
-
-# Pulse multiplicative residual model.
-# control_effectiveness 1-5 maps to a percentage reduction in inherent severity.
-CONTROL_EFFECTIVENESS_PCT: dict[int, float] = {
-    1: 0.20,
-    2: 0.40,
-    3: 0.60,
-    4: 0.80,
-    5: 1.00,
-}
+from app.services.risk_status import ce_avg_pct
 
 SMALL_N_THRESHOLD = 5     # below this, percentage framing is suppressed
 OVERDUE_DAYS      = 30    # decisions older than this are flagged overdue
 
 
-def _pulse_residual(r: RiskRow) -> float:
-    """Residual under the Pulse multiplicative engine.
-    Returns full severity when control_effectiveness is 0 (unrated)."""
+def _ce_scale(ctx: ReportContext) -> int:
+    mc = ctx.matrix_config
+    return int(mc.ce_scale) if mc is not None else 5  # type: ignore[arg-type]
+
+
+def _pulse_residual(r: RiskRow, scale: int) -> float:
+    """Residual under the Pulse multiplicative engine on the workspace scale.
+    Returns full severity when control_effectiveness is 0 or not assessed."""
     if r.control_effectiveness is None or r.control_effectiveness <= 0 or r.severity_raw <= 0:
         return r.severity_raw
-    ce_pct = CONTROL_EFFECTIVENESS_PCT.get(r.control_effectiveness, 0.0)
-    return round(r.severity_raw * (1.0 - ce_pct), 1)
+    return round(r.severity_raw * (1.0 - ce_avg_pct(float(r.control_effectiveness), scale) / 100), 1)
 
 
 @dataclass
@@ -96,13 +91,13 @@ class ReportFacts:
         residuals  = [r.residual      for r in risks if r.residual > 0]
         severities = [r.severity_raw  for r in risks if r.severity_raw > 0]
         ctrl_vals  = [r.control_effectiveness for r in risks if r.control_effectiveness is not None]
-        pulse_vals = [_pulse_residual(r) for r in risks if r.severity_raw > 0]
+        pulse_vals = [_pulse_residual(r, _ce_scale(self.ctx)) for r in risks if r.severity_raw > 0]
 
         avg_residual   = round(sum(residuals)  / len(residuals),  1) if residuals  else 0.0
         avg_severity   = round(sum(severities) / len(severities), 1) if severities else 0.0
         avg_ctrl_eff   = round(sum(ctrl_vals)  / len(ctrl_vals),  1) if ctrl_vals  else 0.0
         avg_pulse      = round(sum(pulse_vals) / len(pulse_vals), 1) if pulse_vals else 0.0
-        ctrl_strength  = round(avg_ctrl_eff / 5 * 100) if avg_ctrl_eff else 0
+        ctrl_strength  = round(ce_avg_pct(avg_ctrl_eff, _ce_scale(self.ctx))) if avg_ctrl_eff else 0
         mc = self.ctx.matrix_config
         _l = int(mc.likelihood_scale) if mc else 5  # type: ignore[arg-type]
         _i = int(mc.impact_scale)     if mc else 5  # type: ignore[arg-type]
@@ -114,6 +109,7 @@ class ReportFacts:
             "avg_severity":         avg_severity,
             "avg_control_eff":      avg_ctrl_eff,
             "control_strength_pct": ctrl_strength,
+            "ce_scale":             _ce_scale(self.ctx),
             "exposure_index":       exposure_index,
             "risk_health":          risk_health,
             "avg_residual_pulse":   avg_pulse,
@@ -248,7 +244,8 @@ class ReportFacts:
         ]
         if not eligible:
             return True
-        return all(abs(r.residual - _pulse_residual(r)) < 0.05 for r in eligible)
+        scale = _ce_scale(self.ctx)
+        return all(abs(r.residual - _pulse_residual(r, scale)) < 0.05 for r in eligible)
 
     def supplied_model_is_subtractive(self) -> bool:
         """True when supplied residual = severity - control_effectiveness (additive subtraction)."""
@@ -270,7 +267,7 @@ class ReportFacts:
         for r in self.ctx.all_risks:
             if r.severity_raw <= 0 or r.control_effectiveness is None or r.control_effectiveness <= 0:
                 continue
-            pr   = _pulse_residual(r)
+            pr   = _pulse_residual(r, _ce_scale(self.ctx))
             diff = round(r.residual - pr, 1)
             out.append({
                 "id":       r.id,

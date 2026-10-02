@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.dependencies import get_db, get_active_tenant, require_permission
 from uuid import UUID
 
-from app.schemas.matrix_config import MatrixConfigResponse, MatrixConfigUpdate
+from app.schemas.matrix_config import MatrixConfigResponse, MatrixConfigUpdate, CeConfigUpdate
 from app.services import matrix_config as matrix_service
 
 router = APIRouter(prefix="/matrix-config", tags=["matrix"])
@@ -36,4 +36,33 @@ async def update_matrix_config(
 ):
     tenant_id = UUID(claims["active_tenant_id"])
     data = await matrix_service.update_config(db, tenant_id, payload)
+    return {"data": data.model_dump(), "error": None, "meta": {}}
+
+
+
+@router.get("/control-effectiveness/preview", response_model=dict)
+@limiter.limit("30/minute")
+async def preview_ce_scale(
+    request: Request,
+    target_scale: int,
+    claims: dict = Depends(get_active_tenant),
+    db:     AsyncSession = Depends(get_db),
+    _:      None = Depends(require_permission("manage_settings")),
+):
+    tenant_id = UUID(claims["active_tenant_id"])
+    data = await matrix_service.preview_ce_scale(db, tenant_id, target_scale)
+    return {"data": data.model_dump(), "error": None, "meta": {}}
+
+
+@router.put("/control-effectiveness", response_model=dict)
+@limiter.limit("10/minute")
+async def update_ce_config(
+    request: Request,
+    payload: CeConfigUpdate,
+    claims:  dict = Depends(get_active_tenant),
+    db:      AsyncSession = Depends(get_db),
+    _:       None = Depends(require_permission("manage_settings")),
+):
+    tenant_id = UUID(claims["active_tenant_id"])
+    data = await matrix_service.update_ce_config(db, tenant_id, payload, claims["email"])
     return {"data": data.model_dump(), "error": None, "meta": {}}

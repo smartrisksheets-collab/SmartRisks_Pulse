@@ -40,6 +40,7 @@ import OperationalFeed from './OperationalFeed';
 import { useSettingsStore } from '../../store/settingsStore';
 import { formatMoneyCompact, formatDate } from '../../utils/format';
 import { generateUnifiedBrief } from '../../services/dashboard';
+import { useMatrix } from '../../hooks/useMatrix';
 
 // ── Module-level constants ────────────────────────────────────────────────────
 
@@ -247,6 +248,7 @@ function MaterialisedModalContent({ c, currency, canEditRisk, onGo }: {
   canEditRisk: boolean;
   onGo: (path: string) => void;
 }) {
+  const ceScale = useMatrix().query.data?.ce_scale ?? 5;
   if (c.risks_materialised === 0) {
     return <p className="u-modal-note">No incident is linked to a register risk yet.</p>;
   }
@@ -303,7 +305,7 @@ function MaterialisedModalContent({ c, currency, canEditRisk, onGo }: {
                 <td>{m.category ?? '—'}</td>
                 <td className="u-num">{m.residual != null ? m.residual.toFixed(1) : '—'}</td>
                 <td className={`u-num${m.contradicted ? ' u-bad' : ''}`}>
-                  {m.control_rating != null ? `${m.control_rating} / 5` : '—'}
+                  {m.control_rating != null ? `${m.control_rating} / ${ceScale}` : '—'}
                 </td>
                 <td>
                   {m.latest_incident_id ?? '—'}
@@ -465,6 +467,7 @@ function EvidenceModalContent({ ev, canEditRisk, onGo }: {
   canEditRisk: boolean;
   onGo: (path: string) => void;
 }) {
+  const ceScale = useMatrix().query.data?.ce_scale ?? 5;
   if (ev.rated === 0) {
     return <p className="u-modal-note">No control effectiveness ratings are recorded yet.</p>;
   }
@@ -529,7 +532,7 @@ function EvidenceModalContent({ ev, canEditRisk, onGo }: {
                 <tr key={r.risk_id}>
                   <td className="u-id" title={r.description ?? undefined}>{r.risk_id}</td>
                   <td>{r.category ?? '—'}</td>
-                  <td className="u-num">{r.control_rating != null ? `${r.control_rating} / 5` : '—'}</td>
+                  <td className="u-num">{r.control_rating != null ? `${r.control_rating} / ${ceScale}` : '—'}</td>
                   <td className={r.last_tested ? '' : 'u-miss'}>{r.last_tested ? formatDate(r.last_tested) : 'Never'}</td>
                   <td className={r.assertion_source ? '' : 'u-miss'}>{r.assertion_source ?? 'Not recorded'}</td>
                   <td><span className={`u-chip ${chip.cls}`}>{chip.text}</span></td>
@@ -551,7 +554,7 @@ function EvidenceModalContent({ ev, canEditRisk, onGo }: {
         </table>
         <p className="u-modal-note">
           {ev.rated > shown.length && `Showing ${shown.length} of ${ev.rated}. `}
-          A rating of 5 removes all of a risk&apos;s inherent severity from its residual score, so an unevidenced 5 is the
+          A rating of {ceScale} removes all of a risk&apos;s inherent severity from its residual score, so an unevidenced {ceScale} is the
           largest unverified assumption on the register.
         </p>
       </div>

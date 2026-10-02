@@ -69,6 +69,8 @@ from app.services.risk_status import (
     is_independent,
     is_evidenced,
     is_contradicted,
+    is_high_control,
+    ce_avg_pct,
 )
 import logging
 
@@ -281,12 +283,14 @@ async def _get_kpis(db: AsyncSession, tenant_id: UUID) -> KPISummary:
         )
     )).one()
 
+    ce_scale = (await get_matrix_config(db, tenant_id)).ce_scale
     return KPISummary(
         total_risks=int(risk_row.total or 0),
         high_risks=int(risk_row.high or 0),
         open_incidents=int(open_inc or 0),
         risk_severity_avg=round(float(risk_row.avg_residual or 0), 1),
-        control_effectiveness_avg=round(float(risk_row.avg_ctrl or 0) * 20, 1),
+        control_effectiveness_avg=round(ce_avg_pct(
+            float(risk_row.avg_ctrl) if risk_row.avg_ctrl is not None else None, ce_scale), 1),
         est_financial_exposure=round(_fin_total, 2),
         appetite_configured=int(apt_configured or 0) > 0,
         risks_within_appetite=int(apt_row.within or 0),
@@ -872,6 +876,7 @@ async def _intel(
     inc_stats = await incident_get_stats(db, tenant_id)
     lookups = await get_lookups(db, tenant_id)
     matrix = await get_matrix_config(db, tenant_id)
+    ce_scale = matrix.ce_scale
     sev_rank = await get_severity_ranks(db, tenant_id)
     owner_row = (await db.execute(
         select(Account.name, Account.email)
@@ -991,13 +996,14 @@ async def _intel(
             control_assertion_source=r.control_assertion_source,
             today=today,
         )
-        contra = is_contradicted(rating, rid in linked_by_risk)
+        contra = is_contradicted(rating, ce_scale, rid in linked_by_risk)
+        high = is_high_control(rating, ce_scale)
         with_test += int(tested)
         independent_n += int(independent)
         evidenced += int(ev)
-        rated_high += int(rating >= 4)
+        rated_high += int(high)
         contradicted += int(contra)
-        if rating >= 4 and not ev and not contra:
+        if high and not ev and not contra:
             unev_high.append(r)
         ev_rows.append(ControlEvidenceRow(
             risk_id=rid,
@@ -1025,7 +1031,7 @@ async def _intel(
             owner=r.owner,
             residual=float(r.residual) if r.residual is not None else None,
             control_rating=rating_m,
-            contradicted=is_contradicted(rating_m, True),
+            contradicted=is_contradicted(rating_m, ce_scale, True),
             incident_count=len(incs),
             latest_incident_id=str(latest.id),
             latest_incident_severity=latest.severity,
@@ -1225,7 +1231,7 @@ async def _intel(
 
     # ── Enterprise health ────────────────────────────────────────────────────
     scored = within + near + exceeds
-    ctrl_strength = (sum(int(r.control_effectiveness) for r in rated_rows) / rated_n) * 20 if rated_n else 0.0
+    ctrl_strength = ce_avg_pct(sum(int(r.control_effectiveness) for r in rated_rows) / rated_n, ce_scale) if rated_n else 0.0
     ev_share = evidenced / rated_n if rated_n else 0.0
     inc_count = inc_stats.totals.count
 
@@ -1358,25 +1364,41 @@ async def _intel(
         if inc.reported_at is not None:
             created_by_month[inc.reported_at.isoformat()[:7]] += 1
 
-    points = [
-        MovementPoint(
-            month_key=str(s.month_key),
-            label=str(s.month_label or s.month_key),
-            avg_residual=float(s.avg_residual) if s.avg_residual is not None else None,
-        )
-        for s in reversed(snap_rows)
-    ]
+    # Calendar axis: the last _TREND_MONTHS months, oldest first. Incident volume
+    # comes from live incidents for every month. avg_residual comes from the
+    # month's snapshot where one is held, and from live data for the current month.
+    snap_by_key = {str(s.month_key): s for s in snap_rows}
     current_key = today.strftime("%Y-%m")
-    if not points or points[-1].month_key != current_key:
+    month_starts: list[date] = []
+    yr, mo = today.year, today.month
+    for _ in range(_TREND_MONTHS):
+        month_starts.append(date(yr, mo, 1))
+        yr, mo = (yr - 1, 12) if mo == 1 else (yr, mo - 1)
+    month_starts.reverse()
+
+    points: list[MovementPoint] = []
+    for start in month_starts:
+        key = start.strftime("%Y-%m")
+        snap = snap_by_key.get(key)
+        is_live = key == current_key and snap is None
+        if is_live:
+            res_val = avg_res if residuals else None
+        elif snap is not None and snap.avg_residual is not None:
+            res_val = float(snap.avg_residual)
+        else:
+            res_val = None
         points.append(MovementPoint(
-            month_key=current_key,
-            label=today.strftime("%b %Y"),
-            avg_residual=avg_res if residuals else None,
-            is_live=True,
+            month_key=key,
+            label=str(snap.month_label or key) if snap is not None else start.strftime("%b %Y"),
+            avg_residual=res_val,
+            incidents_created=created_by_month.get(key, 0),
+            is_live=is_live,
         ))
-    points = points[-_TREND_MONTHS:]
-    for pt in points:
-        pt.incidents_created = created_by_month.get(pt.month_key, 0)
+
+    # Drop leading months with no snapshot and no incidents, so a new workspace
+    # does not open on empty months. The current month always stays.
+    while len(points) > 1 and points[0].avg_residual is None and points[0].incidents_created == 0:
+        points.pop(0)
 
     overlap: list[str] = []
     for inc_cat, n in uncovered[:2]:

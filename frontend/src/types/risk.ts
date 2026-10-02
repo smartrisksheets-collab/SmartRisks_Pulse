@@ -100,7 +100,7 @@ export interface BulkImportRow {
   impact_score:          number;
   primary_impact?:       string;
   controls?:             string;
-  control_effectiveness?: number;
+  control_effectiveness?: number | string;
   mitigation_plan?:      string;
   comments?:             string;
   logged_at?:            string;

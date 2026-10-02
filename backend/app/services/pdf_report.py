@@ -1637,7 +1637,7 @@ def _render_methodology(data: dict, _ai: str | None) -> list:
         )
 
     out.append(_kv_table([
-        ("Engine",               "Pulse multiplicative: severity \u00d7 (1 \u2212 control%)"),
+        ("Engine",               f"Pulse multiplicative: severity \u00d7 (1 \u2212 level \u00f7 {int(data.get('ce_scale', 5))})"),
         ("Supplied vs engine",   model_val),
         ("Avg supplied residual", f"{avg_sup}"),
         ("Avg Pulse residual",    f"{avg_pulse}"),

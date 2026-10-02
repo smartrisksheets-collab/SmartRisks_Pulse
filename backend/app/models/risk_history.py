@@ -13,4 +13,5 @@ class RiskHistory(Base):
     risk_id = Column(String)
     residual_score = Column(Numeric)
     changed_by = Column(String)
+    source = Column(String, nullable=False, default="user")
     recorded_at = Column(DateTime(timezone=True), server_default=func.now())

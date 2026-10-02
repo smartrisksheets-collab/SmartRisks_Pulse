@@ -3,6 +3,8 @@
 import { useState } from 'react';
 import type { Risk } from '../../types/risk';
 import { useCanDo } from '../../utils/permissions';
+import { useMatrix } from '../../hooks/useMatrix';
+import { ceOptionLabel } from '../../types/matrix';
 
 interface Props {
   open:              boolean;
@@ -34,6 +36,7 @@ function GridField({ label, value }: { label: string; value: string | number | n
 
 export default function RiskDetailModal({ open, risk, onClose, onEdit, onDelete, onLinkDecision }: Props) {
   const canManage = useCanDo('manage_risks');
+  const { query: matrixQuery } = useMatrix();
   const [decisionText, setDecisionText] = useState('');
   const [linkSaving,   setLinkSaving]   = useState(false);
 
@@ -111,7 +114,7 @@ export default function RiskDetailModal({ open, risk, onClose, onEdit, onDelete,
             <GridField label="Residual"          value={risk.residual != null ? Math.round(risk.residual) : null} />
             <GridField label="Freshness"         value={risk.freshness} />
             <GridField label="Controls"          value={risk.controls} />
-            <GridField label="Control Eff."      value={risk.control_effectiveness != null ? `${risk.control_effectiveness}` : null} />
+            <GridField label="Control Eff."      value={risk.control_effectiveness != null ? ceOptionLabel(matrixQuery.data, risk.control_effectiveness) : null} />
             <GridField label="Last Tested"       value={risk.control_last_tested} />
             <GridField label="Assertion Source"  value={risk.control_assertion_source} />
             <GridField label="Financial Exposure" value={risk.financial_exposure} />

@@ -58,6 +58,7 @@ const RISK_CONFIG: Record<string, FeedEventConfig> = {
   ext_submitted:     { tier: 'monitoring',    badge: 'External Submission' },
   ext_approved:      { tier: 'improving',     badge: 'Approved'            },
   ext_returned:      { tier: 'escalated',     badge: 'Returned for Review' },
+  ce_scale_change:   { tier: 'informational', badge: 'Methodology Change'  },
   risk_deleted:      { tier: 'informational', badge: 'Risk Deleted'        },
 };
 
@@ -71,6 +72,7 @@ export const RISK_ACTION_LABELS: Record<string, string> = {
   ext_submitted:     'External Submission',
   ext_approved:      'Approved to Register',
   ext_returned:      'Returned for Review',
+  ce_scale_change:   'Methodology Change',
 };
 
 export function riskEventConfig(item: ActivityEntry): FeedEventConfig {
@@ -120,6 +122,11 @@ export function riskNarrative(item: ActivityEntry): FeedNarrative {
       return { lead: `External submission approved${cat}`, body: `${label} added to the Risk Register.` };
     case 'ext_returned':
       return { lead: `External submission returned${cat}`, body: `${label} sent back for revision.` };
+    case 'ce_scale_change':
+      return {
+        lead: 'Control effectiveness scale changed',
+        body: o !== null && n !== null ? `From ${o} to ${n} levels. Residual scores were recalculated.` : 'Residual scores were recalculated.',
+      };
     default:
       return { lead: `Risk record updated${cat}`, body: label === 'This risk' ? '' : `${label}.` };
   }
@@ -157,6 +164,8 @@ export function riskInsight(item: ActivityEntry): string {
       return n !== null
         ? `This submission was returned to the submitter. Reason: ${n}`
         : 'This submission was returned to the submitter for revision.';
+    case 'ce_scale_change':
+      return 'The workspace changed its control effectiveness scale. Residual scores moved because of the method, not because any risk changed. Brief deltas exclude this effect.';
     default:
       return 'An update was recorded on this risk.';
   }

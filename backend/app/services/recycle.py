@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.recycle_bin import RecycleBin
 from app.models.audit_log import AuditLog
 from app.core.config import settings
-from app.core.exceptions import ResourceNotFoundError
+from app.core.exceptions import ResourceNotFoundError, ValidationError
 
 
 def _to_date(v: str | date | None) -> date | None:
@@ -119,6 +119,20 @@ async def restore_item(
 
     if bin_item.item_type == 'risk':
         from app.models.risk import Risk
+        from app.services.matrix_config import _get_or_create as _get_matrix
+        from app.services.risk import _score
+        cfg = await _get_matrix(db, tenant_id, lock_share=True)
+        try:
+            scored = _score(
+                data.get('likelihood'), data.get('impact_score'),
+                data.get('control_effectiveness'), cfg,
+            )
+        except ValueError:
+            raise ValidationError(
+                f"Risk {data['id']} is rated {data.get('control_effectiveness')} for control "
+                f"effectiveness, above this workspace's {int(cfg.ce_scale)}-level scale. "  # type: ignore[arg-type]
+                'It cannot be restored on the current scale.'
+            ) from None
         restored = Risk(
             id=data['id'],
             tenant_id=tenant_id,
@@ -148,7 +162,20 @@ async def restore_item(
             last_reviewed_at=_to_dt(data.get('last_reviewed_at')),
             control_last_tested=_to_date(data.get('control_last_tested')),
             control_test_result=data.get('control_test_result', 'Not Tested'),
+            control_assertion_source=data.get('control_assertion_source'),
+            root_cause=data.get('root_cause'),
+            financial_exposure=data.get('financial_exposure'),
+            linked_decision=data.get('linked_decision'),
+            linked_decision_at=_to_date(data.get('linked_decision_at')),
+            source=data.get('source') or 'internal',
+            source_submission_id=UUID(data['source_submission_id']) if data.get('source_submission_id') else None,
         )
+        restored.severity       = scored['severity']
+        restored.level          = scored['level']
+        restored.level_index    = scored['level_index']
+        restored.is_elevated    = scored['is_elevated']  # type: ignore[assignment]
+        restored.residual       = scored['residual']
+        restored.overall_rating = scored['overall_rating']
         db.add(restored)
 
     elif bin_item.item_type == 'incident':

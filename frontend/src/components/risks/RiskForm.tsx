@@ -4,18 +4,10 @@ import { useState, type FormEvent } from 'react';
 import type { RiskCreate, RiskTreatment, MitigationStatus } from '../../types/risk';
 import { useLookups } from '../../hooks/useLookups';
 import { useMatrix } from '../../hooks/useMatrix';
+import { CE_FALLBACK_OPTIONS } from '../../types/matrix';
 
 const FALLBACK_CATEGORIES: string[]        = ['Strategic', 'Operational', 'Financial', 'Compliance', 'Reputational', 'Technical'];
 const FALLBACK_TREATMENTS: RiskTreatment[] = ['Mitigate', 'Transfer', 'Accept', 'Avoid'];
-const CTRL_EFF: { label: string; value: string }[] = [
-  { label: 'None',                    value: '' },
-  { label: '0 – No effective control', value: '0' },
-  { label: '1 – Weak',                value: '1' },
-  { label: '2 – Limited',             value: '2' },
-  { label: '3 – Moderate',            value: '3' },
-  { label: '4 – Strong',              value: '4' },
-  { label: '5 – Very strong',         value: '5' },
-];
 
 export interface RiskFormValues {
   category:              string;
@@ -69,6 +61,7 @@ export default function RiskForm({ editId, initial, submitLabel, loading, error,
   const lScale = matrixQuery.data?.likelihood_scale ?? 5;
   const iScale = matrixQuery.data?.impact_scale     ?? 5;
   const scaleOptions = (n: number) => Array.from({ length: n }, (_, i) => i + 1);
+  const ceOptions    = matrixQuery.data?.ce_options ?? CE_FALLBACK_OPTIONS;
 
   const categories = lookups?.category   ?? FALLBACK_CATEGORIES;
   const treatments = (lookups?.treatment as RiskTreatment[] | undefined) ?? FALLBACK_TREATMENTS;
@@ -258,8 +251,8 @@ export default function RiskForm({ editId, initial, submitLabel, loading, error,
               <div className="field" style={{ gridColumn: 'span 4' }}>
                 <label>Effectiveness</label>
                 <select value={v.control_effectiveness ?? ''} onChange={f('control_effectiveness')}>
-                  {CTRL_EFF.map(o => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
+                  {ceOptions.map(o => (
+                    <option key={o.value ?? 'na'} value={o.value ?? ''}>{o.label}</option>
                   ))}
                 </select>
               </div>

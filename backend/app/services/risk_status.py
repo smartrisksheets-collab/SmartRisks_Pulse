@@ -13,8 +13,61 @@ from app.services.phase_one import compute_freshness
 
 OPEN_MITIGATION = frozenset({"Open", "In Progress"})
 EVIDENCE_WINDOW_DAYS = 365
-HIGH_CONTROL_RATING = 4
 APPETITE_NEAR_RATIO = 0.75  # same boundary as _get_kpis and the register appetite filter
+CE_SCALES = (4, 5)
+CE_HIGH_FRACTION = 0.75  # "high control rating" boundary, scale independent
+
+
+def ce_fraction(level: int | None, scale: int) -> float | None:
+    """Control effectiveness level as a 0 to 1 fraction. None means not assessed."""
+    if level is None:
+        return None
+    if scale not in CE_SCALES:
+        raise ValueError(f"Unsupported control effectiveness scale: {scale}")
+    if level < 0 or level > scale:
+        raise ValueError(f"Control effectiveness {level} is outside 0 to {scale}")
+    return level / scale
+
+
+def ce_avg_pct(avg_level: float | None, scale: int) -> float:
+    """Average control effectiveness level as 0 to 100 on the workspace scale. Read-side, no range check."""
+    if avg_level is None or scale <= 0:
+        return 0.0
+    return avg_level / scale * 100
+
+
+def is_high_control(control_effectiveness: int | None, scale: int) -> bool:
+    """High control rating: fraction of the scale >= CE_HIGH_FRACTION."""
+    return control_effectiveness is not None and ce_avg_pct(float(control_effectiveness), scale) >= CE_HIGH_FRACTION * 100
+
+
+def ce_label(level: int | None, labels: dict[str, str]) -> str:
+    """Display label for a level. Blank labels fall back to the number."""
+    if level is None:
+        return 'Not assessed'
+    return (labels.get(str(level)) or '').strip() or str(level)
+
+
+def resolve_ce_input(raw: int | str | None, scale: int, labels: dict[str, str]) -> int | None:
+    """Import value to a level: a number or a label, case-insensitive. Blank or 'Not assessed' means null."""
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if text == '' or text.casefold() == 'not assessed':
+        return None
+    if text.lstrip('-').isdigit():
+        level = int(text)
+    else:
+        matches = [
+            int(k) for k, v in labels.items()
+            if v.strip() and v.strip().casefold() == text.casefold() and int(k) <= scale
+        ]
+        if not matches:
+            raise ValueError(f'Control effectiveness "{text}" is not a level or label in this workspace.')
+        level = matches[0]
+    if level < 0 or level > scale:
+        raise ValueError(f'Control effectiveness {level} is outside 0 to {scale}.')
+    return level
 
 
 def appetite_status(residual: float | None, threshold: float | None) -> str | None:
@@ -88,6 +141,6 @@ def is_evidenced(
     return has_recent_test(control_last_tested, today) and is_independent(control_assertion_source)
 
 
-def is_contradicted(control_effectiveness: int | None, materialised: bool) -> bool:
+def is_contradicted(control_effectiveness: int | None, scale: int, materialised: bool) -> bool:
     """Rated well controlled, yet produced an incident."""
-    return materialised and control_effectiveness is not None and control_effectiveness >= HIGH_CONTROL_RATING
+    return materialised and is_high_control(control_effectiveness, scale)

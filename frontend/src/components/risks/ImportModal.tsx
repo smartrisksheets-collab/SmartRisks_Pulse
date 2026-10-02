@@ -203,7 +203,7 @@ export default function ImportModal({ open, onClose, onImport }: Props) {
         primary_impact:        get('primary_impact') || undefined,
         logged_at:             get('logged_at') || undefined,
         controls:              get('controls') || undefined,
-        control_effectiveness: get('control_effectiveness') ? Number(get('control_effectiveness')) : undefined,
+        control_effectiveness: get('control_effectiveness') || undefined,
         mitigation_plan:       get('mitigation_plan') || undefined,
         comments:              get('comments') || undefined,
         owner_email:              get('owner_email') || undefined,
