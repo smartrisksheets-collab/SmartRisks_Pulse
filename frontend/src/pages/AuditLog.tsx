@@ -22,7 +22,7 @@ const PERIOD_OPTIONS: { label: string; value: string }[] = [
   { label: "Last 30 Days", value: "month" },
 ];
 
-const MODULE_OPTIONS = ["", "Risk", "Incident"];
+const MODULE_OPTIONS = ["", "Risk", "Incident", "Settings"];
 const ACTION_OPTIONS = ["", "CREATE", "UPDATE", "DELETE", "IMPORT", "RESTORE"];
 const PAGE_SIZE = 50;
 

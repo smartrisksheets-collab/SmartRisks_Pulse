@@ -227,6 +227,7 @@ export interface MethodologyData {
   supplied_is_subtractive: boolean;
   avg_residual:            number;
   avg_residual_pulse:      number;
+  ce_scale?:               number;
   pulse_residuals:         { id: string; supplied: number; pulse: number; diff: number; status: string }[];
   controls_untested:       number;
   unasserted:              number;

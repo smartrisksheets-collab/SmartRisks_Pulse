@@ -30,6 +30,7 @@ from app.models.risk_history import RiskHistory
 from app.models.appetite_threshold import AppetiteThreshold
 from app.models.matrix_config import MatrixConfig
 from app.models.tenant import Tenant
+from app.services.risk_status import ce_avg_pct
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -1311,16 +1312,11 @@ def compute_executive_dashboard(ctx: ReportContext) -> dict:
     elif dir_score == "stable":
         dir_health = "stable"
 
-    # Control Strength: average of rated control_effectiveness values, expressed
-    # as a percentage. control_effectiveness is a 1-5 integer in V2, so the
-    # average is scaled by 20 to map 1-5 onto 0-100. This matches the register
-    # (services/risk.py) and the dashboard (services/dashboard.py), both of
-    # which apply the same * 20 normalisation.
-    # GAS equivalent: ctrlEffToNum_ in DashboardService.gs, which normalises
-    # with (n / max) * 100 against its own 0-100 lookup scale.
-    # Risks with 0 (unrated) are excluded so they do not drag the average down.
+    # Control Strength: average rated control effectiveness on the workspace scale,
+    # as 0 to 100 via ce_avg_pct. Not assessed (null) is excluded; 0 is included.
+    _ce_scale      = int(ctx.matrix_config.ce_scale) if ctx.matrix_config is not None else 5  # type: ignore[arg-type]
     _ctrl_vals     = [r.control_effectiveness for r in risks if r.control_effectiveness is not None]
-    _ctrl_strength = round(sum(_ctrl_vals) / len(_ctrl_vals) * 20) if _ctrl_vals else 0
+    _ctrl_strength = round(ce_avg_pct(sum(_ctrl_vals) / len(_ctrl_vals), _ce_scale)) if _ctrl_vals else 0
     _ctrl_color    = (
         "#10b981" if _ctrl_strength >= 75 else
         "#f59e0b" if _ctrl_strength >= 50 else
@@ -1434,6 +1430,7 @@ def compute_methodology(ctx: ReportContext) -> dict:
         "supplied_is_subtractive": facts.supplied_model_is_subtractive(),
         "avg_residual":            facts.scores["avg_residual"],
         "avg_residual_pulse":      facts.scores["avg_residual_pulse"],
+        "ce_scale":                facts.scores["ce_scale"],
         "pulse_residuals":         facts.pulse_residuals(),
         "controls_untested":       facts.assurance["controls_untested"],
         "unasserted":              facts.assurance["unasserted"],

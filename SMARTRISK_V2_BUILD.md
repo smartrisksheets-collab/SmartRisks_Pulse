@@ -15,9 +15,86 @@ At the end of every session Claude outputs a fresh version of this file with all
  
 ---
  
-**Phase:** Product polish, AI calibration, and UI refinement.
-**Status:** Session 24, September 21, 2026: PDF report improvements, AI sector injection fix, report preview modal, risk table styling, auth page parity, and methodology crash fixed. See session log below.
-**Next action:** Begin next session by reading SMARTRISK_V2_SETUP.md, SMARTRISK_V2_DECISIONS.md, then this file. First task: visual QA pass on PDF report with new top risks table, header period, logo+org name, and recommendation colours. Second task: confirm methodology block loads correctly in preview after the None guard fix.
+**Phase:** Product polish, AI calibration, and UI refinement. Configurable control effectiveness scale (Phase A to C) is next.
+**Status:** Session 25, October 1, 2026: unified dashboard alignment, table padding standard, triage integrity and drafts, promote category combo, CSV export rebuild, stat card filter parity. Control effectiveness scale designed and agreed. See session log below.
+**Next action:** Begin next session by reading SMARTRISK_V2_SETUP.md, SMARTRISK_V2_DECISIONS.md, then this file. First task: confirm the carried-over checks listed under Session 25. Then start Control Effectiveness Phase A.
+
+---
+
+### Session 25: October 1, 2026, Dashboard Alignment, Triage Integrity, Export Rebuild, Filter Parity
+
+**Completed:**
+
+**Unified dashboard**
+- Card titles darkened and bolded via `.im-label`. This also applies to the Risk and Incident dashboards and IncidentStatCards.
+- Residual risk on Enterprise Risk Health rounded to a whole number.
+- Category Overlap capped at one finding.
+- Donuts enlarged (fluid width, 210px high), starting at 12 o'clock.
+- Exposure and Incident Trend on a single Y axis, with the legend below the chart and the height raised to 230px via `.dash-chart-wrap.im-trend-chart`.
+- Operational Feed "All" tab: already capped at 3 rows, so no change was needed.
+- Health status explained: 73 is "Monitoring" by band (Healthy starts at 76), then capped to "At Risk" because one risk exceeds its category appetite. No change made.
+
+**Tables**
+- Audited every table class. Fixed zero edge padding on `.u-modal-table`, `.apt-guide-table`, `.sev-map-table`, `.sev-preview-table` and `.inc-driver-table` with a `table.<class>` block at the end of `index.css`.
+- `.sev-preview-table` got tighter padding and a `.sev-preview-scroll` wrapper to stop it overflowing its card.
+
+**Triage queue**
+- Root cause of the "cleared" submission: Accept wrote `accepted` before the form opened. Cancel then stranded the record, out of the queue and with no actions available.
+- Accept now only opens the promote form. Promote goes from `pending` to `accepted` in one transaction. The accept route, service, TS function and hook were removed.
+- `_get_pending_sub` (row lock plus a 409 when not pending) now guards merge, reroute, close and promote.
+- Stranded rows reset to `pending` via one-off SQL in Supabase. This was a data fix, so there is no migration.
+- Browser drafts: autosave, Cancel keeps the draft, Discard clears it, Draft pill in the inbox, and stale drafts pruned. This also fixed promote fields leaking between submissions.
+- Promote category is now a combo box (list plus free text) with a new-category hint. `ensure_category` returns the canonical spelling and keeps the default categories (this fixed a bug that wiped them).
+
+**Risk register export**
+- PDF option removed, so the export is CSV only.
+- Column picker covering every field, remembered per workspace.
+- Every cell escaped, plus a formula-injection guard, a UTF-8 BOM and CRLF line endings.
+- Pages past 1,000 rows. "Current filters" reuses `riskParams`, and the Selected scope now works.
+- Headers aligned to the import auto-map ("Date Logged", "Mitigation Status").
+
+**Stat cards**
+- `_apply_risk_filters` is shared by `list_risks` and `get_stats`, so all 8 filters now apply to both the table and the cards.
+- The hardcoded `0.75` was replaced by `APPETITE_NEAR_RATIO`.
+
+**Files changed this session (17, plus one data fix):**
+
+Backend: `app/services/submission.py`, `app/api/v1/routes/submissions.py`, `app/services/lookup.py`, `app/services/risk.py`, `app/api/v1/routes/risks.py`
+
+Frontend: `src/components/dashboard/UnifiedSection.tsx`, `src/index.css`, `src/components/settings/IncidentSeveritySettings.tsx`, `src/pages/TriageQueue.tsx`, `src/utils/triageDraft.ts` (new), `src/services/submissions.ts`, `src/hooks/useSubmissions.ts`, `src/components/risks/PrintModal.tsx`, `src/pages/RiskRegister.tsx`, `src/utils/riskExport.ts` (new), `src/services/risks.ts`
+
+Docs: `SMARTRISK_V2_DECISIONS.md` (9 entries appended)
+
+Data: one-off `UPDATE risk_submissions` resetting stranded accepted rows to pending (Supabase SQL editor, no migration)
+
+**Status:** Complete in code. The browser checks below are carried over.
+
+**Carried over (do these first next session):**
+1. Confirm dashboard snippets 1, 2 and 4 are applied. The last screenshot still showed light titles and residual `3.5`.
+2. Run the triage test checklist: draft survives navigation, Discard works, Promote clears the draft, and a double merge returns 409.
+3. Run the export checks: all three scopes, a register over 1,000 rows if available, Excel opens ₦ correctly, and re-import of an exported file. Verify the importer parses ISO dates (`2026-09-17`). This is still unverified.
+4. Filter the register by "Exceeds appetite" and confirm the Risk Volume card total equals the table row count.
+5. Open decision: should the Healthy band start lower than 76, and should one appetite breach cap the status at At Risk or lower it by a single band?
+6. Re-upload the stale project files: `SMARTRISK_V2_BUILD.md`, `src/services/risks.ts`, and the migrations after `028`.
+
+**Next session starts with: Control Effectiveness Phase A**
+1. Read SMARTRISK_V2_SETUP.md, SMARTRISK_V2_DECISIONS.md (the October 1 CE entry), then this file.
+2. Alembic head is `056`, so the migration will be `057`. Re-run `alembic heads` to confirm before numbering.
+3. Phase A scope: the migration (`ce_scale` and `ce_labels` on the matrix config table), the model, schema and service, `ce_fraction()`, `_score`, the scale-switch recalculation with the block and confirm rules, the Settings tab, and an update to the stale SETUP section (lines 983 to 987).
+4. Edge cases to design for:
+   - **Recycle bin:** Restoring a risk rated 5 into a 4-scale workspace must be validated.
+   - **Concurrency:** Risk edits made during a scale switch. The switch runs in one transaction.
+   - **Null versus 0:** Keep them distinct everywhere.
+   - **Labels:** Blank labels fall back to the level number. Labels are trimmed, unique and length-capped, and keyed by level so a scale change adds or drops keys cleanly.
+   - **Imports:** Unique labels prevent an imported label matching two levels.
+   - **Frontend preview:** `utils/scoring.ts` must read the scale from config.
+   - **Downstream text:** AI prompts and report methodology text that state the scale.
+   - **Snapshots:** Trend comparisons across a scale switch.
+   - **Appetite:** Appetite statuses shift when residuals are recalculated.
+   - **Logging:** Decide whether the bulk recalculation writes risk_history and activity feed rows.
+   - **Audit:** The scale change gets an audit log entry.
+   - **Caches:** Invalidate the dashboard, risks and stats queries after a switch.
+5. Phase B (backend `/5`, `*20` and `>= 4` replacements) and Phase C (frontend form, table, detail, import) follow. The scale selector stays locked at 5 until Phase B ships.
 
 ---
 

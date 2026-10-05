@@ -174,8 +174,8 @@ export default function TriageQueue() {
       await rerouteMut.mutateAsync({ id: selectedId, payload: { note } });
       toast('Submission rerouted to incident register.', 'success');
       finishAction();
-    } catch {
-      toast('Reroute failed.', 'error');
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Reroute failed.', 'error');
     }
   }
 

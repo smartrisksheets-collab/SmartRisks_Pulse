@@ -15,6 +15,8 @@ from app.models.risk import Risk
 from app.models.audit_log import AuditLog
 from app.schemas.risk import AIInsightRequest, AIInsightResponse
 from app.services.settings import get_ai_config
+from app.services.matrix_config import get_config as get_matrix_config
+from app.services.risk_status import ce_label
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +76,9 @@ def _enforce_word_count(text: str) -> str:
     return text
 
 
-def _build_prompt(risk: Risk, confidence: str, notes: str | None) -> str:
+def _build_prompt(
+    risk: Risk, confidence: str, notes: str | None, ce_scale: int, ce_labels: dict[str, str],
+) -> str:
     lines = [
         f'Risk ID: {risk.id}',
         f'Category: {risk.category or ""}',
@@ -87,7 +91,8 @@ def _build_prompt(risk: Risk, confidence: str, notes: str | None) -> str:
         f'Risk Level: {risk.level or ""}',
         f'Treatment: {risk.treatment or ""}',
         f'Existing Controls: {risk.controls or ""}',
-        f'Control Effectiveness: {risk.control_effectiveness}%',
+        f'Control Effectiveness: {ce_label(risk.control_effectiveness, ce_labels)}'  # type: ignore[arg-type]
+        + (f' (level {risk.control_effectiveness} of {ce_scale})' if risk.control_effectiveness is not None else ''),
         f'Residual Score: {risk.residual}',
         f'Mitigation Plan: {risk.mitigation_plan or ""}',
         f'Comments: {risk.comments or ""}',
@@ -115,6 +120,8 @@ async def _call_api(
     notes: str | None,
     model: str,
     system: str,
+    ce_scale: int,
+    ce_labels: dict[str, str],
 ) -> tuple[str, str | None]:
     """Returns (risk_id, insight_text | None). None means the call failed."""
     async with sem:
@@ -123,7 +130,7 @@ async def _call_api(
                 model=model,
                 max_tokens=_MAX_TOKENS,
                 system=system,
-                messages=[{'role': 'user', 'content': _build_prompt(risk, confidence, notes)}],
+                messages=[{'role': 'user', 'content': _build_prompt(risk, confidence, notes, ce_scale, ce_labels)}],
             )
             raw     = message.content[0].text.strip()
             insight = _enforce_word_count(raw)
@@ -153,6 +160,7 @@ async def generate_insights(
     model      = ai_cfg['model']
     confidence = payload.confidence or ai_cfg['confidence']
     system     = _build_system(ai_cfg['policy'])
+    matrix     = await get_matrix_config(db, tenant_id)
 
     # Step 1: fetch target risks
     q = select(Risk).where(Risk.tenant_id == tenant_id)
@@ -189,7 +197,7 @@ async def generate_insights(
     sem    = asyncio.Semaphore(_CONCURRENCY)
 
     api_results: list[tuple[str, str | None]] = await asyncio.gather(
-        *[_call_api(client, sem, r, confidence, payload.notes, model, system)
+        *[_call_api(client, sem, r, confidence, payload.notes, model, system, matrix.ce_scale, matrix.ce_labels)
           for r in to_process]
     )
 

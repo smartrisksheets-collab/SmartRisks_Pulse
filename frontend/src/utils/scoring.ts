@@ -1,31 +1,5 @@
 // src/utils/scoring.ts
-
-import type { RiskLevel } from '../types/risk';
-
-export interface ScorePreview {
-  severity:     number;
-  residual:     number;
-  overallRating: number;
-  level:        RiskLevel;
-}
-
-export function computeScore(
-  likelihood:          number,
-  impactScore:         number,
-  controlEffectiveness: number | null | undefined,
-): ScorePreview {
-  const ce       = (controlEffectiveness ?? 0) / 5;
-  const severity = likelihood * impactScore;
-  const residual = Math.round(severity * (1 - ce) * 100) / 100;
-
-  let level: string;
-  if (severity >= 17)      level = 'Critical';
-  else if (severity >= 10) level = 'High';
-  else if (severity >= 5)  level = 'Medium';
-  else                     level = 'Low';
-
-  return { severity, residual, overallRating: residual, level };
-}
+// Scores are computed only in the backend (services/risk.py _score).
 
 // Index-based: 4=highest danger, 1=lowest. Works with any custom label.
 export function levelIndexClass(index: number | null | undefined): string {

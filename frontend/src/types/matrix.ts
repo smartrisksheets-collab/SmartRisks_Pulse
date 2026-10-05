@@ -19,10 +19,63 @@ export interface MatrixConfig {
   band_extreme_min:  number;
   band_extreme_max:  number;
   band_5_label:      string;
+  ce_scale:          number;
+  ce_labels:         Record<string, string>;
+  ce_scale_switch_enabled: boolean;
+  ce_options:        CeOption[];
   updated_at:        string | null;
 }
 
-export type MatrixConfigUpdate = Omit<MatrixConfig, 'updated_at'>;
+export interface CeOption {
+  value: number | null;
+  label: string;
+}
+
+export type MatrixConfigUpdate = Omit<
+  MatrixConfig,
+  'updated_at' | 'ce_scale' | 'ce_labels' | 'ce_scale_switch_enabled' | 'ce_options'
+>;
+
+export interface CeConfigUpdate {
+  ce_scale:  number;
+  ce_labels: Record<string, string>;
+  confirm:   boolean;
+}
+
+export interface CeBlockedRisk {
+  risk_id:               string;
+  description:           string;
+  control_effectiveness: number;
+}
+
+export interface CeScalePreview {
+  current_scale:  number;
+  target_scale:   number;
+  affected_count: number;
+  blocked_count:  number;
+  blocked_risks:  CeBlockedRisk[];
+}
+
+export const CE_LABEL_MAX = 40;
+
+export const CE_SCALE_OPTIONS = [
+  { value: 5, label: '5 levels (20% steps)' },
+  { value: 4, label: '4 levels (25% steps)' },
+] as const;
+
+export const CE_FALLBACK_OPTIONS: CeOption[] = [
+  { value: null, label: 'Not assessed' },
+  ...[0, 1, 2, 3, 4, 5].map((i) => ({ value: i, label: String(i) })),
+];
+
+export function ceOptionLabel(cfg: MatrixConfig | undefined, level: number | null): string {
+  const opts = cfg?.ce_options ?? CE_FALLBACK_OPTIONS;
+  return opts.find((o) => o.value === level)?.label ?? (level === null ? 'Not assessed' : String(level));
+}
+
+export function ceLevelKeys(scale: number): string[] {
+  return Array.from({ length: scale + 1 }, (_, i) => String(i));
+}
 
 export const MATRIX_DEFAULTS: MatrixConfigUpdate = {
   likelihood_scale: 5,   impact_scale: 5,

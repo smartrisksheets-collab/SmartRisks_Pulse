@@ -28,7 +28,7 @@ from app.services.phase_one import (
     log_risk_history, log_activity,
 )
 from app.services.recycle import soft_delete
-from app.services.risk_status import APPETITE_NEAR_RATIO
+from app.services.risk_status import APPETITE_NEAR_RATIO, ce_fraction, ce_avg_pct, resolve_ce_input
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +40,8 @@ def _score(
     control_effectiveness: int | None,
     cfg: MatrixConfig | None = None,
 ) -> dict:
-    ce       = (control_effectiveness or 0) / 5
+    ce_scale = int(cfg.ce_scale) if cfg is not None else 5  # type: ignore[arg-type]
+    ce       = ce_fraction(control_effectiveness, ce_scale) or 0.0
     severity = likelihood * impact_score
     residual = round(severity * (1 - ce), 2)
 
@@ -140,7 +141,12 @@ async def _audit(
 
 def _serialize(risk: Risk) -> dict:
     """Convert Risk ORM object to a JSON-safe dict for recycle bin storage."""
-    return RiskResponse.model_validate(risk).model_dump(mode='json')
+    data = RiskResponse.model_validate(risk).model_dump(mode='json')
+    lda = risk.linked_decision_at
+    sid = risk.source_submission_id
+    data['linked_decision_at']   = str(lda) if lda is not None else None
+    data['source_submission_id'] = str(sid) if sid is not None else None
+    return data
 
 def _apply_risk_filters(
     q: Select[Any],
@@ -272,7 +278,7 @@ async def create_risk(
             'Delete or archive existing risks before adding new ones.'
         )
 
-    resolved_cfg = cfg or await _get_matrix(db, tenant_id)
+    resolved_cfg = cfg or await _get_matrix(db, tenant_id, lock_share=True)
     scored   = _score(payload.likelihood, payload.impact_score, payload.control_effectiveness, resolved_cfg)
     risk_id  = await _next_id(db, tenant_id)
     now      = datetime.now(timezone.utc)
@@ -350,10 +356,11 @@ async def update_risk(
 
     prev_residual = float(risk.residual or 0)  # type: ignore[arg-type]
 
+    cfg = await _get_matrix(db, tenant_id, lock_share=True)
+
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(risk, field, value)
 
-    cfg    = await _get_matrix(db, tenant_id)
     scored = _score(risk.likelihood, risk.impact_score, risk.control_effectiveness, cfg)  # type: ignore[arg-type]
     risk.severity       = scored['severity']
     risk.level          = scored['level']
@@ -523,7 +530,8 @@ async def get_stats(
 
     # Control signal: avg control_effectiveness %, avg residual
     eff_vals = [float(r.control_effectiveness) for r in rows if r.control_effectiveness is not None]
-    avg_eff = round((sum(eff_vals) / len(eff_vals)) * 20) if eff_vals else 0
+    _ce_scale = int(_mc.ce_scale) if _mc else 5  # type: ignore[arg-type]
+    avg_eff = round(ce_avg_pct(sum(eff_vals) / len(eff_vals), _ce_scale)) if eff_vals else 0
 
     if avg_eff >= 70:
         signal_msg   = 'Controls improving — residual trending down'
@@ -580,7 +588,9 @@ async def bulk_import(
     }
     seen_in_batch: set[tuple[str, str, str]] = set()
 
-    cfg = await _get_matrix(db, tenant_id)
+    cfg = await _get_matrix(db, tenant_id, lock_share=True)
+    ce_scale_i  = int(cfg.ce_scale)        # type: ignore[arg-type]
+    ce_labels_i = dict(cfg.ce_labels)      # type: ignore[arg-type]
     for i, row in enumerate(payload.rows):
         key = (
             row.description.lower().strip(),
@@ -605,7 +615,7 @@ async def bulk_import(
                 impact_score=row.impact_score,
                 primary_impact=row.primary_impact,
                 controls=row.controls,
-                control_effectiveness=row.control_effectiveness,
+                control_effectiveness=resolve_ce_input(row.control_effectiveness, ce_scale_i, ce_labels_i),
                 mitigation_plan=row.mitigation_plan,
                 comments=row.comments,
                 logged_at=row.logged_at,

@@ -471,7 +471,7 @@ async def triage_reroute(
     triaged_by_email: str,
     payload: TriageRerouteRequest,
 ) -> RiskSubmissionResponse:
-    sub = await _get_sub_or_404(db, workspace_id, submission_id)
+    sub = await _get_pending_sub(db, workspace_id, submission_id)
 
     from datetime import date
     inc_payload = IncidentCreate(
@@ -510,7 +510,7 @@ async def triage_close(
     triaged_by_email: str,
     payload: TriageCloseRequest,
 ) -> RiskSubmissionResponse:
-    sub = await _get_sub_or_404(db, workspace_id, submission_id)
+    sub = await _get_pending_sub(db, workspace_id, submission_id)
 
     sub.status = "closed"  # type: ignore[assignment]
     sub.triaged_by = triaged_by_id  # type: ignore[assignment]

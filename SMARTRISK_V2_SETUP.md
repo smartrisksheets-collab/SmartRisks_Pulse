@@ -969,16 +969,16 @@ CREATE TABLE notification_prefs (
  
 Sourced from `RiskService.gs` (`computeRiskFields_`).
  
-Inputs: `likelihood` (1-5), `impact_score` (1-5), `control_effectiveness` (0-100)
- 
+Inputs: `likelihood` (1 to `likelihood_scale`), `impact_score` (1 to `impact_scale`), `control_effectiveness` (null for not assessed, or 0 to `ce_scale`). `ce_scale` is 4 or 5 per workspace and lives on `workspace_matrix_config` with `ce_labels` (display only).
+
 ```
-severity = likelihood x impact_score
-residual = severity x (1 - control_effectiveness / 100)
-level = Critical (>= 20), High (>= 12), Medium (>= 6), Low (< 6)
+severity       = likelihood x impact_score
+residual       = severity x (1 - ce_fraction(control_effectiveness, ce_scale))   # null counts as 0
+level          = band from workspace_matrix_config thresholds, applied to severity
 overall_rating = residual rounded to 2dp
 ```
- 
-This computation runs in `services/risk.py` on every create and update. It also runs as a utility in `utils/scoring.js` on the frontend for instant preview in the Add/Edit Risk modal.
+
+`ce_fraction(level, scale) = level / scale` in `services/risk_status.py` is the only definition. High control rating means fraction >= 0.75. Scores are computed only in `services/risk.py` `_score`, on create, update, import and recycle restore. The frontend never computes scores. A scale switch recalculates residuals in one transaction, writes `risk_history` rows with `source = 'scale_switch'`, one audit entry and one feed event, and never rewrites snapshots or past reports.
  
 ### Score Delta and Movement
  

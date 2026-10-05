@@ -11,6 +11,7 @@ import WorkspaceSettings from "../components/settings/WorkspaceSettings";
 import LookupEditor from "../components/settings/LookupEditor";
 import NotificationPrefs from "../components/settings/NotificationPrefs";
 import MatrixSettings from "../components/settings/MatrixSettings";
+import ControlEffectivenessSettings from "../components/settings/ControlEffectivenessSettings";
 import AppetiteSettings from "../components/settings/AppetiteSettings";
 import IncidentSeveritySettings from "../components/settings/IncidentSeveritySettings";
 
@@ -817,6 +818,7 @@ function BillingTab() {
 const TABS = [
   { id: "ws",      label: "Workspace",             icon: "building-2"  },
   { id: "matrix",  label: "Risk Matrix",           icon: "grid-2x2"    },
+  { id: "ce",      label: "Control Effectiveness", icon: "shield-check" },
   { id: "tax",     label: "Taxonomy",              icon: "tags"        },
   { id: "appetite", label: "Risk Appetite",        icon: "gauge"       },
   { id: "inc-sev", label: "Incident Severity & SLA", icon: "shield-alert" },
@@ -892,6 +894,9 @@ export default function Settings() {
           </div>
           <div className={`tab-panel${activeTab === "matrix" ? " active" : ""}`}>
             <MatrixSettings />
+          </div>
+          <div className={`tab-panel${activeTab === "ce" ? " active" : ""}`}>
+            <ControlEffectivenessSettings />
           </div>
           <div className={`tab-panel${activeTab === "tax" ? " active" : ""}`}>
             <LookupEditor />

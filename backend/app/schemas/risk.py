@@ -171,7 +171,7 @@ class BulkImportRow(BaseModel):
     impact_score: int     = Field(..., ge=1, le=5)
     primary_impact: str | None        = None
     controls: str | None              = None
-    control_effectiveness: int | None = Field(default=None, ge=0, le=5)
+    control_effectiveness: int | str | None = None  # resolved by resolve_ce_input in bulk_import
     mitigation_plan: str | None       = None
     comments: str | None              = None
     logged_at: date | None            = None
