@@ -185,7 +185,7 @@ export default function Frameworks() {
                   </p>
                   <div className="fw-formula-box">
                     <strong>Inherent Risk</strong> = Likelihood × Impact<br />
-                    <strong>Residual Risk</strong> = Inherent Risk × (1 − Control Effectiveness)
+                    <strong>Residual Risk</strong> = Inherent Risk × (1 − Control Effectiveness %)
                   </div>
                 </div>
                 <div className="fw-flow">
