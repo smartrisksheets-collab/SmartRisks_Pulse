@@ -1865,3 +1865,43 @@ Why: A single helper makes the table and cards unable to drift apart. Using the 
 Raised by: Workspaces need to choose a 4-band (25% to 100%) or 5-band (20% to 100%) control effectiveness scale, with custom display labels per level.
 Chosen: Option 2, the full build, over a labels-only version. `ce_scale` (4 or 5, default 5) and `ce_labels` (JSONB keyed by level) go on the matrix config table, with their own Settings tab. One backend function, `ce_fraction(level, scale) = level / scale`, replaces every hardcoded `/5`, `*20` and `>= 4`. Labels are display only, and the API accepts the level number only. Agreed rules: (1) moving from 5 to 4 is blocked while any risk is rated 5, and every scale switch shows the count of risks whose residual will be recalculated and requires confirmation; (2) level 0 stays on both scales and "Not assessed" (null) is fixed; (3) "high rating" means `fraction >= 0.75`; (4) import accepts the number or the label, case-insensitive, and rejects out-of-range values; (5) snapshots and past reports are never rewritten. Until Phase B ships, the scale selector stays locked at 5.
 Why: Long-term correctness over a quick win. A stored level keeps its number but changes meaning when the scale changes, so residuals must be recalculated, and no exact remap between scales exists. Note: `SMARTRISK_V2_SETUP.md` lines 983 to 987 still describe a 0-100 scale and are stale. Phase A updates that section.
+
+**Decision: How a control effectiveness scale switch is logged (October 2, 2026)**
+Raised by: The October 1 design left open whether the bulk recalculation writes history and feed rows.
+Chosen: One `risk_history` row per affected risk, tagged by a new `source` column (`user`, `scale_switch`, `import`, `restore`) instead of a marker inside `changed_by`. One workspace-level feed event (`ce_scale_change`). One audit entry (module `Settings`), which also marks the switch date. Only risks rated above 0 are recalculated, because 0 and null give the same residual on both scales. `score_delta`, `movement`, freshness and `level` are not touched, since a switch is not a risk movement or a review.
+Why: A self-describing record means no reader has to parse conventions. Per-risk feed rows would flood the operational feed.
+
+**Decision: Snapshots are self-describing across scale switches (October 2, 2026)**
+Raised by: Snapshots stored the raw control level, so deltas across a switch compared different units.
+Chosen: Daily snapshot entries store `severity`, `ce_scale` and `ce_fraction` next to the raw level. `get_daily_deltas` rebases the earlier residual onto the current scale before subtracting, so every brief consumer sees only real movement, and it adds `scaleChanged`. Monthly snapshots gain `control_strength_pct` (migration 058), and older rows are read as scale 5. Snapshots are never rewritten. The rebase keeps a small read-side copy of the residual formula, because `_score` needs a config object the snapshot does not have.
+Why: Attributing a change to methodology is more honest than suppressing deltas, and it keeps rule 5.
+
+**Decision: Concurrency rules for the scale switch (October 2, 2026)**
+Raised by: A risk edit during a switch could save a residual calculated on the old scale.
+Chosen: The switch locks the matrix config row `FOR UPDATE`. Risk create, update, import and recycle restore read it `FOR SHARE`. `update_risk` reads the config before applying field changes, because autoflush would otherwise lock the risk row first and deadlock against the switch.
+Why: Writes wait cleanly for an in-flight switch and then score on the new scale.
+
+**Decision: The scale switch stays locked until Phase C, not Phase B (October 2, 2026)**
+Raised by: The October 1 entry said the selector unlocks after Phase B.
+Chosen: A backend constant, `CE_SCALE_SWITCH_ENABLED`, enforces the lock and is exposed to the UI. It stays `False` until Phase C is tested on staging.
+Why: Until Phase C, the form, import and displays still assumed 5 levels, so a 4-scale workspace would have seen a level-5 option the backend rejects. A UI-only lock could be bypassed by a direct API call.
+
+**Decision: Control effectiveness labels are built and resolved in the backend (October 8, 2026)**
+Raised by: Option labels were hardcoded in RiskForm, and the importer sent `Number(label)`, which became null and silently imported as Not assessed.
+Chosen: The matrix config response carries `ce_options` (built once from `ce_label`). Import sends the raw text, and `resolve_ce_input` resolves a number or a label, case-insensitively, rejecting out-of-range values. Risk create and update still take the number only. The unused frontend `computeScore` was removed.
+Why: Derived labels and scores have one backend definition, per the V2 conventions.
+
+**Decision: Recycle restore rescores and restores every field (October 2, 2026)**
+Raised by: Restored risks reused residuals saved at deletion time, and seven fields were dropped. Two of them were never serialized.
+Chosen: `restore_item` rescores through `_score` on the current matrix and scale, rejects a rating above the scale with a clear message, and restores every field. `_serialize` adds `linked_decision_at` and `source_submission_id` without changing `RiskResponse`.
+Why: A restored risk must be valid under today's configuration. Items already in the bin cannot recover the two missing fields.
+
+**Decision: Unified trend card uses a calendar axis (October 8, 2026)**
+Raised by: A workspace with no monthly snapshots showed a single month and lost its earlier incident volume.
+Chosen: The axis is the last 6 calendar months. Incident bars come from live incidents for every month. Residual dots come from the month's snapshot, or live data for the current month, otherwise empty. Leading empty months are trimmed. The Baseline badge and trend findings still depend on snapshots only. Rebuilding past residual points from `risk_history` is deferred.
+Why: Incident data exists regardless of snapshots. Missed snapshots, as on a sleeping staging instance, should not hide it.
+
+**Decision: Connectors direction recorded as a proposal, not a commitment (October 8, 2026)**
+Raised by: The goal of making SmartRisk the intelligence layer over an organisation's existing tools and data.
+Chosen: Proposed order: saved import mappings, a KRI model with manual readings, a push API with workspace keys, a durable job runner, then selected pull connectors, then bank-grade options. KRI readings never change risk scores automatically. Metrics are collected, not raw records. A partner explainer PDF was produced, and no build is scheduled.
+Why: The first three steps reuse existing patterns and need no customer credentials. Scheduled pulls must wait for a reliable job runner.

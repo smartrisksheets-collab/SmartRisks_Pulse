@@ -3,7 +3,7 @@
 **Product:** SmartRisk Pulse v2
 **Stack:** FastAPI + React + Supabase + Render + Vercel
 **Setup document:** SMARTRISK_V2_SETUP.md
-**Last updated:** September 17, 2026
+**Last updated:** October 8, 2026
  
 ---
  
@@ -15,9 +15,75 @@ At the end of every session Claude outputs a fresh version of this file with all
  
 ---
  
-**Phase:** Product polish, AI calibration, and UI refinement. Configurable control effectiveness scale (Phase A to C) is next.
-**Status:** Session 25, October 1, 2026: unified dashboard alignment, table padding standard, triage integrity and drafts, promote category combo, CSV export rebuild, stat card filter parity. Control effectiveness scale designed and agreed. See session log below.
-**Next action:** Begin next session by reading SMARTRISK_V2_SETUP.md, SMARTRISK_V2_DECISIONS.md, then this file. First task: confirm the carried-over checks listed under Session 25. Then start Control Effectiveness Phase A.
+**Phase:** Product polish, AI calibration, and UI refinement. Configurable control effectiveness scale is complete in code, with the scale switch still locked pending staging tests.
+**Status:** Session 26, October 2 to 8, 2026: control effectiveness Phases A, B and C, migrations 057 and 058, unified trend calendar axis, triage reroute and close fix, settings section divider, connectors explainer. See session log below.
+**Next action:** Begin next session by reading SMARTRISK_V2_SETUP.md, SMARTRISK_V2_DECISIONS.md, then this file. First task: work through the carried-over list under Session 26, starting with migrations on every database.
+
+---
+
+### Session 26: October 2 to 8, 2026, Control Effectiveness Scale, Trend Axis, Triage Fix
+
+**Completed:**
+
+**Control effectiveness, Phase A (data and settings)**
+- Migration 057: `ce_scale` (4 or 5, default 5, CHECK) and `ce_labels` (JSONB, seeded with the existing labels) on `workspace_matrix_config`, and `source` on `risk_history` (`user`, `scale_switch`, `import`, `restore`, CHECK).
+- `ce_fraction()` in `risk_status.py` is the single definition. `_score` uses the workspace scale.
+- `CeConfigUpdate` validates labels: trimmed, 40 characters, unique on the effective label, no label equal to another level's number.
+- `GET /api/v1/matrix-config/control-effectiveness/preview` and `PUT /api/v1/matrix-config/control-effectiveness`.
+- Scale switch: config row `FOR UPDATE`, blocked while any risk is above the target scale (the dialog and error name up to 20 blocking risks), confirm required, set-based residual recalculation, one `risk_history` row per affected risk with `source = scale_switch`, one audit entry (module `Settings`) and one feed event (`ce_scale_change`).
+- Risk create, update, import and restore read the config `FOR SHARE`. `update_risk` reads the config before applying field changes, which avoids a deadlock with a switch.
+- `CE_SCALE_SWITCH_ENABLED` backend lock, exposed to the UI as `ce_scale_switch_enabled`.
+- Control Effectiveness settings tab with the scale chips, level labels and a confirm dialog.
+- Recycle restore rescores against the current matrix and scale, and restores every field. `_serialize` now keeps `linked_decision_at` and `source_submission_id`.
+
+**Control effectiveness, Phase B (backend readers)**
+- `HIGH_CONTROL_RATING` removed. Added `ce_avg_pct`, `is_high_control` and `ce_label`. `is_contradicted` takes the scale.
+- Every `/5`, `*20` and `>= 4` replaced in the dashboard KPIs and evidence, the register stats, the executive dashboard, `report_facts` (the percentage map was removed and `_pulse_residual` takes the scale) and the AI insight prompt (it previously said "4%" for level 4).
+- Migration 058: `snapshots_monthly.control_strength_pct`. The monthly delta reads it, falling back to the raw value on scale 5 for older rows.
+- Daily snapshot entries now store `severity`, `ce_scale` and `ce_fraction`. `get_daily_deltas` rebases the baseline residual across a scale switch and adds `scaleChanged`.
+- Report methodology and the PDF Engine line state the scale.
+
+**Control effectiveness, Phase C (frontend)**
+- The backend builds `ce_options`. RiskForm, RiskDetailModal and the UnifiedSection `/ 5` text and note use it.
+- Import sends the raw cell text, and `resolve_ce_input` resolves a number or a label in the backend. This fixed labels being silently imported as Not assessed.
+- Feed wording added for `ce_scale_change`, and `Settings` added to the audit module filter.
+- The dead frontend `computeScore` was removed.
+- `SMARTRISK_V2_SETUP.md` Risk Scoring Engine section updated.
+
+**Other fixes**
+- Unified trend card uses a calendar axis covering the last 6 months. Incident bars come from live incidents, and residual dots come from snapshots plus a live current month. Diagnosed on staging, which has no monthly snapshots because its jobs only run while the instance is awake.
+- Triage reroute and close called the undefined `_get_sub_or_404`, causing a NameError. Both now use `_get_pending_sub`. The reroute toast shows the backend message.
+- `.modal-hd` gradient replaced with a solid tint.
+- A navy "Incident Configuration" divider was added before Incident Category in LookupEditor.
+- Connectors: a plain-language partner explainer PDF was produced. No build decision has been made.
+
+**Status:** Complete in code. The switch lock stays `False` until the staging tests pass.
+
+**Carried over (do these first next session):**
+1. Confirm migrations 057 and 058 are applied on production Supabase, staging Supabase and local (`alembic upgrade head`, with `alembic heads` showing `058`). One environment errored before the SQL was run.
+2. Run the Phase C tests:
+   - The form dropdown shows the labels.
+   - The detail modal shows the label.
+   - Import accepts "Weak", "4" and "Not assessed", and rejects "Bogus".
+   - On staging only, set `CE_SCALE_SWITCH_ENABLED = True`, switch to 4, and check the counts, residuals, feed, audit and form.
+   - Confirm a level-5 risk blocks the switch.
+   Then decide whether to enable the switch in production.
+3. Retest triage reroute and close, plus a double action returning 409. Verify the hardcoded `severity='Medium'` exists in each workspace's incident severity list.
+4. Check whether Ruff `F821` is enabled and whether CI runs Ruff on `app/`.
+5. Scheduler conflict: SETUP section 15 says Postgres job store, while staging behaves like an in-memory store on a sleeping instance. Read `app_main.py` and decide on a durable runner. This is needed before any scheduled connector.
+6. Open decision: rebuild past residual points from `risk_history` (complete on the staging workspace checked), and whether to use logged dates as marked estimates. Check whether `_next_id` can reuse a deleted ID first.
+7. Open decision: two remaining gradients in `index.css` (around lines 1984 and 4463).
+8. Confirm `facts.py`, `narrative.py` and `build_report.py` (the standalone sample report tool, still on "of 5") are out of scope.
+9. Connectors: await the partner discussion. The first build would be saved import mappings and a manual KRI model.
+10. Re-upload every file listed below to the project, since the project copies are now stale.
+
+**Files changed this session (36, plus 2 migrations):**
+
+Backend: `alembic/versions/057_add_ce_scale_and_history_source.py` (new), `alembic/versions/058_add_control_strength_pct_to_snapshots_monthly.py` (new), `app/models/matrix_config.py`, `app/models/risk_history.py`, `app/models/snapshot.py`, `app/schemas/matrix_config.py`, `app/schemas/risk.py`, `app/services/matrix_config.py`, `app/services/risk_status.py`, `app/services/risk.py`, `app/services/recycle.py`, `app/services/snapshot.py`, `app/services/dashboard.py`, `app/services/report.py`, `app/services/report_facts.py`, `app/services/pdf_report.py`, `app/services/ai_risk.py`, `app/services/submission.py`, `app/api/v1/routes/matrix.py`
+
+Frontend: `src/components/settings/ControlEffectivenessSettings.tsx` (new), `src/pages/Settings.tsx`, `src/pages/AuditLog.tsx`, `src/pages/TriageQueue.tsx`, `src/types/matrix.ts`, `src/types/report.ts`, `src/types/risk.ts`, `src/services/matrix.ts`, `src/hooks/useMatrix.ts`, `src/utils/scoring.ts`, `src/utils/feedEvents.ts`, `src/components/risks/RiskForm.tsx`, `src/components/risks/RiskDetailModal.tsx`, `src/components/risks/ImportModal.tsx`, `src/components/dashboard/UnifiedSection.tsx`, `src/components/settings/LookupEditor.tsx`, `src/index.css`
+
+Docs: `SMARTRISK_V2_SETUP.md` (Risk Scoring Engine section), `SMARTRISK_V2_DECISIONS.md` (8 entries appended)
 
 ---
 

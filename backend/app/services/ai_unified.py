@@ -39,11 +39,12 @@ HARD RULES:
 - Paragraph 2, at most two sentences: the one thing to act on first, naming the record IDs or category
   involved. If confidence is Low, end with a short clause saying the findings are indicative.
 - Use only the facts provided. Never invent numbers, thresholds, dates, durations, owners or trends.
+- Never name the organisation, any company, person, product or place. Refer to it only as
+  "the organisation". The only identifiers allowed are the record IDs and category names in the facts.
 - The health score is on a 0 to 100 scale. Appetite thresholds and residual scores are on the matrix scale
   given as scale_max. Never compare the health score with an appetite threshold.
 - If snapshots_held is below 2, do not describe any trend.
 - Wrap only key figures and record IDs in <b></b>. No other markup. Do not use em dashes."""
-
 
 def _safe(text: str) -> str:
     """Escape everything, then re-allow <b> only."""
