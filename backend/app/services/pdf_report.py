@@ -1557,6 +1557,251 @@ def _render_suppressed_note(label: str, reason: str, requirement: str) -> list:
     return out
 
 
+# ── Risk & incident correlation ────────────────────────────────────────────────
+
+def _esc(v: Any) -> str:
+    return str(v if v is not None else "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _fmt_period(period: dict | None) -> str:
+    if not period:
+        return ""
+
+    def _d(iso: str | None) -> str:
+        if not iso:
+            return ""
+        try:
+            _dt = date.fromisoformat(iso[:10])
+            return f"{_dt.day} {_dt:%b %Y}"
+        except ValueError:
+            return iso
+
+    frm, to = _d(period.get("from")), _d(period.get("to"))
+    return f"{frm} to {to}" if frm else f"All incidents up to {to}"
+
+
+def _ids_line(ids: list[str], limit: int = 4) -> str:
+    if not ids:
+        return ""
+    shown = ids[:limit]
+    rest = len(ids) - len(shown)
+    return " \u00b7 ".join(shown) + (f" and {rest} more" if rest > 0 else "")
+
+
+def _corr_card_cells(title: str, tag: str, tag_color: str, value: int, of_text: str,
+                     value_color: str, explain: str, detail: str) -> list:
+    """Five stacked cells for one card. Cards sit side by side in one grid so the
+    title, value, explanation and detail rows line up across all three."""
+    return [
+        Paragraph(f'<font name="{f_bold()}" size="7.5" color="#1F2854">{_esc(title.upper())}</font>',
+                  ParagraphStyle("cc_t", leading=10)),
+        Paragraph(f'<font name="{f_bold()}" size="7" color="{tag_color}">{_esc(tag)}</font>' if tag else "",
+                  ParagraphStyle("cc_g", leading=9)),
+        Paragraph(
+            f'<font name="{f_bold()}" size="20" color="{value_color}">{value}</font>'
+            f'<font name="{f_regular()}" size="9" color="#64748b">&nbsp;&nbsp;{_esc(of_text)}</font>',
+            ParagraphStyle("cc_v", leading=24),
+        ),
+        Paragraph(explain, ParagraphStyle(
+            "cc_e", fontName=f_regular(), fontSize=8, textColor=colors.HexColor("#334155"), leading=11,
+        )),
+        Paragraph(_esc(detail), ParagraphStyle(
+            "cc_d", fontName=f_regular(), fontSize=7, textColor=MUTED, leading=9.5,
+        )),
+    ]
+
+
+def _corr_cards(cards: list[tuple[list, str]], card_w: float, gap: float) -> Table:
+    """cards: [(cells, accent_hex), ...]. Gap columns carry no border."""
+    n_rows = len(cards[0][0])
+    data: list[list] = []
+    widths: list[float] = []
+    for i in range(len(cards)):
+        widths.append(card_w)
+        if i < len(cards) - 1:
+            widths.append(gap)
+    for r in range(n_rows):
+        row: list = []
+        for i, (cells, _) in enumerate(cards):
+            row.append(cells[r])
+            if i < len(cards) - 1:
+                row.append("")
+        data.append(row)
+    style: list = [
+        ("VALIGN",        (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 8),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 8),
+        ("TOPPADDING",    (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ("TOPPADDING",    (0, 0), (-1, 0), 7),
+        ("BOTTOMPADDING", (0, -1), (-1, -1), 7),
+    ]
+    for i, (_, accent) in enumerate(cards):
+        c = i * 2
+        style += [
+            ("BOX",       (c, 0), (c, -1), 0.5, BORDER),
+            ("LINEABOVE", (c, 0), (c, 0), 2.5, colors.HexColor(accent)),
+            ("LINEABOVE", (c, n_rows - 1), (c, n_rows - 1), 0.25, BORDER),
+        ]
+        if i < len(cards) - 1:
+            style.append(("LEFTPADDING", (c + 1, 0), (c + 1, -1), 0))
+            style.append(("RIGHTPADDING", (c + 1, 0), (c + 1, -1), 0))
+    tbl = Table(data, colWidths=widths)
+    tbl.setStyle(TableStyle(style))
+    return tbl
+
+
+def _corr_table(header: list[str], rows: list[list], widths: list[float]) -> Table:
+    cell = ParagraphStyle("ct", fontName=f_regular(), fontSize=8,
+                          textColor=colors.HexColor("#333333"), leading=10.5)
+    head = ParagraphStyle("cth", fontName=f_semibold(), fontSize=8, textColor=WHITE, leading=10.5)
+    body = [[c if isinstance(c, Paragraph) else Paragraph(_esc(c), cell) for c in r] for r in rows]
+    tbl = Table([[Paragraph(_esc(h), head) for h in header]] + body, colWidths=widths, repeatRows=1)
+    tbl.setStyle(TableStyle([
+        ("BACKGROUND",     (0, 0), (-1, 0), NAVY),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [WHITE, LIGHT]),
+        ("GRID",           (0, 0), (-1, -1), 0.25, BORDER),
+        ("TOPPADDING",     (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING",  (0, 0), (-1, -1), 4),
+        ("LEFTPADDING",    (0, 0), (-1, -1), 4),
+        ("VALIGN",         (0, 0), (-1, -1), "TOP"),
+    ]))
+    return tbl
+
+
+def _render_risk_incident_correlation(data: dict, _ai: str | None) -> list:
+    out = _block_header("Risk &amp; Incident Correlation")
+    meta = ParagraphStyle("corr_meta", fontName=f_regular(), fontSize=8, textColor=MUTED, leading=11)
+    period = _fmt_period(data.get("period"))
+    intro = "What the risk register and the incident log say about each other."
+    if period:
+        intro += f" Incidents reported {_esc(period)}; risks are the full register."
+    out.append(Paragraph(intro, meta))
+    out.append(Spacer(1, 3 * mm))
+
+    if data.get("no_data"):
+        out.extend(_narrative(data.get("narrative")))
+        return out
+
+    mat   = data.get("materialised") or {}
+    unl   = data.get("unlinked") or {}
+    ctl   = data.get("controls") or {}
+    n_inc = int(data.get("incidents_total") or 0)
+    n_rsk = int(data.get("risks_total") or 0)
+    uncov = list(unl.get("uncovered_categories") or [])
+    n_mat = int(mat.get("count") or 0)
+    n_con = int(ctl.get("contradicted") or 0)
+
+    unl_explain = "Incidents with no link to a register risk."
+    if uncov:
+        k = len(uncov)
+        unl_explain += (
+            f" <b>Across all incidents, {k} {'category has' if k == 1 else 'categories have'} "
+            "no covering risk category.</b>"
+        )
+    mat_accent = "#d97706"
+    unl_accent = "#dc2626"
+    ctl_accent = "#dc2626" if n_con else "#10b981"
+    ctl_explain = (
+        "Rated highly for control effectiveness, yet an incident was still linked to the risk. "
+        "These ratings are the first to test."
+        if n_mat else "No risks materialised in this period, so no control rating was contradicted."
+    )
+    cards = _corr_cards([
+        (_corr_card_cells(
+            "Risks that materialised", "INDICATIVE" if data.get("indicative") else "", "#64748b",
+            n_mat, f"of {n_rsk} risks", mat_accent,
+            "On the register, with at least one incident linked to them in this period.",
+            _ids_line(list(mat.get("ids") or [])),
+        ), mat_accent),
+        (_corr_card_cells(
+            "Incidents with no matching risk", "BLIND SPOT" if uncov else "", "#dc2626",
+            int(unl.get("count") or 0), f"of {n_inc} incidents", unl_accent,
+            unl_explain, _ids_line(uncov, 3),
+        ), unl_accent),
+        (_corr_card_cells(
+            "Control ratings vs reality", f"{n_con} CONTRADICTED" if n_con else "", "#dc2626",
+            n_con, f"of {n_mat} materialised" if n_mat else "contradicted", ctl_accent, ctl_explain,
+            f"{ctl.get('evidenced', 0)} of {ctl.get('rated', 0)} control ratings carry a recent independent test",
+        ), ctl_accent),
+    ], card_w=56 * mm, gap=3 * mm)
+    out.append(cards)
+    out.extend(_narrative(data.get("narrative")))
+
+    red = ParagraphStyle("corr_red", fontName=f_bold(), fontSize=8,
+                         textColor=colors.HexColor("#dc2626"), leading=10.5)
+
+    # ── Detail: materialised risks ───────────────────────────────────────────
+    mat_rows = data.get("materialised_rows") or []
+    if mat_rows:
+        out.append(Spacer(1, 3 * mm))
+        out.append(Paragraph("RISKS THAT MATERIALISED", _S["section_head"]))
+        rows: list[list] = []
+        for m in mat_rows:
+            rating = m.get("control_rating")
+            rating_txt = "\u2014" if rating is None else str(rating)
+            latest_sev = m.get("latest_incident_severity")
+            rows.append([
+                m.get("risk_id", ""),
+                m.get("category") or "\u2014",
+                m.get("owner") or "Unassigned",
+                Paragraph(f"{rating_txt} \u00b7 contradicted", red) if m.get("contradicted") else rating_txt,
+                str(m.get("incident_count", 0)),
+                " ".join(filter(None, [m.get("latest_incident_id"), f"({latest_sev})" if latest_sev else None])),
+            ])
+        out.append(_corr_table(
+            ["Risk", "Category", "Owner", "Control rating", "Linked", "Latest incident"],
+            rows, [18 * mm, 32 * mm, 34 * mm, 30 * mm, 14 * mm, 42 * mm],
+        ))
+
+    # ── Detail: unlinked incidents ───────────────────────────────────────────
+    unl_rows = data.get("unlinked_rows") or []
+    if unl_rows:
+        out.append(Spacer(1, 3 * mm))
+        out.append(Paragraph("INCIDENTS WITH NO MATCHING RISK", _S["section_head"]))
+        rows = []
+        for u in unl_rows:
+            cov = u.get("covered")
+            cov_cell: Any = (
+                "\u2014" if cov is None else
+                "Covered category, not linked" if cov else
+                Paragraph("No covering risk", red)
+            )
+            rows.append([
+                u.get("incident_id", ""),
+                (u.get("title") or "\u2014")[:70],
+                u.get("category") or "Other",
+                u.get("severity") or "\u2014",
+                (u.get("reported_at") or "\u2014")[:10],
+                cov_cell,
+            ])
+        out.append(_corr_table(
+            ["Incident", "Title", "Category", "Severity", "Reported", "Coverage"],
+            rows, [24 * mm, 46 * mm, 28 * mm, 18 * mm, 20 * mm, 34 * mm],
+        ))
+
+    # ── Basis notes ──────────────────────────────────────────────────────────
+    notes = [
+        "A link records an association made when the incident was triaged. It is not a finding of cause.",
+    ]
+    if uncov:
+        notes.append(
+            "Coverage is read from the incident-to-risk category mapping in Settings. A category with no "
+            "mapping reads as uncovered, so a blind spot may reflect configuration rather than a gap in the register."
+        )
+    if data.get("mapping_configured") is False:
+        notes.append("The category mapping could not be read for this report, so coverage is not assessed.")
+    if data.get("indicative"):
+        notes.append(f"Indicative: based on {n_inc} incident{'s' if n_inc != 1 else ''}, fewer than five.")
+    if data.get("rows_truncated"):
+        notes.append("Tables show the first 15 rows; the counts above include every record.")
+    note_s = ParagraphStyle("corr_note", fontName=f_regular(), fontSize=7, textColor=MUTED, leading=9.5)
+    out.append(Spacer(1, 2 * mm))
+    for n in notes:
+        out.append(Paragraph(n, note_s))
+    return out
+
+
 # ── Block renderer registry ────────────────────────────────────────────────────
 def _render_methodology(data: dict, _ai: str | None) -> list:
     """Methodology block: evidence basis, residual model, assurance coverage."""
@@ -1852,6 +2097,7 @@ _RENDERERS: dict[str, Any] = {
     "executive-dashboard":  _render_executive_dashboard,
     "methodology":          _render_methodology,
     "risk-heat-map":        _render_risk_heat_map,
+    "risk-incident-correlation": _render_risk_incident_correlation,
 }
 
 _LABELS: dict[str, str] = {
@@ -1877,6 +2123,7 @@ _LABELS: dict[str, str] = {
     "key-risk-movements":   "Key Risk Movements",
     "methodology":          "Methodology",
     "risk-heat-map":        "Risk Heat Map",
+    "risk-incident-correlation": "Risk &amp; Incident Correlation",
 }
 
 
@@ -1923,6 +2170,7 @@ def _make_doc(
     org_name: str,
     is_landscape: bool,
     period: str = "",
+    has_cover: bool = True,
 ) -> BaseDocTemplate:
     page   = landscape(A4) if is_landscape else A4
     margin = 15 * mm          # GAS portrait uses 15mm left/right margins → 180mm content width
@@ -1967,10 +2215,11 @@ def _make_doc(
         page[1] - 18 * mm - 14 * mm,
         id="content",
     )
-    doc.addPageTemplates([
-        PageTemplate(id="cover",   frames=[frame], onPage=_on_cover_page),
-        PageTemplate(id="content", frames=[frame], onPage=_on_page),
-    ])
+    cover_t   = PageTemplate(id="cover",   frames=[frame], onPage=_on_cover_page)
+    content_t = PageTemplate(id="content", frames=[frame], onPage=_on_page)
+    # ReportLab starts page 1 on the first template in the list. Without a cover,
+    # page 1 must be a content page (navy header, no cover accent square).
+    doc.addPageTemplates([cover_t, content_t] if has_cover else [content_t, cover_t])
     return doc
 
 
@@ -2022,8 +2271,8 @@ def build_pdf(
     else:
         period = today_str
 
-    doc = _make_doc(buf, title, display_name, is_landscape, period)
     has_cover  = settings_p.get("cover_page", "Yes") != "No"
+    doc = _make_doc(buf, title, display_name, is_landscape, period, has_cover=has_cover)
     canvas_cls = _make_canvas_cls(
         landscape(A4) if is_landscape else A4,
         display_name,

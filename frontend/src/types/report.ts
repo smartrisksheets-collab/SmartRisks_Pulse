@@ -23,7 +23,8 @@ export type BlockKey =
   | 'incident-analytics'
   | 'executive-dashboard'
   | 'risk-heat-map'
-  | 'methodology';
+  | 'methodology'
+  | 'risk-incident-correlation';
 
 // ── Block data shapes (mirrors Python service output) ─────────────────────────
 
@@ -233,6 +234,43 @@ export interface MethodologyData {
   unasserted:              number;
 }
 
+export interface CorrelationMaterialisedRow {
+  risk_id:                  string;
+  category:                 string | null;
+  owner:                    string | null;
+  residual:                 number;
+  control_rating:           number | null;
+  contradicted:             boolean;
+  incident_count:           number;
+  latest_incident_id:       string;
+  latest_incident_severity: string | null;
+}
+
+export interface CorrelationUnlinkedRow {
+  incident_id: string;
+  title:       string | null;
+  category:    string;
+  severity:    string | null;
+  reported_at: string | null;
+  covered:     boolean | null;   // null when the category mapping could not be read
+}
+
+export interface RiskIncidentCorrelationData {
+  period:          { from: string | null; to: string };
+  risks_total:     number;
+  incidents_total: number;
+  indicative:      boolean;
+  no_data:         boolean;
+  narrative:       string;
+  materialised?:   { count: number; incident_count: number; ids: string[] };
+  unlinked?:       { count: number; uncovered_categories: string[]; uncovered_incidents: number };
+  controls?:       { materialised: number; contradicted: number; rated: number; evidenced: number };
+  mapping_configured?: boolean;
+  materialised_rows?:  CorrelationMaterialisedRow[];
+  unlinked_rows?:      CorrelationUnlinkedRow[];
+  rows_truncated?:     boolean;
+}
+
 export type BlockData =
   | ExposureIndexData
   | RiskSnapshotData
@@ -251,7 +289,8 @@ export type BlockData =
   | IncidentAnalyticsData
   | ExecutiveDashboardData
   | RiskHeatMapData
-  | MethodologyData;
+  | MethodologyData
+  | RiskIncidentCorrelationData;
 
 export type BlockDataMap = Record<string, BlockData>;
 
@@ -318,6 +357,8 @@ export interface DateRange {
   date_to:   string;
 }
 
+export type ExportFormat = 'pdf' | 'pptx';
+
 // ── Build step state ───────────────────────────────────────────────────────────
 
 export type BuildStep = 1 | 2 | 3;
@@ -346,6 +387,7 @@ export const BLOCK_LABELS: Record<BlockKey, string> = {
   'executive-dashboard':  'Executive Dashboard',
   'risk-heat-map':        'Risk Heat Map',
   'methodology':          'Methodology',
+  'risk-incident-correlation': 'Risk & Incident Correlation',
 };
 
 export const AI_BLOCKS = new Set<BlockKey>([

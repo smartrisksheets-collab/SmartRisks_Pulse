@@ -23,6 +23,7 @@ from app.schemas.report import (
 from app.services import report as report_service
 from app.services import ai_report as ai_report_service
 from app.services import pdf_report
+from app.services import pptx_report
 from app.services import email as email_service
 
 logger = logging.getLogger(__name__)
@@ -128,7 +129,13 @@ async def generate_ai_narrative(
         raise ServerError("AI narrative generation failed. Please try again.")
 
 
-# ── Export PDF ─────────────────────────────────────────────────────────────────
+# ── Export PDF / PPTX ──────────────────────────────────────────────────────────
+
+_MIME = {
+    "pdf":  "application/pdf",
+    "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+}
+
 
 @router.post("/export")
 @limiter.limit("10/minute")
@@ -139,12 +146,14 @@ async def export_report(
     claims:  dict         = Depends(get_active_tenant),
 ):
     tenant_id = UUID(claims["active_tenant_id"])
+    fmt = payload.format
 
     try:
         settings_dict = payload.settings.model_dump()
         _org, _ = await _get_tenant_name(db, tenant_id)
         _logo   = await _fetch_logo_bytes(db, tenant_id)
-        pdf_bytes = pdf_report.build_pdf(
+        builder = pptx_report.build_pptx if fmt == "pptx" else pdf_report.build_pdf
+        file_bytes = builder(
             blocks=payload.blocks,
             block_data=payload.block_data,
             ai_data=payload.ai_data,
@@ -157,18 +166,19 @@ async def export_report(
         )
         import base64
         title    = payload.settings.report_title or "SmartRisk_Report"
-        filename = title.replace(" ", "_") + ".pdf"
-        return {
-            "data": {
-                "pdf_base64": base64.b64encode(pdf_bytes).decode(),
-                "file_name":  filename,
-            },
-            "error": None,
-            "meta":  {},
+        filename = title.replace(" ", "_") + f".{fmt}"
+        encoded  = base64.b64encode(file_bytes).decode()
+        data: dict[str, str] = {
+            "file_base64": encoded,
+            "file_name":   filename,
+            "mime_type":   _MIME[fmt],
         }
+        if fmt == "pdf":
+            data["pdf_base64"] = encoded   # kept for clients and tests that still read this key
+        return {"data": data, "error": None, "meta": {}}
     except Exception as exc:
-        logger.error("export_report failed | tenant=%s | %s", tenant_id, exc, exc_info=True)
-        raise ServerError("PDF export failed. Please try again.")
+        logger.error("export_report failed | tenant=%s | format=%s | %s", tenant_id, fmt, exc, exc_info=True)
+        raise ServerError(f"{'PowerPoint' if fmt == 'pptx' else 'PDF'} export failed. Please try again.")
 
 
 # ── Email report ───────────────────────────────────────────────────────────────
@@ -202,8 +212,11 @@ async def email_report(
             org_name=_org,
             logo_bytes=_logo,
         )
+        to_addr = payload.to.strip()
+        cc_list = [e for e in payload.cc if e != to_addr.lower()]
         await email_service.send_report_email(
-            to=payload.to,
+            to=to_addr,
+            cc=cc_list,
             subject=payload.subject or "SmartRisk Report",
             title=title,
             block_data=payload.block_data,

@@ -224,6 +224,7 @@ async def send_report_email(
     org_name:   str,
     pdf_bytes:  bytes,
     file_name:  str,
+    cc:         list[str] | None = None,
 ) -> None:
     """
     Emails the PDF report as an attachment with an HTML summary body.
@@ -252,8 +253,11 @@ async def send_report_email(
         ],
     }
 
+    if cc:
+        params["cc"] = cc  # type: ignore[typeddict-unknown-key]
+
     resend.Emails.send(params)
-    logger.info("Report email sent | to=%s | subject=%s", to, subject)
+    logger.info("Report email sent | to=%s | cc=%d | subject=%s", to, len(cc or []), subject)
 
 
 # ── External submission emails ────────────────────────────────────────────────

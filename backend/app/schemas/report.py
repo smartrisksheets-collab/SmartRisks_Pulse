@@ -3,7 +3,13 @@
 from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
-from pydantic import BaseModel, Field
+import re
+from typing import Literal
+
+from pydantic import BaseModel, Field, field_validator
+
+_EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+_MAX_CC = 5
 
 
 # ── Report settings (canvas right panel) ─────────────────────────────────────
@@ -55,6 +61,7 @@ class ReportExportRequest(BaseModel):
     date_from:   str | None = None
     date_to:     str | None = None
     orientation: str        = "portrait"
+    format:      Literal["pdf", "pptx"] = "pdf"
 
 
 # ── Email request ─────────────────────────────────────────────────────────────
@@ -67,7 +74,19 @@ class ReportEmailRequest(BaseModel):
     date_from:   str | None = None
     date_to:     str | None = None
     to:          str
+    cc:          list[str] = Field(default_factory=list)
     subject:     str = "SmartRisk Report"
+
+    @field_validator("cc")
+    @classmethod
+    def _check_cc(cls, v: list[str]) -> list[str]:
+        cleaned = list(dict.fromkeys(e.strip().lower() for e in v if e.strip()))
+        if len(cleaned) > _MAX_CC:
+            raise ValueError(f"CC is limited to {_MAX_CC} addresses.")
+        bad = next((e for e in cleaned if not _EMAIL_RE.match(e)), None)
+        if bad is not None:
+            raise ValueError(f"Invalid CC address: {bad}")
+        return cleaned
 
 
 # ── Template CRUD ─────────────────────────────────────────────────────────────

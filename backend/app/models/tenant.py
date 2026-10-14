@@ -19,7 +19,7 @@ class Tenant(Base):
     plan_expires_at = Column(Date)
     max_risks = Column(Integer, nullable=False, server_default="1000")
     max_users = Column(Integer, nullable=False, server_default="25")
-    modules = Column(ARRAY(Text), nullable=False, server_default="'{risk}'")
+    modules = Column(ARRAY(Text), nullable=False, server_default="'{risk,incident}'")
     currency_symbol = Column(String, nullable=False, server_default="₦")
     logo_url = Column(String)
     org_size = Column(String)

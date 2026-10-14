@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
 
-from app.services.report import ReportContext, RiskRow
+from app.services.report import ReportContext, RiskRow, compute_risk_incident_correlation
 from app.services.risk_status import ce_avg_pct
 
 SMALL_N_THRESHOLD = 5     # below this, percentage framing is suppressed
@@ -203,6 +203,25 @@ class ReportFacts:
     def snapshot_count(self) -> int:
         return len(self.ctx.snapshots)
 
+    def correlation(self) -> dict | None:
+        """Counts from the correlation block, computed by the same function the
+        block uses so the narrative and the PDF section can never disagree.
+        None when incidents are disabled or no incidents fall in the period."""
+        if not self.incidents_enabled:
+            return None
+        c = compute_risk_incident_correlation(self.ctx)
+        if c.get("status") == "suppressed" or c.get("no_data"):
+            return None
+        return {
+            "indicative":            c["indicative"],
+            "incidents_total":       c["incidents_total"],
+            "risks_total":           c["risks_total"],
+            "risks_materialised":    c["materialised"]["count"],
+            "incidents_unlinked":    c["unlinked"]["count"],
+            "uncovered_categories":  c["unlinked"]["uncovered_categories"],
+            "contradicted_controls": c["controls"]["contradicted"],
+        }
+
     # ── Derived views ─────────────────────────────────────────────────────────
 
     def pct(self, part: int) -> str:
@@ -321,6 +340,7 @@ class ReportFacts:
                 "days_since_activity":        self.assurance["days_since_activity"],
                 "register_moved_this_period": self.assurance["register_moved_this_period"],
             },
+            "correlation": self.correlation(),
             "top_risks": [
                 {
                     "id":             r.id,

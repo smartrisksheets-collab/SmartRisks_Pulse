@@ -14,16 +14,16 @@ const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undef
 
 const STEPS = [
   {
-    title: 'Import your register',
-    desc:  'Upload the spreadsheet you already maintain, or start from a template. No migration project, no new data entry.',
+    title: 'Import your register and incidents',
+    desc:  'Upload the spreadsheets you already maintain, or start from a template. No migration project, no new data entry.',
   },
   {
     title: 'Set your appetite and matrix',
-    desc:  'Your likelihood and impact scales, your severity bands, your tolerance per category. The engine scores to your framework.',
+    desc:  'Your likelihood and impact scales, your severity bands, your tolerance per category. The engine scores to your framework, and matches each incident to the risk it hit.',
   },
   {
     title: 'Generate the board report',
-    desc:  'Appetite breaches surfaced, assurance gaps named, drafted in plain language and exported as a PDF.',
+    desc:  'Appetite breaches surfaced, risks that materialised, incidents no risk anticipated, and control ratings that reality contradicted. Drafted in plain language and exported as a PDF.',
   },
 ];
 
@@ -172,7 +172,7 @@ export default function Register() {
         <p className="auth-eyebrow">Getting started</p>
         <h2>Your first board report,<br />in three steps.</h2>
         <p className="auth-left-sub">
-          Bring the register you already keep. You could have a scored,
+          Bring the register and incident log you already keep. You could have a scored,
           board-ready report before the end of the afternoon.
         </p>
 

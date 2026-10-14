@@ -3281,7 +3281,7 @@ table.sev-preview-table th:last-child, table.sev-preview-table td:last-child { p
   padding:3px 10px; white-space:nowrap;
 }
 
-.rb-step-btns { display:flex; gap:10px; flex-wrap:nowrap; }
+.rb-step-btns { display:flex; gap:10px; flex-wrap:wrap; }
 .btn-cta { flex:1; justify-content:center; }
 
 .rb-grid {

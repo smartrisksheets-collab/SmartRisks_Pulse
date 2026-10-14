@@ -182,6 +182,8 @@ class RiskRow:
     control_last_tested:      date | None
     control_assertion_source: str
     mitigation_plan:          str
+    # ── Correlation (matches the dashboard's category keys exactly) ──────────
+    raw_category:             str = ""
 
 
 @dataclass
@@ -194,6 +196,8 @@ class IncidentRow:
     reported_at:    date | None
     resolved_at:    date | None
     financial_impact: float
+    linked_risk_id: str = ""
+    title:          str = ""
 
 
 @dataclass
@@ -208,6 +212,10 @@ class ReportContext:
     snapshots:         list[SnapshotMonthly]  = field(default_factory=list)
     matrix_config:     MatrixConfig | None    = field(default=None)
     incidents_enabled: bool                   = field(default=True)
+    # Lookups for risk/incident correlation (same sources as the dashboard)
+    incident_category_map: Any                = field(default=None)
+    risk_category_lookup:  Any                = field(default=None)
+    severity_ranks:        dict[str, int]     = field(default_factory=dict)
 
 
 # ── DB data fetch ──────────────────────────────────────────────────────────────
@@ -259,6 +267,7 @@ async def _fetch_risks(db: AsyncSession, tenant_id: UUID) -> list[RiskRow]:
             control_last_tested=_parse_date(r.control_last_tested),       # type: ignore[arg-type]
             control_assertion_source=str(r.control_assertion_source or ""),
             mitigation_plan=str(r.mitigation_plan or ""),
+            raw_category=str(r.category or "Uncategorised"),
         ))
     return rows
 
@@ -278,6 +287,8 @@ async def _fetch_incidents(db: AsyncSession, tenant_id: UUID) -> list[IncidentRo
             reported_at=_parse_date(i.reported_at),  # type: ignore[arg-type]
             resolved_at=_parse_date(i.resolved_at),  # type: ignore[arg-type]
             financial_impact=_to_float(i.financial_impact),  # type: ignore[arg-type]
+            linked_risk_id=str(i.linked_risk_id or "").strip(),
+            title=str(i.title or ""),
         ))
     return rows
 
@@ -332,6 +343,23 @@ async def build_context(
     risks     = _apply_date_filter_risks(all_risks, date_from, date_to)
     incidents = _apply_date_filter_incidents(all_incidents, date_from, date_to)
 
+    # Correlation lookups: the same sources the dashboard uses, so a report and
+    # the dashboard classify an incident the same way. A lookup failure degrades
+    # the correlation block only, never the whole report.
+    incident_category_map = None
+    risk_category_lookup  = None
+    severity_ranks: dict[str, int] = {}
+    if incidents_enabled:
+        try:
+            from app.services.lookup import get_lookups
+            from app.services.incident_severity import get_severity_ranks
+            _lk = await get_lookups(db, tenant_id)
+            incident_category_map = _lk.incident_category_map
+            risk_category_lookup  = _lk.category
+            severity_ranks        = await get_severity_ranks(db, tenant_id)
+        except Exception as exc:
+            logger.error("correlation lookups failed | tenant=%s | %s", tenant_id, exc, exc_info=True)
+
     return ReportContext(
         tenant_id=tenant_id,
         risks=risks,
@@ -343,6 +371,9 @@ async def build_context(
         snapshots=snapshots,
         matrix_config=matrix_config,
         incidents_enabled=incidents_enabled,
+        incident_category_map=incident_category_map,
+        risk_category_lookup=risk_category_lookup,
+        severity_ranks=severity_ranks,
     )
 
 
@@ -1499,6 +1530,178 @@ def compute_risk_heat_map(ctx: ReportContext) -> dict:
     }
 
 
+# ── Risk & incident correlation ───────────────────────────────────────────────
+# Mirrors dashboard._intel rule for rule, so the PDF and the dashboard classify
+# the same way:
+#   - an incident is linked when linked_risk_id names a live risk;
+#   - a link to a risk that no longer exists is neither linked nor unlinked;
+#   - an incident category is covered when covering_risk_categories() maps it to
+#     a risk category that holds at least one risk;
+#   - a materialised risk is contradicted per risk_status.is_contradicted().
+# Difference by design: the report counts incidents reported in the report
+# period; the dashboard counts all incidents. Risks are always the full register.
+
+CORRELATION_SMALL_N = 5    # below this many incidents the block is marked Indicative
+CORRELATION_ROW_CAP = 15   # rows per PDF table; counts are always complete
+
+
+def compute_risk_incident_correlation(ctx: ReportContext) -> dict:
+    if not ctx.incidents_enabled:
+        return _INCIDENT_SUPPRESSED
+
+    from collections import defaultdict
+    from app.services.lookup import covering_risk_categories
+    from app.services.risk_status import is_contradicted, is_evidenced
+
+    today     = date.today()
+    risks     = ctx.all_risks
+    incidents = ctx.incidents
+    ce_scale  = int(ctx.matrix_config.ce_scale) if ctx.matrix_config is not None else 5  # type: ignore[arg-type]
+    sev_rank  = ctx.severity_ranks or {}
+
+    period = {
+        "from": ctx.date_from.isoformat() if ctx.date_from else None,
+        "to":   ctx.date_to.isoformat(),
+    }
+    base = {
+        "period":          period,
+        "risks_total":     len(risks),
+        "incidents_total": len(incidents),
+        "indicative":      len(incidents) < CORRELATION_SMALL_N,
+    }
+    if not incidents:
+        return {
+            **base,
+            "no_data":   True,
+            "narrative": "No incidents were reported in this period, so there is nothing to correlate "
+                         "against the register.",
+        }
+
+    risk_by_id      = {r.id: r for r in risks}
+    risk_categories = {r.raw_category or "Uncategorised" for r in risks}
+
+    def _covering(inc_cat: str) -> list[str]:
+        if ctx.incident_category_map is None:
+            return []
+        return [
+            c for c in covering_risk_categories(inc_cat, ctx.incident_category_map, ctx.risk_category_lookup)
+            if c in risk_categories
+        ]
+
+    # ── Linkage ──────────────────────────────────────────────────────────────
+    linked_by_risk: dict[str, list[IncidentRow]] = defaultdict(list)
+    unlinked: list[IncidentRow] = []
+    for inc in incidents:
+        link = (inc.linked_risk_id or "").strip()
+        if not link:
+            unlinked.append(inc)
+        elif link in risk_by_id:
+            linked_by_risk[link].append(inc)
+
+    # ── Category coverage ────────────────────────────────────────────────────
+    inc_cat_counts: dict[str, int] = defaultdict(int)
+    for inc in incidents:
+        inc_cat_counts[inc.category or "Other"] += 1
+    # Without the category map, coverage is unknown. Report no blind spots
+    # rather than flag every category as uncovered.
+    uncovered = sorted(
+        ((c, n) for c, n in inc_cat_counts.items() if not _covering(c)),
+        key=lambda x: -x[1],
+    ) if ctx.incident_category_map is not None else []
+
+    # ── Materialised risks ───────────────────────────────────────────────────
+    mat_rows: list[dict] = []
+    for rid, incs in linked_by_risk.items():
+        r = risk_by_id[rid]
+        rating = r.control_effectiveness
+        latest = max(incs, key=lambda i: i.reported_at or date.min)
+        mat_rows.append({
+            "risk_id":                  rid,
+            "category":                 r.raw_category or r.category,
+            "owner":                    r.owner or None,
+            "residual":                 round(r.residual, 1),
+            "control_rating":           rating,
+            "contradicted":             bool(is_contradicted(rating, ce_scale, True)),
+            "incident_count":           len(incs),
+            "latest_incident_id":       latest.id,
+            "latest_incident_severity": latest.severity or None,
+        })
+    mat_rows.sort(key=lambda m: (not m["contradicted"], -(m["residual"] or 0.0)))
+    contradicted = sum(1 for m in mat_rows if m["contradicted"])
+
+    # ── Unlinked incidents ───────────────────────────────────────────────────
+    unl_rows: list[dict] = []
+    for inc in unlinked:
+        cov = _covering(inc.category or "Other")
+        unl_rows.append({
+            "incident_id": inc.id,
+            "title":       inc.title or (inc.desc[:80] if inc.desc else None),
+            "category":    inc.category or "Other",
+            "severity":    inc.severity or None,
+            "reported_at": inc.reported_at.isoformat() if inc.reported_at else None,
+            "covered":     bool(cov) if ctx.incident_category_map is not None else None,
+        })
+    # Two stable sorts: newest first, then uncovered before covered and by severity rank.
+    unl_rows.sort(key=lambda x: x["reported_at"] or "", reverse=True)
+    unl_rows.sort(key=lambda x: (bool(x["covered"]), sev_rank.get(x["severity"] or "", len(sev_rank))))
+
+    # ── Control evidence (register-wide, as on the dashboard card) ───────────
+    rated = [r for r in risks if r.control_effectiveness is not None]
+    evidenced = sum(
+        1 for r in rated
+        if is_evidenced(
+            control_last_tested=r.control_last_tested,
+            control_assertion_source=r.control_assertion_source,
+            today=today,
+        )
+    )
+
+    # ── Deterministic narrative: association language only, never cause ────
+    n_mat, n_inc, n_unl = len(mat_rows), len(incidents), len(unlinked)
+    parts = [
+        f"{n_mat} of {len(risks)} register risks had at least one incident linked to them in this period."
+    ]
+    if n_unl:
+        parts.append(f"{n_unl} of {n_inc} incidents carry no link to a register risk.")
+    if uncovered:
+        k = len(uncovered)
+        parts.append(
+            f"Across all {n_inc} incidents, {k} incident {'category has' if k == 1 else 'categories have'} "
+            "no covering risk category on the register."
+        )
+    if n_mat:
+        parts.append(
+            f"{contradicted} of {n_mat} materialised risks carry a high control-effectiveness rating, "
+            "which the linked incidents call into question."
+        )
+
+    return {
+        **base,
+        "no_data": False,
+        "materialised": {
+            "count":          n_mat,
+            "incident_count": sum(len(v) for v in linked_by_risk.values()),
+            "ids":            [m["risk_id"] for m in mat_rows],
+        },
+        "unlinked": {
+            "count":                n_unl,
+            "uncovered_categories": [c for c, _ in uncovered],
+            "uncovered_incidents":  sum(n for _, n in uncovered),
+        },
+        "controls": {
+            "materialised": n_mat,
+            "contradicted": contradicted,
+            "rated":        len(rated),
+            "evidenced":    evidenced,
+        },
+        "mapping_configured": ctx.incident_category_map is not None,
+        "materialised_rows":  mat_rows[:CORRELATION_ROW_CAP],
+        "unlinked_rows":      unl_rows[:CORRELATION_ROW_CAP],
+        "rows_truncated":     len(mat_rows) > CORRELATION_ROW_CAP or len(unl_rows) > CORRELATION_ROW_CAP,
+        "narrative":          " ".join(parts),
+    }
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # BLOCK REGISTRY
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1525,6 +1728,7 @@ BLOCK_REGISTRY: dict[str, Any] = {
     "executive-dashboard": compute_executive_dashboard,
     "methodology":         compute_methodology,
     "risk-heat-map":       compute_risk_heat_map,
+    "risk-incident-correlation": compute_risk_incident_correlation,
 }
 
 

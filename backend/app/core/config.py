@@ -74,7 +74,7 @@ class Settings(BaseSettings):
 
     # Defaults
     DEFAULT_CURRENCY: str = "₦"
-    DEFAULT_MODULES: list[str] = ["risk"]
+    DEFAULT_MODULES: list[str] = ["risk", "incident"]
     DEFAULT_ROLE: str = "Analyst"
     DEFAULT_PLAN: str = "TRIAL"
 

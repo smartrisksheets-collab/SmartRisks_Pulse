@@ -23,7 +23,8 @@ import type {
   IncidentAnalyticsData,
   ExecutiveDashboardData,
   RiskHeatMapData,
-  MethodologyData
+  MethodologyData,
+  RiskIncidentCorrelationData
 } from '../../types/report';
 
 // ── Shared helpers ─────────────────────────────────────────────────────────────
@@ -660,6 +661,47 @@ function ExecutiveDashboardBlock({ data, ai, onEdit }: { data: ExecutiveDashboar
 
 
 
+function RiskIncidentCorrelationBlock({ data }: { data: RiskIncidentCorrelationData }) {
+  if (data.no_data || !data.materialised || !data.unlinked || !data.controls) {
+    return <p className="rb-narrative">{data.narrative || 'Correlation is not available for this workspace.'}</p>;
+  }
+  const mat = data.materialised;
+  const unl = data.unlinked;
+  const ctl = data.controls;
+  return (
+    <>
+      <div className="rb-kpi-row">
+        <KPIBox value={mat.count}        label={`Risks materialised (of ${data.risks_total})`}                 color="#d97706" />
+        <KPIBox value={unl.count}        label={`Incidents with no matching risk (of ${data.incidents_total})`} color="#dc2626" />
+        <KPIBox value={ctl.contradicted} label={`Control ratings contradicted (of ${ctl.materialised})`}       color={ctl.contradicted > 0 ? '#dc2626' : '#10b981'} />
+      </div>
+      {unl.uncovered_categories.length > 0 && (
+        <MetaRow label="Categories with no covering risk (all incidents)" value={unl.uncovered_categories.join(', ')} warn />
+      )}
+      {(data.materialised_rows || []).map((m) => (
+        <MetaRow
+          key={m.risk_id}
+          label={`${m.risk_id} · ${m.category || 'Uncategorised'}`}
+          value={`${m.incident_count} linked · rating ${m.control_rating ?? 'not rated'}${m.contradicted ? ' · contradicted' : ''}`}
+          warn={m.contradicted}
+        />
+      ))}
+      {(data.unlinked_rows || []).map((u) => (
+        <MetaRow
+          key={u.incident_id}
+          label={`${u.incident_id} · ${u.category}`}
+          value={u.covered === null ? 'Not linked' : u.covered ? 'Covered category, not linked' : 'No covering risk'}
+          warn={u.covered === false}
+        />
+      ))}
+      <p className="rb-narrative">
+        {data.narrative}
+        {data.indicative ? ` Indicative: based on ${data.incidents_total} incident${data.incidents_total === 1 ? '' : 's'}.` : ''}
+      </p>
+    </>
+  );
+}
+
 // ── Public component ───────────────────────────────────────────────────────────
 
 interface Props {
@@ -699,6 +741,7 @@ export default function ReportPreview({ blockKey, blockData, aiData, onEdit }: P
     case 'executive-dashboard': return <ExecutiveDashboardBlock data={data as ExecutiveDashboardData} ai={ai} onEdit={onEdit} />;
     case 'risk-heat-map':       return <RiskHeatMapBlock        data={data as RiskHeatMapData} />;
     case 'methodology':         return <MethodologyBlock        data={data as MethodologyData} />;
+    case 'risk-incident-correlation': return <RiskIncidentCorrelationBlock data={data as RiskIncidentCorrelationData} />;
     default:                    return <p style={{ fontSize: 12, color: '#94a3b8' }}>Unknown block.</p>;
   }
 }
