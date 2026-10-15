@@ -7,6 +7,7 @@ import type {
   ReportSettings,
   DateRange,
   ReportTemplate,
+  ExportFormat,
 } from '../types/report';
 
 // ── Preview ────────────────────────────────────────────────────────────────────
@@ -44,8 +45,9 @@ export async function exportReport(payload: {
   date_from:   string | null;
   date_to:     string;
   orientation?: string;
-}): Promise<{ pdf_base64: string; file_name: string }> {
-  return apiPost<{ pdf_base64: string; file_name: string }>(
+  format?:      ExportFormat;
+}): Promise<{ file_base64: string; file_name: string; mime_type: string }> {
+  return apiPost<{ file_base64: string; file_name: string; mime_type: string }>(
     '/api/v1/reports/export',
     payload,
   );
@@ -61,6 +63,7 @@ export async function emailReport(payload: {
   date_from:  string | null;
   date_to:    string;
   to:         string;
+  cc:         string[];
   subject:    string;
 }): Promise<void> {
   await apiPost('/api/v1/reports/email', payload);
@@ -112,8 +115,12 @@ export async function saveReportSettings(settings: ReportSettings): Promise<void
 // ── Download helper ────────────────────────────────────────────────────────────
 
 export function downloadPDF(base64: string, fileName: string): void {
+  downloadFile(base64, fileName, 'application/pdf');
+}
+
+export function downloadFile(base64: string, fileName: string, mimeType: string): void {
   const bytes  = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
-  const blob   = new Blob([bytes], { type: 'application/pdf' });
+  const blob   = new Blob([bytes], { type: mimeType });
   const url    = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href     = url;

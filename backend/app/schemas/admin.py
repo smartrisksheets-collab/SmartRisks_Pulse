@@ -147,12 +147,13 @@ class AdminWorkspaceUpdate(BaseModel):
     @field_validator("modules")
     @classmethod
     def _valid_modules(cls, v: list[str] | None) -> list[str] | None:
-        if v is not None:
-            valid = {"risk", "incident"}
-            invalid = set(v) - valid
-            if invalid:
-                raise ValueError(f"Invalid modules: {invalid}")
-        return v
+        if v is None:
+            return v
+        if set(v) != {"risk", "incident"}:
+            raise ValueError(
+                "Workspaces are unified only. modules must be ['risk', 'incident']."
+            )
+        return ["risk", "incident"]
 
 
 # ── Platform overview ─────────────────────────────────────────────────────────

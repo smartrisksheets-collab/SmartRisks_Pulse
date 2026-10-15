@@ -5,7 +5,8 @@ import BlockSelector   from '../components/reports/BlockSelector';
 import BlockCanvas     from '../components/reports/BlockCanvas';
 import { useReports }  from '../hooks/useReports';
 import { useCanDo }    from '../utils/permissions';
-import { AI_BLOCKS, type BlockKey, type DatePreset } from '../types/report';
+import { AI_BLOCKS, type BlockKey, type DatePreset, type ExportFormat } from '../types/report';
+import { validateEmail, parseCcList, validateCcList, MAX_CC } from '../utils/validation';
 
 // ── Simple toast (reuses existing .toast CSS classes) ──────────────────────────
 function useToast() {
@@ -91,13 +92,15 @@ function SaveTemplateModal({ onSave, onClose }: SaveTemplateModalProps) {
 // ── Email modal ────────────────────────────────────────────────────────────────
 interface EmailModalProps {
   reportTitle: string;
-  onSend:      (to: string, subject: string) => void;
+  onSend:      (to: string, cc: string[], subject: string) => void;
   onClose:     () => void;
 }
 function EmailModal({ reportTitle, onSend, onClose }: EmailModalProps) {
   const [to,      setTo]      = useState('');
+  const [cc,      setCc]      = useState('');
   const [subject, setSubject] = useState(reportTitle || 'SmartRisk Report');
   const [err,     setErr]     = useState('');
+  const [ccErr,   setCcErr]   = useState('');
   return (
     <div className="modal-backdrop show">
       <div className="modal" style={{ maxWidth: 460 }}>
@@ -105,8 +108,15 @@ function EmailModal({ reportTitle, onSend, onClose }: EmailModalProps) {
         <div className="modal-bd">
           <div className="field" style={{ marginBottom: 12 }}>
             <label>Recipient Email</label>
-            <input type="email" value={to} onChange={(e) => setTo(e.target.value)} placeholder="recipient@example.com" />
+            <input type="email" value={to} onChange={(e) => { setTo(e.target.value); if (err) setErr(''); }} placeholder="recipient@example.com" />
             {err && <div className="form-error">{err}</div>}
+          </div>
+          <div className="field" style={{ marginBottom: 12 }}>
+            <label>CC <span style={{ color: '#94a3b8', fontWeight: 500 }}>(optional)</span></label>
+            <input value={cc} onChange={(e) => { setCc(e.target.value); if (ccErr) setCcErr(''); }} placeholder="name@company.com, other@company.com" />
+            {ccErr
+              ? <div className="form-error">{ccErr}</div>
+              : <span className="field-hint">Up to {MAX_CC} addresses, separated by commas.</span>}
           </div>
           <div className="field">
             <label>Subject</label>
@@ -116,8 +126,13 @@ function EmailModal({ reportTitle, onSend, onClose }: EmailModalProps) {
         <div className="modal-ft">
           <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
           <button className="btn btn-primary" onClick={() => {
-            if (!to.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) { setErr('Enter a valid email address'); return; }
-            onSend(to.trim(), subject.trim());
+            const toMsg  = validateEmail(to);
+            const ccList = parseCcList(cc);
+            const ccMsg  = validateCcList(ccList, to);
+            setErr(toMsg);
+            setCcErr(ccMsg);
+            if (toMsg || ccMsg) return;
+            onSend(to.trim(), ccList, subject.trim());
             onClose();
           }}>Send</button>
         </div>
@@ -397,8 +412,8 @@ export default function ReportBuilder() {
     await rb.generateAI(getRange());
   }
 
-  // Step 3: Download PDF
-  async function handleDownloadPDF() {
+  // Step 3: Download PDF or PowerPoint
+  async function handleDownload(format: ExportFormat) {
     const aiNotRun = rb.activeBlocks.some(b => AI_BLOCKS.has(b)) && Object.keys(rb.aiData).length === 0;
     if (aiNotRun) {
       const proceed = await confirm(
@@ -409,10 +424,10 @@ export default function ReportBuilder() {
     }
     const ok = await confirm(
       'Confirm Download',
-      `Download "${rb.settings.report_title || 'Risk Report'}" report?`,
+      `Download "${rb.settings.report_title || 'Risk Report'}" as ${format === 'pptx' ? 'PowerPoint' : 'PDF'}?`,
     );
     if (!ok) return;
-    await rb.exportPDF(getRange(), 'download');
+    await rb.exportPDF(getRange(), 'download', undefined, undefined, [], format);
   }
 
   // Step 3: Send by email
@@ -428,8 +443,8 @@ export default function ReportBuilder() {
     setShowEmail(true);
   }
 
-  async function handleSendEmail(to: string, subject: string) {
-    await rb.exportPDF(getRange(), 'email', to, subject);
+  async function handleSendEmail(to: string, cc: string[], subject: string) {
+    await rb.exportPDF(getRange(), 'email', to, subject, cc);
   }
 
   const step2Disabled = rb.step < 2 || rb.previewing;
@@ -641,7 +656,7 @@ export default function ReportBuilder() {
                 }
               </button>
               <button className="btn btn-navy" type="button"
-                onClick={handleDownloadPDF}
+                onClick={() => handleDownload('pdf')}
                 disabled={step3Disabled || rb.exporting || !canPrint}
                 title={!canPrint ? 'Requires Manager or Owner role' : undefined}>
                 {rb.exporting
@@ -650,6 +665,17 @@ export default function ReportBuilder() {
                       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                       <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
                     </svg>Download PDF</>
+                }
+              </button>
+              <button className="btn btn-secondary" type="button"
+                onClick={() => handleDownload('pptx')}
+                disabled={step3Disabled || rb.exporting || !canPrint}
+                title={!canPrint ? 'Requires Manager or Owner role' : undefined}>
+                {rb.exporting
+                  ? <><span className="spinner" />Exporting…</>
+                  : <><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
+                    </svg>PowerPoint</>
                 }
               </button>
             </div>

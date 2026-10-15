@@ -81,6 +81,19 @@ def _guard_rules(fs: dict) -> str:
         lines.append(
             "- incidents_enabled is FALSE. Do NOT reference incidents in any form."
         )
+    if fs.get("correlation"):
+        lines.append(
+            "- CORRELATION evidence records which incidents were linked to which register risks. "
+            "A link is an association recorded at triage, not a proven cause. Say an incident was "
+            "'linked to' a risk or that a risk 'materialised'. Never say a risk or control 'caused', "
+            "'led to' or 'resulted in' an incident. A contradicted control rating means the rating "
+            "is unverified, not that the control owner failed; do not attribute fault to any person."
+        )
+        if fs["correlation"].get("indicative"):
+            lines.append(
+                "- CORRELATION is INDICATIVE: fewer than five incidents in the period. Do not "
+                "generalise from it to the whole control environment."
+            )
 
     lines.append(
         "- Any industry or sector named in your persona description above is for tone and "
@@ -190,6 +203,7 @@ def _build_prompt(
                 "by_treatment": rs.get("by_treatment"),
             },
             "governance": fs.get("governance", {}),
+            "correlation": fs.get("correlation"),
         }
         system = (
             f"You are a seasoned Chief Risk Officer presenting to the board of {org}{ind}. "
@@ -217,6 +231,7 @@ def _build_prompt(
             "avg_residual":      fs.get("scores", {}).get("avg_residual"),
             "governance":        fs.get("governance", {}),
             "assurance":         fs.get("assurance", {}),
+            "correlation":       fs.get("correlation"),
         }
         system = (
             f"You are the Chief Risk Officer of {org}{ind}. "

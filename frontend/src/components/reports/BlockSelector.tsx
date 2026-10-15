@@ -13,6 +13,7 @@ const INCIDENT_BLOCK_KEYS = new Set<BlockKey>([
   'incident-trend',
   'major-incidents',
   'incident-analytics',
+  'risk-incident-correlation',
 ]);
 
 const GROUPS: Group[] = [
@@ -50,6 +51,7 @@ const GROUPS: Group[] = [
       { label: 'Incident Trend',       key: 'incident-trend'       },
       { label: 'Major Incidents',      key: 'major-incidents'      },
       { label: 'Incident Analytics',   key: 'incident-analytics'   },
+      { label: 'Risk & Incident Correlation', key: 'risk-incident-correlation' },
     ],
   },
   {

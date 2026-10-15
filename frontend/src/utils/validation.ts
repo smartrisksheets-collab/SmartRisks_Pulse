@@ -61,3 +61,19 @@ export function getPasswordStrength(value: string): PasswordStrength | '' {
   if (score <= 2) return 'fair';
   return 'strong';
 }
+
+export const MAX_CC = 5;
+
+export function parseCcList(raw: string): string[] {
+  return Array.from(new Set(
+    raw.split(/[,;\s]+/).map(s => s.trim().toLowerCase()).filter(Boolean),
+  ));
+}
+
+export function validateCcList(list: string[], to: string): string {
+  if (list.length > MAX_CC) return `CC is limited to ${MAX_CC} addresses`;
+  const bad = list.find(e => validateEmail(e) !== '');
+  if (bad) return `Invalid CC address: ${bad}`;
+  if (list.includes(to.trim().toLowerCase())) return 'This address is already the recipient';
+  return '';
+}

@@ -461,7 +461,7 @@ export default function CreateWorkspace() {
         name: data.workspaceName.trim(),
         role: 'Owner',
         plan: 'TRIAL',
-        modules: ['risk'] as ModuleKey[],
+        modules: ['risk', 'incident'] as ModuleKey[],
       };
       setWorkspaces([...workspaces.filter(w => w.tenant_id !== ws.id), newEntry]);
 

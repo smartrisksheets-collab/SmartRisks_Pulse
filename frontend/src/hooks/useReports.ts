@@ -10,6 +10,7 @@ import type {
   ReportTemplate,
   DateRange,
   BuildStep,
+  ExportFormat,
 } from '../types/report';
 import { DEFAULT_SETTINGS as DEFAULTS } from '../types/report';
 
@@ -155,7 +156,7 @@ export function useReports(toast: ToastFn) {
 
   // ── Export PDF ─────────────────────────────────────────────────────────────
 
-  const exportPDF = useCallback(async (range: DateRange, mode: 'download' | 'email', emailTo?: string, emailSubject?: string) => {
+  const exportPDF = useCallback(async (range: DateRange, mode: 'download' | 'email', emailTo?: string, emailSubject?: string, emailCc: string[] = [], format: ExportFormat = 'pdf') => {
     if (state.exporting) return;
     set({ exporting: true });
     try {
@@ -167,9 +168,10 @@ export function useReports(toast: ToastFn) {
           settings:   state.settings,
           date_from:  range.date_from,
           date_to:    range.date_to,
+          format,
         });
-        reportsApi.downloadPDF(result.pdf_base64, result.file_name);
-        toast('Report downloaded', 'success');
+        reportsApi.downloadFile(result.file_base64, result.file_name, result.mime_type);
+        toast(format === 'pptx' ? 'PowerPoint downloaded' : 'Report downloaded', 'success');
       } else {
         if (!emailTo) throw new Error('Recipient email is required');
         await reportsApi.emailReport({
@@ -180,9 +182,10 @@ export function useReports(toast: ToastFn) {
           date_from:  range.date_from,
           date_to:    range.date_to,
           to:         emailTo,
+          cc:         emailCc,
           subject:    emailSubject || 'SmartRisk Report',
         });
-        toast(`Report sent to ${emailTo}`, 'success');
+        toast(`Report sent to ${emailTo}${emailCc.length ? ` and ${emailCc.length} CC` : ''}`, 'success');
       }
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Export failed', 'error');

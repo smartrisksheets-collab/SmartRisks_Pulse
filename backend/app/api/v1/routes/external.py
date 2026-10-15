@@ -3,8 +3,6 @@
 Public endpoints: no JWT required, only a valid tenant_id in query param.
 Auth endpoints: require get_active_tenant (verified JWT + active workspace).
 """
-from __future__ import annotations
-
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request

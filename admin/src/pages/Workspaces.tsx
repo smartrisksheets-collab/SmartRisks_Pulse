@@ -8,7 +8,7 @@ type StatusFilter = 'ALL' | 'ACTIVE' | 'TRIAL' | 'EXPIRED' | 'SUSPENDED'
 
 const STATUS_FILTERS: StatusFilter[] = ['ALL', 'ACTIVE', 'TRIAL', 'EXPIRED', 'SUSPENDED']
 
-const MODULES_OPTIONS = ['risk', 'incident']
+// const MODULES_OPTIONS = ['risk', 'incident']
 
 function StatusBadge({ status }: { status: string }) {
   const cls = status.toLowerCase()
@@ -24,7 +24,6 @@ interface DrawerState {
   plan_expires_at: string
   max_users: string
   max_risks: string
-  modules: string[]
   industry: string
   workspace_status: string
 }
@@ -38,7 +37,6 @@ function buildDrawerState(w: WorkspaceListItem): DrawerState {
     plan_expires_at: w.plan_expires_at ?? '',
     max_users: String(w.max_users),
     max_risks: String(w.max_risks),
-    modules: [...w.modules],
     industry: w.industry ?? '',
     workspace_status: w.status === 'SUSPENDED' ? 'SUSPENDED' : 'ACTIVE',
   }
@@ -390,14 +388,14 @@ function WorkspaceDrawer({
     setForm((prev) => ({ ...prev, [key]: value }))
   }
 
-  function toggleModule(mod: string) {
-    set(
-      'modules',
-      form.modules.includes(mod)
-        ? form.modules.filter((m) => m !== mod)
-        : [...form.modules, mod]
-    )
-  }
+  // function toggleModule(mod: string) {
+  //   set(
+  //     'modules',
+  //     form.modules.includes(mod)
+  //       ? form.modules.filter((m) => m !== mod)
+  //       : [...form.modules, mod]
+  //   )
+  // }
 
   function handleSave() {
     const patch: Record<string, unknown> = {
@@ -407,7 +405,6 @@ function WorkspaceDrawer({
       plan_expires_at: form.plan_expires_at || null,
       max_users: Number(form.max_users),
       max_risks: Number(form.max_risks),
-      modules: form.modules,
       industry: form.industry || null,
       workspace_status: form.workspace_status,
     }
@@ -578,21 +575,9 @@ function WorkspaceDrawer({
             />
           </div>
 
-          <div className="a-form-group">
-            <label className="a-form-label">Modules</label>
-            <div className="a-flex a-gap-12" style={{ marginTop: 6 }}>
-              {MODULES_OPTIONS.map((mod) => (
-                <label key={mod} className="a-flex a-gap-8" style={{ cursor: 'pointer', fontSize: 13 }}>
-                  <input
-                    type="checkbox"
-                    checked={form.modules.includes(mod)}
-                    onChange={() => toggleModule(mod)}
-                    style={{ accentColor: 'var(--primary)' }}
-                  />
-                  {mod}
-                </label>
-              ))}
-            </div>
+          <div className="a-detail-row">
+            <span className="a-detail-label">Modules</span>
+            <span className="a-detail-val">{w.modules.join(', ')}</span>
           </div>
 
           <div className="a-form-group">
