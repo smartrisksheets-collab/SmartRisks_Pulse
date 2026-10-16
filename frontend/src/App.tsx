@@ -6,6 +6,7 @@ import { useAuthStore } from './store/authStore';
 import type { Permissions } from './types/auth';
 import type { ModuleKey } from './types/api';
 import { ToastProvider } from './components/layout/Toast';
+import { applyCachedBrandColors } from './utils/brand';
 
 // ── Eager: shell, auth flow, and the two most-visited app pages ──────────
 import NotFound       from './pages/NotFound';
@@ -22,6 +23,9 @@ import PlanExpired    from './pages/PlanExpired';
 import Dashboard      from './pages/Dashboard';
 import RiskRegister   from './pages/RiskRegister';
 import Incidents      from './pages/Incidents';
+
+// Apply the last workspace colors before React draws anything, so pages do not flash teal.
+applyCachedBrandColors();
 
 // ── Lazy: heavy or infrequently visited pages ─────────────────────────────
 const ReportBuilder    = lazy(() => import('./pages/ReportBuilder'));

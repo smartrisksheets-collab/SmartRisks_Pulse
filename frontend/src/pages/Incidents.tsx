@@ -104,7 +104,7 @@ function IncidentTrendPanel({ trend }: { trend: MonthlyTrend[] }) {
             <XAxis dataKey="month" tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} />
             <YAxis tick={{ fontSize: 10, fill: 'var(--muted)' }} allowDecimals={false} axisLine={false} tickLine={false} />
             <Tooltip contentStyle={{ fontSize: 12, borderRadius: 6 }} />
-            <Bar dataKey="count" name="Incidents" fill="#01b88e" radius={[3, 3, 0, 0]} />
+            <Bar dataKey="count" name="Incidents" fill="var(--primary)" radius={[3, 3, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       ) : (

@@ -41,7 +41,7 @@ function HoverTip({ title, sub, rows, x, y }: {
 }) {
   return (
     <div className="fresh-tip unevidenced" style={{ top: y - 8, left: x + 16 }}>
-      <div className="fresh-tip-title" style={{ color: '#1F2854' }}>{title}</div>
+      <div className="fresh-tip-title" style={{ color: 'var(--accent)' }}>{title}</div>
       <div className="fresh-tip-sub">{sub}</div>
       {rows?.map((row, i) => (
         <div className="fresh-tip-row" key={i}>
@@ -146,7 +146,7 @@ export default function RiskTable({ risks, loading, onView, onEdit, flashId, aiF
             <th style={{ width: 90 }}>Level</th>
             <th style={{ width: 80, textAlign: 'center' }}>Residual</th>
             <th style={{ width: 120 }}>Estimate</th>
-            <th style={{ width: 100, background: 'rgba(1,184,142,.06)' }}>Appetite</th>
+            <th style={{ width: 100 }}>Appetite</th>
             <th style={{ width: 120 }}>Decision</th>
           </tr>
         </thead>
@@ -170,7 +170,7 @@ export default function RiskTable({ risks, loading, onView, onEdit, flashId, aiF
                 </td>
                 {/* Risk ID + control effectiveness prompt */}
                 <td>
-                  <span style={{ fontWeight: 700, color: '#1F2854', fontSize: 13 }}>{r.id}</span>
+                  <span className="risk-id-text">{r.id}</span>
                   <br />
                   {(r.control_effectiveness === null) && (
                     <span
@@ -245,7 +245,7 @@ export default function RiskTable({ risks, loading, onView, onEdit, flashId, aiF
                 </td>
 
                 {/* Appetite */}
-                <td style={{ background: 'rgba(1,184,142,.04)' }}>
+                <td className="apt-col">
                   {(() => {
                     const rec    = (appetites ?? []).find(
                       a => a.category.trim().toLowerCase() === (r.category ?? '').trim().toLowerCase()

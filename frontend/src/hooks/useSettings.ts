@@ -24,7 +24,7 @@ export function useSettings() {
   const queryClient   = useQueryClient();
   const setCurrency   = useSettingsStore((s) => s.setCurrency);
   const setLogoUrl    = useSettingsStore((s) => s.setLogoUrl);
-  const setTheme      = useUIStore((s) => s.setTheme);
+  const applyWorkspaceTheme = useUIStore((s) => s.applyWorkspaceTheme);
   const { claims, workspaces, setWorkspaces } = useAuthStore();
 
   const query = useQuery<SettingsData>({
@@ -39,7 +39,7 @@ export function useSettings() {
       queryClient.setQueryData(SETTINGS_KEY, data);
       if (data.currency_symbol) setCurrency(data.currency_symbol);
       applyBrandColors(data.primary_color, data.accent_color);
-      setTheme(data.theme_mode as "light" | "dark" | "auto");
+      applyWorkspaceTheme(data.theme_mode as "light" | "dark" | "auto");
       setLogoUrl(data.logo_url ?? null);
       // Sync updated workspace name into auth store so sidebar reflects immediately
       if (data.name && claims?.active_tenant_id) {
@@ -69,10 +69,10 @@ export function useSettings() {
     const d = query.data;
     if (!d) return;
     applyBrandColors(d.primary_color, d.accent_color);
-    setTheme(d.theme_mode as "light" | "dark" | "auto");
+    applyWorkspaceTheme(d.theme_mode as "light" | "dark" | "auto");
     setLogoUrl(d.logo_url ?? null);
     if (d.currency_symbol) setCurrency(d.currency_symbol);
-  }, [query.data, setLogoUrl, setTheme, setCurrency]);
+  }, [query.data, setLogoUrl, applyWorkspaceTheme, setCurrency]);
 
   return { query, update, setPinMutation, removePinMutation };
 }

@@ -49,7 +49,7 @@ export default function StatCards({ stats, loading }: Props) {
               <circle className="g-val" cx="60" cy="60" r="50" style={{ stroke: color }} />
             </svg>
             <div className="g-center">
-              <span style={{ fontSize: 18, fontWeight: 900, color: '#1F2854' }}>{ei.pct}%</span>
+              <span className="sr-gauge-pct">{ei.pct}%</span>
             </div>
           </div>
           <div className="sr-meta-center">

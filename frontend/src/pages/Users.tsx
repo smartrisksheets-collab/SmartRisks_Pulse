@@ -13,8 +13,10 @@ import {
   useDeactivateUser,
   useReactivateUser,
   useRemoveUser,
+  useRolePermissions,
   type WorkspaceMember,
   type UpdateMemberPayload,
+  type RolePermissions,
 } from "../hooks/useUsers";
 
 // ── local toast hook ──────────────────────────────────────────────────────
@@ -41,11 +43,6 @@ function useToast() {
 
 const ROLES = ["Analyst", "Manager", "Owner"] as const;
 
-const ROLE_PERM_DEFAULTS: Record<string, Record<string, boolean>> = {
-  Owner:   { manage_risks: true,  manage_incidents: true,  review_resolve: true,  generate_ai: true,  print_reports: true,  manage_users: true,  manage_settings: true  },
-  Manager: { manage_risks: true,  manage_incidents: true,  review_resolve: true,  generate_ai: true,  print_reports: true,  manage_users: false, manage_settings: false },
-  Analyst: { manage_risks: false, manage_incidents: false, review_resolve: false, generate_ai: false, print_reports: true,  manage_users: false, manage_settings: false },
-};
 
 const PERM_LABELS: { key: string; label: string }[] = [
   { key: "manage_risks",     label: "Manage Risks"     },
@@ -60,31 +57,14 @@ const PERM_LABELS: { key: string; label: string }[] = [
 // ── helper components at module scope (Fast Refresh rule) ─────────────────
 
 function RoleBadge({ role }: { role: string }) {
-  const styles: Record<string, { background: string; color: string }> = {
-    Owner:   { background: "rgba(31,40,84,.10)",   color: "#1F2854" },
-    Manager: { background: "rgba(1,184,142,.12)",   color: "#006b52" },
-    Analyst: { background: "rgba(107,114,128,.12)", color: "#374151" },
-  };
-  const s = styles[role] ?? styles.Analyst;
-  return (
-    <span style={{
-      ...s,
-      fontSize: 11, fontWeight: 700, padding: "3px 10px",
-      borderRadius: 20, display: "inline-block",
-    }}>
-      {role === "Owner" ? "Admin" : role}
-    </span>
-  );
+  const cls = role === "Owner" ? "owner" : role === "Manager" ? "manager" : "analyst";
+  return <span className={`member-badge ${cls}`}>{role === "Owner" ? "Admin" : role}</span>;
 }
 
 function StatusBadge({ status }: { status: string }) {
   const active = status === "ACTIVE";
   return (
-    <span style={{
-      fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20,
-      background: active ? "rgba(1,184,142,.12)" : "rgba(239,68,68,.10)",
-      color:      active ? "#006b52" : "#b91c1c",
-    }}>
+    <span className={`member-badge ${active ? "active" : "inactive"}`}>
       {active ? "Active" : "Deactivated"}
     </span>
   );
@@ -178,13 +158,14 @@ function InviteModal({ onClose, toast }: InviteModalProps) {
 // ── Edit modal ────────────────────────────────────────────────────────────
 
 interface EditModalProps {
-  member:  WorkspaceMember;
-  selfId:  string;
-  onClose: () => void;
-  toast:   (msg: string, type?: "success" | "error" | "info") => void;
+  member:       WorkspaceMember;
+  selfId:       string;
+  roleDefaults: RolePermissions;
+  onClose:      () => void;
+  toast:        (msg: string, type?: "success" | "error" | "info") => void;
 }
 
-function EditModal({ member, selfId, onClose, toast }: EditModalProps) {
+function EditModal({ member, selfId, roleDefaults, onClose, toast }: EditModalProps) {
   const updateUser     = useUpdateUser();
   const deactivateUser = useDeactivateUser();
   const reactivateUser = useReactivateUser();
@@ -197,7 +178,7 @@ function EditModal({ member, selfId, onClose, toast }: EditModalProps) {
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [customPerms, setCustomPerms] = useState(member.permissions !== null);
   const [perms,       setPerms]       = useState<Record<string, boolean>>(
-    member.permissions ?? ROLE_PERM_DEFAULTS[member.role] ?? ROLE_PERM_DEFAULTS["Analyst"]
+    member.permissions ?? member.effective_permissions ?? {}
   );
 
   const isActive = member.status === "ACTIVE";
@@ -274,7 +255,7 @@ function EditModal({ member, selfId, onClose, toast }: EditModalProps) {
               <select value={role} onChange={(e) => {
                 setRole(e.target.value);
                 if (!customPerms) {
-                  setPerms(ROLE_PERM_DEFAULTS[e.target.value] ?? ROLE_PERM_DEFAULTS["Analyst"]);
+                  setPerms(roleDefaults[e.target.value] ?? {});
                 }
               }} disabled={isSelf}>
                 {ROLES.map((r) => (
@@ -296,7 +277,7 @@ function EditModal({ member, selfId, onClose, toast }: EditModalProps) {
               onChange={(e) => {
                 setCustomPerms(e.target.checked);
                 if (e.target.checked) {
-                  setPerms(member.permissions ?? ROLE_PERM_DEFAULTS[role] ?? ROLE_PERM_DEFAULTS["Analyst"]);
+                  setPerms(member.permissions ?? roleDefaults[role] ?? member.effective_permissions ?? {});
                 }
               }}
               style={{ width: 16, height: 16 }}
@@ -379,6 +360,7 @@ export default function Users() {
   const { toast, ToastHost } = useToast();
 
   const { data: members = [], isLoading, refetch } = useUsers();
+  const { data: roleDefaults = {} } = useRolePermissions();
 
   const [search,      setSearch]      = useState("");
   const [roleFilter,  setRoleFilter]  = useState("");
@@ -430,11 +412,11 @@ export default function Users() {
         <div className="kpi-row" style={{ marginBottom: 16 }}>
           <div className="kpi">
             <div className="lbl">Active</div>
-            <div className="num" style={{ color: "#01b88e" }}>{activeCount}</div>
+            <div className="num num-good">{activeCount}</div>
           </div>
           <div className="kpi">
             <div className="lbl">Deactivated</div>
-            <div className="num" style={{ color: "#ef4444" }}>{deactCount}</div>
+            <div className="num num-bad">{deactCount}</div>
           </div>
           <div className="kpi">
             <div className="lbl">Limit</div>
@@ -447,7 +429,7 @@ export default function Users() {
           </div>
           <div className="kpi">
             <div className="lbl">Plan</div>
-            <div className="num" style={{ fontSize: 16, color: "var(--accent)" }}>
+            <div className="num num-plan">
               {settingsQuery.data?.plan ?? "—"}
             </div>
           </div>
@@ -548,6 +530,7 @@ export default function Users() {
         <EditModal
           member={editTarget}
           selfId={selfId}
+          roleDefaults={roleDefaults}
           onClose={() => setEditTarget(null)}
           toast={toast}
         />

@@ -1,5 +1,6 @@
 import { useAuthStore } from '../store/authStore';
 import { apiPost } from '../services/api';
+import { clearCachedBrandColors } from '../utils/brand';
 
 export function useAuth() {
   const { token, claims, logout: clearStore } = useAuthStore();
@@ -14,6 +15,7 @@ export function useAuth() {
       // proceed regardless
     } finally {
       clearStore();
+      clearCachedBrandColors();
       window.location.href = '/login';
     }
   }

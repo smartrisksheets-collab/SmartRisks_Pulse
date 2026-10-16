@@ -1,5 +1,7 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
 from uuid import UUID
+
+_ROLES: frozenset[str] = frozenset({"Owner", "Manager", "Analyst"})
 
 
 class AddMemberRequest(BaseModel):
@@ -7,12 +9,26 @@ class AddMemberRequest(BaseModel):
     name: str
     role: str = "Analyst"
 
+    @field_validator("role")
+    @classmethod
+    def _valid_role(cls, v: str) -> str:
+        if v not in _ROLES:
+            raise ValueError("Role must be Owner, Manager or Analyst.")
+        return v
+
 
 class UpdateMemberRequest(BaseModel):
     name: str | None = None
     role: str | None = None
-    permissions: dict | None = None
+    permissions: dict[str, bool] | None = None
     reset_permissions: bool = False
+
+    @field_validator("role")
+    @classmethod
+    def _valid_role(cls, v: str | None) -> str | None:
+        if v is not None and v not in _ROLES:
+            raise ValueError("Role must be Owner, Manager or Analyst.")
+        return v
 
 
 class WorkspaceMemberResponse(BaseModel):

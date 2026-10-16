@@ -20,6 +20,8 @@ async def list_users(
 ):
     tenant_id = UUID(claims["active_tenant_id"])
     rows = await user_service.list_members(db, tenant_id)
+    can_manage = bool(claims.get("permissions", {}).get("manage_users"))
+    ws = await user_service.get_workspace_settings(db, tenant_id) if can_manage else {}
     data = [
         {
             "id":           str(m.id),
@@ -28,12 +30,24 @@ async def list_users(
             "name":         a.name,
             "role":         m.role,
             "status":       m.status,
-            "permissions":  m.permissions,
+            "permissions":  m.permissions if can_manage else None,
+            "effective_permissions": user_service.effective_permissions(m, ws) if can_manage else None,
             "last_login":   a.last_login.isoformat() if a.last_login else None,
         }
         for m, a in rows
     ]
     return {"data": data, "error": None, "meta": {"total": len(data)}}
+
+
+@router.get("/role-permissions")
+async def role_permissions(
+    db: AsyncSession = Depends(get_db),
+    claims: dict = Depends(require_permission("manage_users")),
+):
+    tenant_id = UUID(claims["active_tenant_id"])
+    ws = await user_service.get_workspace_settings(db, tenant_id)
+    data = {r: user_service.role_permissions(r, ws) for r in ("Owner", "Manager", "Analyst")}
+    return {"data": data, "error": None, "meta": {}}
 
 
 @router.post("")
@@ -45,7 +59,9 @@ async def add_user(
     claims: dict = Depends(require_permission("manage_users")),
 ):
     tenant_id = UUID(claims["active_tenant_id"])
-    member = await user_service.add_member(db, tenant_id, payload, claims["email"])
+    member = await user_service.add_member(
+        db, tenant_id, payload, claims["email"], str(claims.get("role") or "")
+    )
     return {"data": {"id": str(member.id)}, "error": None, "meta": {}}
 
 
@@ -60,7 +76,8 @@ async def update_user(
 ):
     tenant_id = UUID(claims["active_tenant_id"])
     member = await user_service.update_member(
-        db, tenant_id, member_id, payload, claims["email"]
+        db, tenant_id, member_id, payload, claims["email"],
+        str(claims.get("role") or ""), str(claims["sub"]),
     )
     return {"data": {"id": str(member.id)}, "error": None, "meta": {}}
 
@@ -74,7 +91,10 @@ async def deactivate_user(
     claims: dict = Depends(require_permission("manage_users")),
 ):
     tenant_id = UUID(claims["active_tenant_id"])
-    await user_service.deactivate_member(db, tenant_id, member_id, claims["email"])
+    await user_service.deactivate_member(
+        db, tenant_id, member_id, claims["email"],
+        str(claims.get("role") or ""), str(claims["sub"]),
+    )
     return {"data": {"message": "Member deactivated"}, "error": None, "meta": {}}
 
 
@@ -87,7 +107,10 @@ async def remove_user(
     claims: dict = Depends(require_permission("manage_users")),
 ):
     tenant_id = UUID(claims["active_tenant_id"])
-    await user_service.remove_member(db, tenant_id, member_id, claims["email"])
+    await user_service.remove_member(
+        db, tenant_id, member_id, claims["email"],
+        str(claims.get("role") or ""), str(claims["sub"]),
+    )
     return {"data": {"message": "Member removed"}, "error": None, "meta": {}}
 
 
