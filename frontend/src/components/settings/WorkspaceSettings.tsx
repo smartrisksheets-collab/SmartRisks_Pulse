@@ -2,9 +2,11 @@
 
 import { useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
-import { applyBrandColors } from "../../utils/brand";
+import {
+  applyBrandColors, isHexColor, contrastWithWhite,
+  DEFAULT_PRIMARY, DEFAULT_ACCENT, MIN_PRIMARY_CONTRAST, MIN_ACCENT_CONTRAST,
+} from "../../utils/brand";
 import { useSettings } from "../../hooks/useSettings";
-import { useSettingsStore } from "../../store/settingsStore";
 import UnsavedBanner from "./UnsavedBanner";
 import { uploadLogo } from "../../services/settings";
 import type { SettingsData, SettingsUpdate } from "../../types/settings";
@@ -43,7 +45,6 @@ interface Props {
 
 export default function WorkspaceSettings({ settings }: Props) {
   const { update, setPinMutation, removePinMutation } = useSettings();
-  const setLogoUrl = useSettingsStore((s) => s.setLogoUrl);
 
   // ── identity form state ──────────────────────────────────────────────
   const [form, setForm] = useState<SettingsUpdate>({
@@ -95,12 +96,19 @@ export default function WorkspaceSettings({ settings }: Props) {
 
   function handleLogoRemove() {
     setLogoPreview(null);
-    setForm((f) => ({ ...f, logo_url: null }));
-    setLogoUrl(null);
+    setForm((f) => ({ ...f, logo_url: "" }));
+  }
+
+  function handleRestoreDefaultColors() {
+    setForm((f) => ({ ...f, primary_color: DEFAULT_PRIMARY, accent_color: DEFAULT_ACCENT }));
   }
 
   async function handleSave() {
     setMsg("");
+    if (!isHexColor(form.primary_color) || !isHexColor(form.accent_color)) {
+      setMsg("Save failed: colors must be a 6-digit hex value, like #01b88e.");
+      return;
+    }
     update.mutate(form, {
       onSuccess: (data) => {
         setMsg("Settings saved.");
@@ -151,7 +159,22 @@ export default function WorkspaceSettings({ settings }: Props) {
     form.primary_color !== settings.primary_color ||
     form.accent_color !== settings.accent_color ||
     form.theme_mode !== settings.theme_mode ||
-    (form.logo_url ?? null) !== settings.logo_url;
+    (form.logo_url || null) !== settings.logo_url;
+
+  const colorWarnings: string[] = [];
+  if (!isHexColor(form.primary_color) || !isHexColor(form.accent_color)) {
+    colorWarnings.push("Colors must be a 6-digit hex value, like #01b88e.");
+  }
+  if (isHexColor(form.primary_color) && contrastWithWhite(form.primary_color) < MIN_PRIMARY_CONTRAST) {
+    colorWarnings.push("This primary color is too light for white button text. Pick a darker shade.");
+  }
+  if (isHexColor(form.accent_color) && contrastWithWhite(form.accent_color) < MIN_ACCENT_CONTRAST) {
+    colorWarnings.push("This accent color is too light for titles on white cards. Pick a darker shade.");
+  }
+
+  const isDefaultColors =
+    (form.primary_color ?? "").toLowerCase() === DEFAULT_PRIMARY.toLowerCase() &&
+    (form.accent_color ?? "").toLowerCase() === DEFAULT_ACCENT.toLowerCase();
 
   return (
     <>
@@ -177,7 +200,7 @@ export default function WorkspaceSettings({ settings }: Props) {
               <div style={{ display: "flex", gap: 10, marginTop: 12, flexWrap: "wrap", alignItems: "center" }}>
                 <input
                   type="file"
-                  accept="image/png,image/jpeg,image/svg+xml"
+                  accept="image/png,image/jpeg,image/webp"
                   onChange={handleLogoChange}
                   disabled={logoUploading}
                 />
@@ -186,7 +209,7 @@ export default function WorkspaceSettings({ settings }: Props) {
                 </button>
               </div>
               <span className="tiny" style={{ marginTop: 8, display: "block" }}>
-                Recommended: PNG or SVG. Square works best (e.g. 512×512).
+                PNG, JPG or WebP, up to 2 MB. Square works best (e.g. 512×512).
               </span>
             </div>
           </div>
@@ -200,7 +223,7 @@ export default function WorkspaceSettings({ settings }: Props) {
                 <div className="color-row">
                   <input
                     type="color"
-                    value={form.primary_color ?? "#01b88e"}
+                    value={isHexColor(form.primary_color) ? form.primary_color : DEFAULT_PRIMARY}
                     onChange={(e) => field("primary_color", e.target.value)}
                   />
                   <input
@@ -215,7 +238,7 @@ export default function WorkspaceSettings({ settings }: Props) {
                 <div className="color-row">
                   <input
                     type="color"
-                    value={form.accent_color ?? "#1F2854"}
+                    value={isHexColor(form.accent_color) ? form.accent_color : DEFAULT_ACCENT}
                     onChange={(e) => field("accent_color", e.target.value)}
                   />
                   <input
@@ -228,12 +251,15 @@ export default function WorkspaceSettings({ settings }: Props) {
             </div>
             <div className="row2">
               <div className="field">
-                <label className="tiny">Mode</label>
+                <label className="tiny">Default mode for members</label>
                 <select value={form.theme_mode ?? "light"} onChange={(e) => field("theme_mode", e.target.value)}>
                   <option value="light">Light</option>
                   <option value="dark">Dark</option>
                   <option value="auto">Auto (System)</option>
                 </select>
+                <span className="field-hint">
+                  Applies until a person picks their own with the header button. Their choice is kept on their device.
+                </span>
               </div>
               <div className="field">
                 <label className="tiny">Preview</label>
@@ -245,6 +271,22 @@ export default function WorkspaceSettings({ settings }: Props) {
                   <span className="tiny">{form.primary_color ?? "#01b88e"}</span>
                 </div>
               </div>
+            </div>
+            {colorWarnings.length > 0 && (
+              <div className="brand-contrast-warn">
+                {colorWarnings.map((w) => <p key={w}>{w}</p>)}
+              </div>
+            )}
+            <div style={{ marginTop: 10 }}>
+              <button
+                className="btn btn-secondary btn-compact"
+                type="button"
+                onClick={handleRestoreDefaultColors}
+                disabled={isDefaultColors}
+                title="Set primary and accent back to the SmartRisk colors"
+              >
+                Restore default colors
+              </button>
             </div>
           </div>
         </div>
@@ -333,8 +375,9 @@ export default function WorkspaceSettings({ settings }: Props) {
             type="button"
             disabled={!isDirty}
             onClick={() => setShowResetConfirm(true)}
+            title="Undo changes you have not saved yet"
           >
-            Reset
+            Discard changes
           </button>
           <button className="btn btn-primary" type="button" onClick={handleSave} disabled={saving}>
             {saving ? "Saving…" : "Save Changes"}

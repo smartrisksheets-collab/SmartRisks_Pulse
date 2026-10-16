@@ -127,12 +127,12 @@ function StepWorkspace({ data, onChange }: StepProps) {
           <div className="wiz-upload-label">
             {data.logoFile ? data.logoFile.name : 'Drag and drop, or click to browse'}
           </div>
-          <div className="wiz-upload-hint">PNG, JPG or SVG · up to 2 MB · min 200×200 px</div>
+          <div className="wiz-upload-hint">PNG, JPG or WebP · up to 2 MB · min 200×200 px</div>
         </div>
         <input
           ref={fileRef}
           type="file"
-          accept="image/png,image/jpeg,image/svg+xml"
+          accept="image/png,image/jpeg,image/webp"
           style={{ display: 'none' }}
           onChange={handleFile}
         />

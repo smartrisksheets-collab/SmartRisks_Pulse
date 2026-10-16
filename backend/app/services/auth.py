@@ -85,10 +85,14 @@ def _build_workspace_token(account: Account, member: WorkspaceMember, tenant: Te
 
 async def login(db: AsyncSession, email: str, password: str) -> dict:
     account = await db.scalar(select(Account).where(Account.email == email.lower()))
+    _bad_login = (
+        "Invalid email or password. If you signed up with Google, use Continue with Google, "
+        "or use Forgot password to set a password."
+    )
     if not account or not account.password_hash:
-        raise InvalidCredentialsError("Invalid email or password")
+        raise InvalidCredentialsError(_bad_login)
     if not verify_password(password, str(account.password_hash)):
-        raise InvalidCredentialsError("Invalid email or password")
+        raise InvalidCredentialsError(_bad_login)
 
     account.last_login = datetime.now(timezone.utc)  # type: ignore[assignment]
     db.add(account)
@@ -279,13 +283,14 @@ async def refresh_access_token(db: AsyncSession, refresh_token: str) -> dict:
 async def forgot_password(db: AsyncSession, email: str, frontend_url: str) -> dict:
     from app.services.email import send_reset_email
     account = await db.scalar(select(Account).where(Account.email == email.lower()))
-    if account and account.password_hash:
-        token = create_reset_token(str(account.id), str(account.email))
+    if account:
+        set_pw = account.password_hash is None
+        token = create_reset_token(str(account.id), str(account.email), int(account.token_version or 1))  # type: ignore[arg-type]
         reset_link = f"{frontend_url}/reset-password?token={token}"
         try:
             import asyncio
             await asyncio.get_event_loop().run_in_executor(
-                None, send_reset_email, str(account.email), reset_link
+                None, send_reset_email, str(account.email), reset_link, set_pw
             )
         except Exception as exc:
             logger.error("forgot_password: email failed | %s", exc)
@@ -301,6 +306,10 @@ async def reset_password(db: AsyncSession, token: str, new_password: str) -> dic
     account = await db.get(Account, account_id)
     if not account:
         raise InvalidTokenError("Invalid or expired reset link.")
+    if claims.get("ver") != int(account.token_version or 1):  # type: ignore[arg-type]
+        raise InvalidTokenError("This reset link has already been used. Request a new one.")
+    if str(claims.get("email", "")).lower() != str(account.email or "").lower():
+        raise InvalidTokenError("Invalid or expired reset link.")
     account.password_hash = hash_password(new_password)  # type: ignore[assignment]
     account.token_version = (int(account.token_version or 1)) + 1  # type: ignore[assignment]
     db.add(account)
@@ -313,8 +322,9 @@ async def register(db: AsyncSession, email: str, password: str, name: str) -> di
 
     if existing:
         if not existing.password_hash:
-            raise InvalidCredentialsError(
-                "This email is registered via an invite. Please use your invite link to set a password."
+            raise DuplicateResourceError(
+                "An account with this email already exists. Sign in with Google, "
+                "use your invite link, or use Forgot password to set a password."
             )
         raise DuplicateResourceError(
             "An account with this email already exists. Please sign in instead."
@@ -338,6 +348,9 @@ async def register(db: AsyncSession, email: str, password: str, name: str) -> di
 
 
 async def google_auth(db: AsyncSession, access_token: str) -> dict:
+    if not settings.GOOGLE_CLIENT_ID:
+        logger.error("google_auth: GOOGLE_CLIENT_ID is not set, Google sign-in refused")
+        raise InvalidCredentialsError("Google sign-in is not available right now.")
     async with httpx.AsyncClient(timeout=10.0) as client:
         info_resp = await client.get(
             "https://oauth2.googleapis.com/tokeninfo",
@@ -348,10 +361,9 @@ async def google_auth(db: AsyncSession, access_token: str) -> dict:
 
     info = info_resp.json()
 
-    if settings.GOOGLE_CLIENT_ID:
-        azp = str(info.get("azp", ""))
-        if azp != settings.GOOGLE_CLIENT_ID:
-            raise InvalidCredentialsError("Google token was not issued for this application")
+    azp = str(info.get("azp", ""))
+    if azp != settings.GOOGLE_CLIENT_ID:
+        raise InvalidCredentialsError("Google token was not issued for this application")
 
     if str(info.get("email_verified", "")).lower() != "true":
         raise InvalidCredentialsError("Google account email is not verified")
@@ -360,13 +372,26 @@ async def google_auth(db: AsyncSession, access_token: str) -> dict:
     if not email:
         raise InvalidCredentialsError("Could not retrieve email from Google account")
 
-    name = str(info.get("name", "")) or email.split("@")[0]
+    name = str(info.get("name", ""))
+    if not name:
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                ui = await client.get(
+                    "https://www.googleapis.com/oauth2/v3/userinfo",
+                    headers={"Authorization": f"Bearer {access_token}"},
+                )
+            if ui.status_code == 200:
+                name = str(ui.json().get("name", ""))
+        except httpx.HTTPError:
+            pass
+    name = name or email.split("@")[0]
 
     account = await db.scalar(select(Account).where(Account.email == email))
     if not account:
         account = Account(email=email, name=name)
         db.add(account)
-        await db.flush()
+    account.last_login = datetime.now(timezone.utc)  # type: ignore[assignment]
+    await db.flush()
 
     members = (await db.execute(
         select(WorkspaceMember, Tenant)

@@ -10,7 +10,8 @@ from app.models.workspace_member import WorkspaceMember
 from app.models.tenant import Tenant
 from app.models.audit_log import AuditLog
 from app.schemas.user import AddMemberRequest, UpdateMemberRequest
-from app.core.exceptions import ResourceNotFoundError, DuplicateResourceError, QuotaExceededError, PermissionDeniedError
+from app.core.exceptions import ResourceNotFoundError, DuplicateResourceError, QuotaExceededError, PermissionDeniedError, ValidationError
+from app.services.auth import _PERM_MAP, _role_permissions
 from app.core.config import settings
 from app.services.email import send_invite_email
 from app.services.invite import generate_invite_token
@@ -26,9 +27,53 @@ async def list_members(db: AsyncSession, tenant_id: UUID) -> list:
     return result.all()
 
 
+_PERM_KEYS: frozenset[str] = frozenset(_PERM_MAP) | {"manage_settings", "review_resolve"}
+_ADMIN_ONLY_PERMS: frozenset[str] = frozenset({"manage_settings", "manage_users"})
+
+
+async def get_workspace_settings(db: AsyncSession, tenant_id: UUID) -> dict:
+    tenant = await db.get(Tenant, tenant_id)
+    if tenant is None:
+        return {}
+    return dict(tenant.workspace_settings or {})  # type: ignore[arg-type]
+
+
+def role_permissions(role: str, ws: dict) -> dict[str, bool]:
+    """Role defaults for this workspace, using the same rules as the login token."""
+    return _role_permissions(role, ws)
+
+
+def effective_permissions(member: WorkspaceMember, ws: dict) -> dict[str, bool]:
+    """What this member can actually do: custom permissions if set, otherwise role defaults."""
+    if member.permissions is not None:
+        return dict(member.permissions)  # type: ignore[arg-type]
+    return _role_permissions(str(member.role or "Analyst"), ws)
+
+
+async def _active_owner_count(db: AsyncSession, tenant_id: UUID) -> int:
+    count = await db.scalar(
+        select(func.count()).where(
+            WorkspaceMember.tenant_id == tenant_id,
+            WorkspaceMember.role == "Owner",
+            WorkspaceMember.status == "ACTIVE",
+        )
+    )
+    return int(count or 0)
+
+
+def _guard_target(member: WorkspaceMember, actor_role: str, actor_account_id: str, action: str) -> None:
+    if str(member.account_id) == actor_account_id:
+        raise PermissionDeniedError(f"You cannot {action} your own account.")
+    if str(member.role) == "Owner" and actor_role != "Owner":
+        raise PermissionDeniedError(f"Only an Admin can {action} another Admin.")
+
+
 async def add_member(
-    db: AsyncSession, tenant_id: UUID, payload: AddMemberRequest, invited_by: str
+    db: AsyncSession, tenant_id: UUID, payload: AddMemberRequest, invited_by: str,
+    actor_role: str,
 ) -> WorkspaceMember:
+    if payload.role == "Owner" and actor_role != "Owner":
+        raise PermissionDeniedError("Only an Admin can invite another Admin.")
     tenant = await db.get(Tenant, tenant_id)
     if not tenant:
         raise ResourceNotFoundError(f"Workspace {tenant_id} not found")
@@ -93,11 +138,33 @@ async def add_member(
 
 async def update_member(
     db: AsyncSession, tenant_id: UUID, member_id: UUID,
-    payload: UpdateMemberRequest, updated_by: str
+    payload: UpdateMemberRequest, updated_by: str,
+    actor_role: str, actor_account_id: str,
 ) -> WorkspaceMember:
     member = await db.get(WorkspaceMember, member_id)
     if not member or member.tenant_id != tenant_id:
         raise ResourceNotFoundError(f"Member {member_id} not found")
+
+    changes_access = (
+        (payload.role is not None and payload.role != str(member.role))
+        or payload.permissions is not None
+        or payload.reset_permissions
+    )
+    if changes_access:
+        _guard_target(member, actor_role, actor_account_id, "change access for")
+        if actor_role != "Owner" and payload.role == "Owner":
+            raise PermissionDeniedError("Only an Admin can grant the Admin role.")
+    if payload.permissions is not None:
+        unknown = set(payload.permissions) - _PERM_KEYS
+        if unknown:
+            raise ValidationError(f"Unknown permissions: {', '.join(sorted(unknown))}")
+        if actor_role != "Owner" and any(payload.permissions.get(k) for k in _ADMIN_ONLY_PERMS):
+            raise PermissionDeniedError("Only an Admin can grant Manage Settings or Manage Users.")
+    if (
+        str(member.role) == "Owner" and payload.role is not None and payload.role != "Owner"
+        and str(member.status) == "ACTIVE" and await _active_owner_count(db, tenant_id) <= 1
+    ):
+        raise PermissionDeniedError("Cannot change the role of the last Admin.")
 
     if payload.role is not None:
         member.role = payload.role  # type: ignore[assignment]
@@ -124,11 +191,13 @@ async def update_member(
 
 
 async def deactivate_member(
-    db: AsyncSession, tenant_id: UUID, member_id: UUID, deactivated_by: str
+    db: AsyncSession, tenant_id: UUID, member_id: UUID, deactivated_by: str,
+    actor_role: str, actor_account_id: str,
 ) -> None:
     member = await db.get(WorkspaceMember, member_id)
     if not member or member.tenant_id != tenant_id:
         raise ResourceNotFoundError(f"Member {member_id} not found")
+    _guard_target(member, actor_role, actor_account_id, "deactivate")
 
     if member.role == "Owner":
         owner_count = await db.scalar(
@@ -158,11 +227,13 @@ async def deactivate_member(
 
 
 async def remove_member(
-    db: AsyncSession, tenant_id: UUID, member_id: UUID, removed_by: str
+    db: AsyncSession, tenant_id: UUID, member_id: UUID, removed_by: str,
+    actor_role: str, actor_account_id: str,
 ) -> None:
     member = await db.get(WorkspaceMember, member_id)
     if not member or member.tenant_id != tenant_id:
         raise ResourceNotFoundError(f"Member {member_id} not found")
+    _guard_target(member, actor_role, actor_account_id, "remove")
 
     if member.role == "Owner":
         owner_count = await db.scalar(

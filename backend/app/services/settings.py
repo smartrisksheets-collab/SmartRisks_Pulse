@@ -211,16 +211,27 @@ async def _delete_logo_from_storage(logo_url: str) -> None:
         pass  # best-effort, never block the upload
 
 
-async def upload_logo(
-    file_content: bytes,
-    content_type: str,
-    filename: str,
-    old_logo_url: str | None = None,
-) -> str:
-    if old_logo_url:
-        await _delete_logo_from_storage(old_logo_url)
-    safe_name = filename.replace(" ", "_")
-    path = f"logos/{int(time.time() * 1000)}_{safe_name}"
+LOGO_MAX_BYTES = 2 * 1024 * 1024
+_LOGO_EXT: dict[str, str] = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}
+
+
+def _sniff_logo_type(data: bytes) -> str | None:
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
+async def upload_logo(file_content: bytes, tenant_id: str) -> str:
+    if len(file_content) > LOGO_MAX_BYTES:
+        raise ValidationError("Logo must be 2 MB or smaller.")
+    content_type = _sniff_logo_type(file_content)
+    if content_type is None:
+        raise ValidationError("Logo must be a PNG, JPEG or WebP image.")
+    path = f"logos/{tenant_id}/{int(time.time() * 1000)}_{uuid.uuid4().hex}.{_LOGO_EXT[content_type]}"
     url = f"{settings.SUPABASE_URL}/storage/v1/object/workspace-logos/{path}"
     headers = {
         "Authorization": f"Bearer {settings.SUPABASE_SERVICE_KEY}",
@@ -268,8 +279,13 @@ async def update_settings(
     if "currency_symbol" in updates:
         tenant.currency_symbol = str(updates.pop("currency_symbol"))  # type: ignore[assignment]
 
+    old_logo: str | None = None
     if "logo_url" in updates:
-        tenant.logo_url = updates.pop("logo_url")  # type: ignore[assignment]
+        new_logo = updates.pop("logo_url") or None
+        current_logo = str(tenant.logo_url) if tenant.logo_url is not None else None
+        if current_logo is not None and current_logo != new_logo:
+            old_logo = current_logo
+        tenant.logo_url = new_logo  # type: ignore[assignment]
 
     # --- merge remaining fields into workspace_settings JSONB ---
     if updates:
@@ -282,6 +298,8 @@ async def update_settings(
 
     await db.flush()
     await db.refresh(tenant)
+    if old_logo is not None:
+        await _delete_logo_from_storage(old_logo)
     return _build_response(tenant)
 
 

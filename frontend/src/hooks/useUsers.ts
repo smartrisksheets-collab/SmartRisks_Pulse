@@ -10,6 +10,7 @@ export interface WorkspaceMember {
   role:        string;
   status:      string;
   permissions: Record<string, boolean> | null;
+  effective_permissions: Record<string, boolean> | null;
   last_login:  string | null;
 }
 
@@ -32,6 +33,16 @@ export function useUsers() {
   return useQuery<WorkspaceMember[]>({
     queryKey: QK,
     queryFn:  () => apiGet<WorkspaceMember[]>("/api/v1/users"),
+    staleTime: 60_000,
+  });
+}
+
+export type RolePermissions = Record<string, Record<string, boolean>>;
+
+export function useRolePermissions() {
+  return useQuery<RolePermissions>({
+    queryKey: ["users", "role-permissions"],
+    queryFn:  () => apiGet<RolePermissions>("/api/v1/users/role-permissions"),
     staleTime: 60_000,
   });
 }

@@ -5,6 +5,10 @@ from datetime import date
 
 from pydantic import BaseModel, field_validator
 
+from app.core.config import settings as app_settings
+
+_HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+
 
 class SettingsResponse(BaseModel):
     # Identity (top-level tenant columns + JSONB)
@@ -148,6 +152,30 @@ class SettingsUpdate(BaseModel):
     brief_stale_threshold: int | None = None
     brief_testing_interval: int | None = None
     brief_outreach_cap: int | None = None
+
+    @field_validator("logo_url")
+    @classmethod
+    def _own_bucket_only(cls, v: str | None) -> str | None:
+        if v is None or v == "":
+            return v
+        prefix = f"{app_settings.SUPABASE_URL}/storage/v1/object/public/workspace-logos/"
+        if not v.startswith(prefix) or ".." in v:
+            raise ValueError("Logo must be uploaded through the logo upload.")
+        return v
+
+    @field_validator("primary_color", "accent_color")
+    @classmethod
+    def _hex_color(cls, v: str | None) -> str | None:
+        if v is not None and not _HEX_RE.match(v):
+            raise ValueError("Colors must be a 6-digit hex value, like #01b88e.")
+        return v
+
+    @field_validator("theme_mode")
+    @classmethod
+    def _theme_mode(cls, v: str | None) -> str | None:
+        if v is not None and v not in {"light", "dark", "auto"}:
+            raise ValueError("Theme mode must be light, dark or auto.")
+        return v
 
 
 class PINSet(BaseModel):
