@@ -62,6 +62,7 @@ from app.services.lookup import get_lookups, covering_risk_categories
 from app.services.matrix_config import get_config as get_matrix_config
 from app.services.risk_status import (
     appetite_status,
+    threshold_for,
     is_stale,
     is_undecided,
     is_past_target,
@@ -70,6 +71,7 @@ from app.services.risk_status import (
     is_evidenced,
     is_contradicted,
     is_high_control,
+    high_control_text,
     ce_avg_pct,
 )
 import logging
@@ -726,6 +728,16 @@ async def _incident_feed(
 
 _HEALTH_BANDS: tuple[tuple[int, str], ...] = ((76, "Healthy"), (51, "Monitoring"), (26, "At Risk"))
 _PRESSURE_BANDS: tuple[tuple[int, str], ...] = ((60, "Elevated"), (30, "Moderate"))
+HEALTH_WEIGHTS: dict[str, int] = {
+    "Exposure": 30, "Appetite conformance": 25, "Control assurance": 20,
+    "Incident performance": 20, "Register integrity": 5,
+}
+PRESSURE_WEIGHTS: dict[str, int] = {
+    "Elevated risk share": 40, "Appetite breaches": 25, "Open incident load": 20, "Decision backlog": 15,
+}
+CONFIDENCE_MIN_SNAPSHOTS = 2
+CONFIDENCE_MIN_EVIDENCED_SHARE = 0.5
+CONFIDENCE_MIN_INCIDENTS = 5
 _CONTROL_EVIDENCE_FLOOR = 0.35   # share of control strength credited with zero evidence
 _LIST_LIMIT = 25                 # rows per modal list; counts are always complete
 
@@ -877,6 +889,7 @@ async def _intel(
     lookups = await get_lookups(db, tenant_id)
     matrix = await get_matrix_config(db, tenant_id)
     ce_scale = matrix.ce_scale
+    hc_text = high_control_text(ce_scale)
     sev_rank = await get_severity_ranks(db, tenant_id)
     owner_row = (await db.execute(
         select(Account.name, Account.email)
@@ -910,7 +923,7 @@ async def _intel(
     for r in risks:
         cat = str(r.category or "Uncategorised")
         residual = float(r.residual) if r.residual is not None else None
-        threshold = thresholds.get(cat)
+        threshold = threshold_for(str(r.category) if r.category is not None else None, thresholds)
         ap = appetite_status(residual, threshold)
         is_elev = bool(r.is_elevated)
 
@@ -1138,7 +1151,7 @@ async def _intel(
             key="retest_contradicted",
             title=f"Re-test {n} contradicted control {_plural(n, 'rating', 'ratings')}",
             detail=(
-                f"{_ids_text(ids)} {_plural(n, 'is', 'are')} rated 4 or 5 for control effectiveness and still produced "
+                f"{_ids_text(ids)} {_plural(n, 'is', 'are')} rated {hc_text} for control effectiveness and still produced "
                 "an incident. The rating overstates the control until a test says otherwise."
             ),
             done_when="Each rating is revised, or supported by a test dated after the incident.",
@@ -1209,7 +1222,7 @@ async def _intel(
             key="evidence_high",
             title=f"Evidence the {n} highest control {_plural(n, 'rating', 'ratings')}",
             detail=(
-                f"{_ids_text(ids)} {_plural(n, 'carries', 'carry')} a rating of 4 or 5 without a recent independent "
+                f"{_ids_text(ids)} {_plural(n, 'carries', 'carry')} a rating of {hc_text} without a recent independent "
                 "test. A high rating removes most of a risk's severity from its residual score, so these are the "
                 "largest unverified assumptions on the register."
             ),
@@ -1236,17 +1249,17 @@ async def _intel(
     inc_count = inc_stats.totals.count
 
     health_components = [
-        ScoreComponent(name="Exposure", weight=30,
+        ScoreComponent(name="Exposure", weight=HEALTH_WEIGHTS["Exposure"],
                        score=_clamp(100 - avg_res / scale_max * 100), suppressed=total == 0),
-        ScoreComponent(name="Appetite conformance", weight=25,
+        ScoreComponent(name="Appetite conformance", weight=HEALTH_WEIGHTS["Appetite conformance"],
                        score=_clamp((within + 0.5 * near) / scored * 100) if scored else 0,
                        suppressed=scored == 0),
-        ScoreComponent(name="Control assurance", weight=20,
+        ScoreComponent(name="Control assurance", weight=HEALTH_WEIGHTS["Control assurance"],
                        score=_clamp(ctrl_strength * (_CONTROL_EVIDENCE_FLOOR + (1 - _CONTROL_EVIDENCE_FLOOR) * ev_share)),
                        suppressed=rated_n == 0),
-        ScoreComponent(name="Incident performance", weight=20,
+        ScoreComponent(name="Incident performance", weight=HEALTH_WEIGHTS["Incident performance"],
                        score=inc_stats.health.score if inc_count else 0, suppressed=inc_count == 0),
-        ScoreComponent(name="Register integrity", weight=5,
+        ScoreComponent(name="Register integrity", weight=HEALTH_WEIGHTS["Register integrity"],
                        score=_clamp((total - stale) / total * 100) if total else 0, suppressed=total == 0),
     ]
     health_score = _weighted_score(health_components)
@@ -1259,15 +1272,15 @@ async def _intel(
         status = "At Risk" if capped else raw_status
 
     reasons: list[str] = []
-    if snapshots_held < 2:
+    if snapshots_held < CONFIDENCE_MIN_SNAPSHOTS:
         reasons.append("fewer than two monthly snapshots held")
     if not thresholds:
         reasons.append("no appetite thresholds configured")
     if rated_n == 0:
         reasons.append("no control ratings recorded")
-    elif ev_share < 0.5:
+    elif ev_share < CONFIDENCE_MIN_EVIDENCED_SHARE:
         reasons.append(f"{rated_n - evidenced} of {rated_n} control ratings unevidenced")
-    if inc_count < 5:
+    if inc_count < CONFIDENCE_MIN_INCIDENTS:
         reasons.append(f"only {inc_count} incident{'s' if inc_count != 1 else ''} recorded")
     confidence = "High" if not reasons else "Medium" if len(reasons) == 1 else "Low"
 
@@ -1297,13 +1310,13 @@ async def _intel(
     open_n = inc_stats.totals.open_count
     overdue_n = inc_stats.totals.overdue_count
     pressure_components = [
-        ScoreComponent(name="Elevated risk share", weight=40,
+        ScoreComponent(name="Elevated risk share", weight=PRESSURE_WEIGHTS["Elevated risk share"],
                        score=_clamp(elevated / total * 100) if total else 0, suppressed=total == 0),
-        ScoreComponent(name="Appetite breaches", weight=25,
+        ScoreComponent(name="Appetite breaches", weight=PRESSURE_WEIGHTS["Appetite breaches"],
                        score=_clamp(exceeds / scored * 100) if scored else 0, suppressed=scored == 0),
-        ScoreComponent(name="Open incident load", weight=20,
+        ScoreComponent(name="Open incident load", weight=PRESSURE_WEIGHTS["Open incident load"],
                        score=_clamp(overdue_n / open_n * 100) if open_n else 0, suppressed=inc_count == 0),
-        ScoreComponent(name="Decision backlog", weight=15,
+        ScoreComponent(name="Decision backlog", weight=PRESSURE_WEIGHTS["Decision backlog"],
                        score=_clamp(backlog / total * 100) if total else 0, suppressed=total == 0),
     ]
     pressure_score = _weighted_score(pressure_components)
@@ -1353,6 +1366,7 @@ async def _intel(
         independently_asserted=independent_n,
         evidenced=evidenced,
         rated_high=rated_high,
+        high_rating_label=hc_text,
         contradicted=contradicted,
         rows=ev_rows[:_LIST_LIMIT],
         actions=evidence_actions,

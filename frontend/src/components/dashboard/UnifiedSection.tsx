@@ -37,6 +37,7 @@ import type {
 
 type ModalKey = 'pressure' | 'distribution' | 'materialised' | 'unlinked' | 'evidence';
 import OperationalFeed from './OperationalFeed';
+import Explain from '../help/Explain';
 import { useSettingsStore } from '../../store/settingsStore';
 import { formatMoneyCompact, formatDate } from '../../utils/format';
 import { generateUnifiedBrief } from '../../services/dashboard';
@@ -242,10 +243,11 @@ function PressureModalContent({ pressure, canCreateRisk, onGo }: {
 
 // ── Materialised risks modal ──────────────────────────────────────────────────
 
-function MaterialisedModalContent({ c, currency, canEditRisk, onGo }: {
+function MaterialisedModalContent({ c, currency, canEditRisk, highLabel, onGo }: {
   c: Correlation;
   currency: string;
   canEditRisk: boolean;
+  highLabel: string;
   onGo: (path: string) => void;
 }) {
   const ceScale = useMatrix().query.data?.ce_scale ?? 5;
@@ -269,7 +271,7 @@ function MaterialisedModalContent({ c, currency, canEditRisk, onGo }: {
         <div className="u-modal-kpi">
           <div className="u-modal-kpi-label">Rated Well Controlled</div>
           <div className={`u-modal-kpi-value ${c.contradicted > 0 ? 'bad' : ''}`}>{c.contradicted}</div>
-          <div className="u-modal-kpi-sub">rated 4 or 5</div>
+          <div className="u-modal-kpi-sub">rated {highLabel}</div>
         </div>
         <div className="u-modal-kpi">
           <div className="u-modal-kpi-label">Repeat Categories</div>
@@ -500,7 +502,7 @@ function EvidenceModalContent({ ev, canEditRisk, onGo }: {
           <div className="u-modal-kpi-sub">of {ev.rated}</div>
         </div>
         <div className="u-modal-kpi">
-          <div className="u-modal-kpi-label">Rated 4 or 5</div>
+          <div className="u-modal-kpi-label">Rated {ev.high_rating_label}</div>
           <div className={`u-modal-kpi-value ${ev.rated_high > 0 ? 'warn' : ''}`}>{ev.rated_high}</div>
           <div className="u-modal-kpi-sub">test these first</div>
         </div>
@@ -643,7 +645,7 @@ function HealthCard({ health, delta, exceeds, totalRisks, currency }: HealthCard
   return (
     <div className="im-card">
       <div className="im-card-head">
-        <span className="im-label">ENTERPRISE RISK HEALTH</span>
+        <span className="im-label">ENTERPRISE RISK HEALTH<Explain id="enterprise-risk-health" /></span>
         <div className="im-head-signals">
           <span className={`im-delta ${healthPillClass(health.status)}`}>{health.status}</span>
           <span
@@ -652,6 +654,7 @@ function HealthCard({ health, delta, exceeds, totalRisks, currency }: HealthCard
           >
             {health.confidence} confidence
           </span>
+          <Explain id="confidence" />
         </div>
       </div>
 
@@ -664,7 +667,10 @@ function HealthCard({ health, delta, exceeds, totalRisks, currency }: HealthCard
 
       <div className="im-appetite">
         <div className="im-appetite-head">
-          <span>{threshold != null ? 'Avg residual of risks with a threshold' : 'Average residual'} · scale 0 to {scale}</span>
+          <span>
+            {threshold != null ? 'Avg residual of risks with a threshold' : 'Average residual'} · scale 0 to {scale}
+            <Explain id="appetite-bar" />
+          </span>
           {threshold != null && <span>Appetite {threshold}</span>}
         </div>
         <div
@@ -768,7 +774,7 @@ function PressureCard({ pressure, onInsights }: { pressure: RiskPressure; onInsi
   return (
     <div className="im-card">
       <div className="im-card-head">
-        <span className="im-label">RISK PRESSURE</span>
+        <span className="im-label">RISK PRESSURE<Explain id="risk-pressure" /></span>
         <span className={`im-delta ${pressurePillClass(pressure.level)}`}>{pressure.level}</span>
       </div>
 
@@ -917,15 +923,16 @@ function ExecBriefCard({ stored, hasData, snapshotsHeld, canGenerate }: {
 
 // ── Risk & Incident Correlation row ──────────────────────────────────────────
 
-function CorrelationRow({ c, evidenced, rated, onOpen }: {
+function CorrelationRow({ c, evidenced, rated, highLabel, onOpen }: {
   c: Correlation;
   evidenced: number;
   rated: number;
+  highLabel: string;
   onOpen: (key: ModalKey) => void;
 }) {
   const head = (
     <div className="im-sect-head">
-      <h2>RISK &amp; INCIDENT CORRELATION</h2>
+      <h2>RISK &amp; INCIDENT CORRELATION<Explain id="correlation" /></h2>
       <p>What the two registers say about each other</p>
     </div>
   );
@@ -1008,7 +1015,7 @@ function CorrelationRow({ c, evidenced, rated, onOpen }: {
             {c.risks_materialised === 0
               ? 'Nothing to test against yet: no incident is linked to a risk.'
               : c.contradicted > 0
-                ? 'Rated 4 or 5 for control effectiveness and still produced an incident. These ratings are the first to test.'
+                ? `Rated ${highLabel} for control effectiveness and still produced an incident. These ratings are the first to test.`
                 : 'No well-rated control has produced an incident.'}
           </p>
           <p className="im-corr-foot">
@@ -1238,6 +1245,7 @@ export default function UnifiedSection({ data }: Props) {
           c={correlation}
           evidenced={control_evidence.evidenced}
           rated={control_evidence.rated}
+          highLabel={control_evidence.high_rating_label}
           onOpen={setModal}
         />
 
@@ -1321,7 +1329,7 @@ export default function UnifiedSection({ data }: Props) {
 
         {/* Operational Feed */}
         <div className="im-sect-head">
-          <h2>OPERATIONAL FEED</h2>
+          <h2>OPERATIONAL FEED<Explain id="operational-feed" /></h2>
           <p>Every change, as it happens</p>
         </div>
         <OperationalFeed
@@ -1358,7 +1366,13 @@ export default function UnifiedSection({ data }: Props) {
           onClose={closeModal}
           wide
         >
-          <MaterialisedModalContent c={correlation} currency={currency} canEditRisk={canManageRisks} onGo={go} />
+          <MaterialisedModalContent
+            c={correlation}
+            currency={currency}
+            canEditRisk={canManageRisks}
+            highLabel={control_evidence.high_rating_label}
+            onGo={go}
+          />
         </UnifiedModal>
       )}
 

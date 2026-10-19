@@ -43,6 +43,7 @@ from app.api.v1.routes.feedback import router as feedback_router
 from app.api.v1.routes.appetite import router as appetite_router
 from app.api.v1.routes.submissions import router as submissions_router
 from app.api.v1.routes.incident_severity import router as incident_severity_router
+from app.api.v1.routes.help import router as help_router
 from app.scheduler.jobs import (
     job_incident_escalation,
     job_daily_snapshot,
@@ -73,7 +74,7 @@ async def lifespan(_app: FastAPI):
     # Freshness recompute — 06:00 UTC
     scheduler.add_job(job_freshness_update, "cron", hour=6,  minute=0,  id="freshness_update")
     # Brief dispatch — every hour 07:00 to 10:00 UTC; each job checks per-tenant send time
-    scheduler.add_job(job_brief_send,        "cron", hour="7-10", minute=0,  id="brief_send")
+    scheduler.add_job(job_brief_send,        "cron", minute=0,  id="brief_send")
     scheduler.add_job(job_incident_escalation, "cron", minute=0,              id="incident_escalation")
     scheduler.add_job(job_trial_cleanup,        "cron", hour=5, minute=0,      id="trial_cleanup")
 
@@ -157,6 +158,7 @@ app.include_router(feedback_router,        prefix="/api/v1")
 app.include_router(appetite_router,        prefix="/api/v1")
 app.include_router(incident_severity_router, prefix="/api/v1")
 app.include_router(submissions_router,     prefix="/api/v1")
+app.include_router(help_router,            prefix="/api/v1")
 
 app.include_router(admin_auth_router,       prefix="/api")
 app.include_router(admin_overview_router,   prefix="/api")

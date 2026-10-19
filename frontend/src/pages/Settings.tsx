@@ -603,7 +603,7 @@ function BriefTab() {
             </select>
           </div>
           <div className="field">
-            <label>Send Time</label>
+            <label>Send Time (workspace time zone)</label>
             <select
               value={form.brief_send_time ?? "08:00"}
               onChange={(e) => field("brief_send_time", e.target.value)}
@@ -835,12 +835,12 @@ export default function Settings() {
   const { query } = useSettings();
   // Read the initial tab from ?tab= so Get Started can link straight to
   // Taxonomy, Risk Matrix or Risk Appetite. Falls back to Workspace.
-  const [searchParams] = useSearchParams();
-  const requestedTab   = searchParams.get("tab");
-  const initialTab     = TABS.some(t => t.id === requestedTab)
-    ? (requestedTab as TabId)
-    : "ws";
-  const [activeTab, setActiveTab] = useState<TabId>(initialTab);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedTab = searchParams.get("tab");
+  const activeTab: TabId = TABS.some(t => t.id === requestedTab) ? (requestedTab as TabId) : "ws";
+  function setActiveTab(id: TabId) {
+    setSearchParams({ tab: id }, { replace: true });
+  }
 
   if (query.isLoading) {
     return (

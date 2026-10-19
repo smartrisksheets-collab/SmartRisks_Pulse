@@ -3,6 +3,7 @@ import httpx
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 logger = logging.getLogger(__name__)
 from datetime import datetime, timezone
@@ -15,6 +16,7 @@ from app.core.exceptions import (
     DuplicateResourceError
 )
 from app.models.account import Account
+from app.models.account_identity import AccountIdentity
 from app.models.tenant import Tenant
 from app.models.workspace_member import WorkspaceMember
 
@@ -83,6 +85,32 @@ def _build_workspace_token(account: Account, member: WorkspaceMember, tenant: Te
     })
 
 
+async def record_identity(
+    db: AsyncSession, account_id: UUID, provider: str,
+    subject: str | None = None, used: bool = True,
+) -> None:
+    """Record a sign-in method for an account. used=False records it without a sign-in."""
+    now = datetime.now(timezone.utc) if used else None
+    base = pg_insert(AccountIdentity).values(
+        account_id=account_id, provider=provider,
+        provider_subject=subject, last_used_at=now,
+    )
+    if used:
+        await db.execute(base.on_conflict_do_update(
+            constraint="uq_account_identities_account_provider",
+            set_={
+                "last_used_at": now,
+                "provider_subject": func.coalesce(
+                    base.excluded.provider_subject, AccountIdentity.provider_subject
+                ),
+            },
+        ))
+    else:
+        await db.execute(base.on_conflict_do_nothing(
+            constraint="uq_account_identities_account_provider"
+        ))
+
+
 async def login(db: AsyncSession, email: str, password: str) -> dict:
     account = await db.scalar(select(Account).where(Account.email == email.lower()))
     _bad_login = (
@@ -97,6 +125,7 @@ async def login(db: AsyncSession, email: str, password: str) -> dict:
     account.last_login = datetime.now(timezone.utc)  # type: ignore[assignment]
     db.add(account)
     await db.flush()
+    await record_identity(db, account.id, "password")  # type: ignore[arg-type]
 
     members = (await db.execute(
         select(WorkspaceMember, Tenant)
@@ -314,6 +343,7 @@ async def reset_password(db: AsyncSession, token: str, new_password: str) -> dic
     account.token_version = (int(account.token_version or 1)) + 1  # type: ignore[assignment]
     db.add(account)
     await db.flush()
+    await record_identity(db, account.id, "password", used=False)  # type: ignore[arg-type]
     return {"message": "Password updated. Please sign in with your new password."}
 
 
@@ -334,9 +364,12 @@ async def register(db: AsyncSession, email: str, password: str, name: str) -> di
         email=email.lower(),
         name=name,
         password_hash=hash_password(password),
+        created_via="register",
+        last_login=datetime.now(timezone.utc),
     )
     db.add(account)
     await db.flush()
+    await record_identity(db, account.id, "password")  # type: ignore[arg-type]
 
     base_token = create_access_token({
         "sub": str(account.id),
@@ -388,10 +421,12 @@ async def google_auth(db: AsyncSession, access_token: str) -> dict:
 
     account = await db.scalar(select(Account).where(Account.email == email))
     if not account:
-        account = Account(email=email, name=name)
+        account = Account(email=email, name=name, created_via="google")
         db.add(account)
     account.last_login = datetime.now(timezone.utc)  # type: ignore[assignment]
     await db.flush()
+    google_sub = str(info.get("sub") or "") or None
+    await record_identity(db, account.id, "google", subject=google_sub)  # type: ignore[arg-type]
 
     members = (await db.execute(
         select(WorkspaceMember, Tenant)

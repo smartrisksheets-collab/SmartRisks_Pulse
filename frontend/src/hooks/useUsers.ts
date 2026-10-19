@@ -12,6 +12,12 @@ export interface WorkspaceMember {
   permissions: Record<string, boolean> | null;
   effective_permissions: Record<string, boolean> | null;
   last_login:  string | null;
+  sign_in:     SignInStatus | null;
+}
+
+export interface SignInStatus {
+  label:   string;
+  pending: boolean;
 }
 
 export interface AddMemberPayload {

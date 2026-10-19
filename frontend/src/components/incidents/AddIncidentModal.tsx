@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { listRisks } from '../../services/risks';
 import type { IncidentCreate } from '../../types/incident';
 import type { Risk } from '../../types/risk';
+import Explain from '../help/Explain';
 
 // ── Module-level constants ───────────────────────────────────────────────────
 
@@ -254,7 +255,7 @@ export default function AddIncidentModal({
 
             {/* Risk & Control Linkage */}
             <div className="modal-section-label" style={{ color: '#6a3fc9' }}>
-              Risk &amp; Control Linkage
+              Risk &amp; Control Linkage<Explain id="link-incident-to-risk" />
               <span className="linkage-badge" style={{ marginLeft: 'auto' }}>Optional</span>
             </div>
             <div className="linkage-panel">

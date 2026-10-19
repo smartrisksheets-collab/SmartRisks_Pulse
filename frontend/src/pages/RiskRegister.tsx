@@ -8,7 +8,6 @@ import { useLookups } from '../hooks/useLookups';
 import { useCanDo }        from '../utils/permissions';
 import { getStats, listRisks, getRisk, type StatsParams, type ListRisksParams } from '../services/risks';
 import { useMatrix }   from '../hooks/useMatrix';
-import { useAppetite } from '../hooks/useAppetite';
 import { useTriagePendingCount } from '../hooks/useSubmissions';
 import { useToast } from '../hooks/useToast';
 import StatCards           from '../components/risks/StatCards';
@@ -23,6 +22,7 @@ import PrintModal               from '../components/risks/PrintModal';
 import { buildRiskCsv, downloadCsv } from '../utils/riskExport';
 import type { ExportScope } from '../utils/riskExport';
 import RecycleBinModal          from '../components/recycle/RecycleBinModal';
+import Explain                  from '../components/help/Explain';
 import type { Risk, RiskCreate, AIInsightRequest, AIInsightResult } from '../types/risk';
 
 const PAGE_SIZE = 5;
@@ -35,8 +35,6 @@ export default function RiskRegister() {
   const toast    = useToast();
   const qc       = useQueryClient();
   const { query: matrixQuery }    = useMatrix();
-  const { query: appetiteQuery }  = useAppetite();
-  const appetites = appetiteQuery.data ?? [];
   const { data: triageCountData } = useTriagePendingCount();
   const triagePending = triageCountData?.count ?? 0;
 
@@ -418,12 +416,12 @@ export default function RiskRegister() {
           </div>
           {undecidedCount > 0 && (
             <div className="field">
-            <label>&nbsp;</label>
+            <label>Decisions<Explain id="undecided" /></label>
             <button
               type="button"
               className={`btn btn-undecided btn-compact${filterUndecided ? ' active' : ''}`}
               onClick={() => { setFilterUndecided(f => !f); setPage(1); }}
-              title={filterUndecided ? 'Clear undecided filter' : 'Show only risks with no linked decision'}
+              title={filterUndecided ? 'Clear undecided filter' : 'Show elevated or over-appetite risks with no recorded decision'}
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
@@ -446,7 +444,6 @@ export default function RiskRegister() {
           selectedIds={selectedIds}
           onToggle={handleToggle}
           onToggleAll={handleToggleAll}
-          appetites={appetites}
         />
 
         {/* Recycle bin link below table */}

@@ -7,6 +7,7 @@ import { useLookups } from '../../hooks/useLookups';
 import { useFeedbackStore } from '../../store/feedbackStore';
 import { useAuthStore } from '../../store/authStore';
 import { loadImportMapping, saveImportMapping } from '../../utils/importMapping';
+import Explain from '../help/Explain';
 
 interface Props {
   open:     boolean;
@@ -327,7 +328,7 @@ export default function ImportModal({ open, onClose, onImport }: Props) {
     <div className="modal-backdrop show" onClick={(e) => e.target === e.currentTarget && handleClose()}>
       <div className="modal" style={{ width: 'min(820px, 96vw)', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
         <div className="modal-hd">
-          <h3 className="modal-title">Import Risks</h3>
+          <h3 className="modal-title">Import Risks<Explain id="import-risks" /></h3>
           <button className="x" onClick={handleClose}>✕</button>
         </div>
 

@@ -37,6 +37,10 @@ class MatrixConfigResponse(BaseModel):
     model_config = {'from_attributes': True}
 
 
+MATRIX_SCALE_MIN = 3
+MATRIX_SCALE_MAX = 6
+
+
 class MatrixConfigUpdate(BaseModel):
     likelihood_scale:  int
     impact_scale:      int
@@ -59,6 +63,9 @@ class MatrixConfigUpdate(BaseModel):
 
     @model_validator(mode='after')
     def validate_bands(self) -> 'MatrixConfigUpdate':
+        for axis, val in (('Likelihood', self.likelihood_scale), ('Impact', self.impact_scale)):
+            if val < MATRIX_SCALE_MIN or val > MATRIX_SCALE_MAX:
+                raise ValueError(f'{axis} scale must be between {MATRIX_SCALE_MIN} and {MATRIX_SCALE_MAX}.')
         max_sev = self.likelihood_scale * self.impact_scale
         bc = self.band_count
 

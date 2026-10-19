@@ -28,7 +28,9 @@ from app.services.phase_one import (
     log_risk_history, log_activity,
 )
 from app.services.recycle import soft_delete
-from app.services.risk_status import APPETITE_NEAR_RATIO, ce_fraction, ce_avg_pct, resolve_ce_input
+from app.services.risk_status import (
+    APPETITE_NEAR_RATIO, ce_fraction, ce_avg_pct, resolve_ce_input, appetite_status, threshold_for,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -141,7 +143,7 @@ async def _audit(
 
 def _serialize(risk: Risk) -> dict:
     """Convert Risk ORM object to a JSON-safe dict for recycle bin storage."""
-    data = RiskResponse.model_validate(risk).model_dump(mode='json')
+    data = RiskResponse.model_validate(risk).model_dump(mode='json', exclude={'appetite_status'})
     lda = risk.linked_decision_at
     sid = risk.source_submission_id
     data['linked_decision_at']   = str(lda) if lda is not None else None
@@ -180,7 +182,22 @@ def _apply_risk_filters(
             | func.lower(Risk.owner).like(term)
         )
     if undecided is True:
-        q = q.where(Risk.linked_decision.is_(None))
+        # Same rule as risk_status.is_undecided: elevated or over appetite,
+        # no linked decision, not marked Accepted.
+        threshold = (
+            select(AppetiteThreshold.threshold)
+            .where(
+                AppetiteThreshold.tenant_id == tenant_id,
+                AppetiteThreshold.category == Risk.category,
+            )
+            .limit(1)
+            .scalar_subquery()
+        )
+        q = q.where(
+            func.coalesce(func.trim(Risk.linked_decision), '') == '',
+            func.coalesce(Risk.mitigation_status, '') != 'Accepted',
+            Risk.is_elevated.is_(True) | (Risk.residual > threshold),
+        )
 
     if appetite:
         q = q.outerjoin(
@@ -239,8 +256,25 @@ async def list_risks(
     risks  = rows.scalars().all()
     quota  = await _quota(db, tenant_id)
 
+    thresholds: dict[str, float] = {
+        str(t.category): float(t.threshold)  # type: ignore[arg-type]
+        for t in (await db.execute(
+            select(AppetiteThreshold.category, AppetiteThreshold.threshold)
+            .where(AppetiteThreshold.tenant_id == tenant_id)
+        )).all()
+        if t.category is not None and t.threshold is not None
+    }
+    items: list[RiskResponse] = []
+    for r in risks:
+        item = RiskResponse.model_validate(r)
+        item.appetite_status = appetite_status(
+            float(r.residual) if r.residual is not None else None,  # type: ignore[arg-type]
+            threshold_for(str(r.category) if r.category is not None else None, thresholds),
+        )
+        items.append(item)
+
     return RiskListResponse(
-        items=[RiskResponse.model_validate(r) for r in risks],
+        items=items,
         total=total,
         page=page,
         page_size=page_size,

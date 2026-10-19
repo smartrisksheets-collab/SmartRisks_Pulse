@@ -1662,3 +1662,43 @@ Every derived value (score, status, label, category coverage) is computed in the
 - **Incident to risk category mapping** is stored in `lookups.incident_category_map` and read only through `covering_risk_categories`. An incident category is covered only when a mapped risk category holds at least one risk.
 - **Suppression:** a component with no data is marked suppressed and its weight is redistributed. When every component is suppressed, the status is "No data".
 - **AI output** is escaped server-side with only `<b>` re-allowed, and prompts receive computed figures and record IDs only, never free-text titles.
+
+
+---
+
+## 36. Unified Product, Access Controls and Workspace Theming (October 2026)
+
+This section supersedes section 12 (Module System), the `DEFAULT_MODULES` constants in sections 11 and 12, the `modules` default in the `tenants` schema in section 13, and the dark mode description in section 31.
+
+### Modules
+
+- The product is unified only. Every workspace has `modules = ["risk", "incident"]`.
+- `DEFAULT_MODULES = ["risk", "incident"]` in `core/config.py`. The `tenants.modules` column default is `{risk,incident}`.
+- The Founder Panel cannot change modules. `AdminWorkspaceUpdate` accepts only both modules.
+- `require_module()` stays in place as a backend safety check.
+
+### Access control rules
+
+- Changing workspace settings, setting the PIN and uploading a logo require `manage_settings`.
+- Settings GET is open to members, but recipients and AI policy text are blank without `manage_settings`, and `perm_*` fields are hidden unless the member also has `manage_users`.
+- User management: no member changes their own access; only the Owner role acts on Owners or grants Owner, Manage Settings or Manage Users; the last active Owner cannot be demoted, deactivated or removed.
+- Effective permissions are computed only by `_role_permissions` in `services/auth.py`. The Users page reads them from the backend.
+
+### Authentication additions
+
+- Google sign-in requires `GOOGLE_CLIENT_ID` on the backend and refuses sign-in without it.
+- Password reset tokens carry `token_version` and are single use.
+- Forgot password sends to every existing account. Accounts without a password get the "set a password" wording.
+
+### Workspace theming
+
+- Theme variables live in `:root`: `--primary`, `--primary-rgb`, `--primary-strong`, `--accent`, `--accent-rgb`, `--accent-strong`, `--accent-text`.
+- `applyBrandColors` in `src/utils/brand.ts` is the only code that sets them at runtime. It validates hex values and caches them under `sr-brand`.
+- New in-app CSS uses these variables for brand color. Colors that carry meaning (success, risk bands, severity) and pre-workspace pages stay hardcoded.
+- Text in the accent color uses `var(--accent-text)` so it turns light in dark mode. Backgrounds use `var(--accent)`.
+- Theme mode: the header switch is per person and per device. The workspace setting is only the default. `uiStore` resolves "auto" to `light` or `dark`, so `data-theme` is only ever `light` or `dark`.
+
+### Logo storage
+
+- Bucket `workspace-logos`, path `logos/<tenant_id>/<time>_<random>.<ext>`.
+- PNG, JPEG or WebP only, up to 2 MB, type detected from the file content.

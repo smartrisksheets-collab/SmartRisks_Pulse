@@ -2,10 +2,10 @@
 
 import { useState } from 'react';
 import type { Risk } from '../../types/risk';
-import type { AppetiteThreshold } from '../../types/settings';
 import { formatDate, formatExposure } from '../../utils/format';
 import { freshnessClass } from '../../utils/scoring';
 import { useSettingsStore } from '../../store/settingsStore';
+import Explain from '../help/Explain';
 
 
 const _FRESH_META: Record<string, { label: string; sub: string; color: string }> = {
@@ -63,7 +63,6 @@ interface Props {
   selectedIds:  Set<string>;
   onToggle:     (id: string) => void;
   onToggleAll:  () => void;
-  appetites?:   AppetiteThreshold[];
 }
 
 // Index-based badge class
@@ -72,16 +71,6 @@ function levelBadgeClass(index: number | null): string {
   return map[index ?? 1] ?? 'low';
 }
 
-// Appetite status: compares residual against category threshold
-function appetiteStatus(
-  residual: number | null,
-  threshold: number | null
-): 'within' | 'near' | 'exceeds' | 'unset' {
-  if (residual == null || threshold == null) return 'unset';
-  if (residual > threshold)        return 'exceeds';
-  if (residual > threshold * 0.75) return 'near';
-  return 'within';
-}
 
 // Days since a risk was logged with no linked decision
 function decisionDays(loggedAt: string | null | undefined): number {
@@ -101,7 +90,7 @@ const APT_LABELS: Record<string, string> = {
 
 
 
-export default function RiskTable({ risks, loading, onView, onEdit, flashId, aiFlashIds, selectedIds, onToggle, onToggleAll, appetites }: Props) {
+export default function RiskTable({ risks, loading, onView, onEdit, flashId, aiFlashIds, selectedIds, onToggle, onToggleAll }: Props) {
   const [freshTip,  setFreshTip]  = useState<{ risk: Risk; x: number; y: number } | null>(null);
   const [hoverTip,  setHoverTip]  = useState<{ title: string; sub: string; rows?: { label: string; value: string; accent?: boolean }[]; x: number; y: number } | null>(null);
   const currency = useSettingsStore(s => s.currency);
@@ -144,9 +133,12 @@ export default function RiskTable({ risks, loading, onView, onEdit, flashId, aiF
             <th style={{ width: 140 }}>Business Impact</th>
             <th style={{ width: 70, textAlign: 'center' }}>Severity</th>
             <th style={{ width: 90 }}>Level</th>
-            <th style={{ width: 80, textAlign: 'center' }}>Residual</th>
+            <th style={{ width: 80, textAlign: 'center' }}>
+              Residual<Explain id="residual-risk" />
+              <div className="th-sub">Freshness<Explain id="freshness" /></div>
+            </th>
             <th style={{ width: 120 }}>Estimate</th>
-            <th style={{ width: 100 }}>Appetite</th>
+            <th style={{ width: 100 }}>Appetite<Explain id="risk-appetite" /></th>
             <th style={{ width: 120 }}>Decision</th>
           </tr>
         </thead>
@@ -247,11 +239,8 @@ export default function RiskTable({ risks, loading, onView, onEdit, flashId, aiF
                 {/* Appetite */}
                 <td className="apt-col">
                   {(() => {
-                    const rec    = (appetites ?? []).find(
-                      a => a.category.trim().toLowerCase() === (r.category ?? '').trim().toLowerCase()
-                    );
-                    const status = appetiteStatus(r.residual, rec?.threshold ?? null);
-                    if (status === 'unset') return (
+                    const status = r.appetite_status;
+                    if (status === null) return (
                       <span
                         className="apt-pill apt-pill-unset"
                         onMouseMove={(e) => setHoverTip({ title: 'NO THRESHOLD', sub: 'Visit settings to configure an appetite threshold for this category.', x: e.clientX, y: e.clientY })}

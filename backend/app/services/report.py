@@ -30,7 +30,7 @@ from app.models.risk_history import RiskHistory
 from app.models.appetite_threshold import AppetiteThreshold
 from app.models.matrix_config import MatrixConfig
 from app.models.tenant import Tenant
-from app.services.risk_status import ce_avg_pct
+from app.services.risk_status import ce_avg_pct, appetite_status, threshold_for, high_control_text
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -98,20 +98,13 @@ def _level_index_color(level_index: int) -> str:
 
 # ── Appetite status helper ─────────────────────────────────────────────────────
 
-_NEAR_APPETITE_RATIO = 0.80  # confirmed 2026-09-11: Near = residual >= threshold * 0.80
+_APPETITE_LABELS: dict[str, str] = {"exceeds": "Exceeds", "near": "Near", "within": "Within"}
 
-def _compute_appetite_status(residual: float, threshold: int | None) -> str | None:
-    """Returns 'Exceeds', 'Near', or 'Within' against the configured threshold.
-    Returns None when no threshold is configured for the risk's category."""
-    if threshold is None:
-        return None
-    if threshold == 0:
-        return "Exceeds" if residual > 0 else "Within"
-    if residual > threshold:
-        return "Exceeds"
-    if residual >= threshold * _NEAR_APPETITE_RATIO:
-        return "Near"
-    return "Within"
+
+def _compute_appetite_status(residual: float | None, threshold: float | None) -> str | None:
+    """Report casing of risk_status.appetite_status, the single definition."""
+    status = appetite_status(residual, threshold)
+    return _APPETITE_LABELS[status] if status is not None else None
 
 
 def _normalize_category(raw: str | None) -> str:
@@ -224,9 +217,10 @@ async def _fetch_risks(db: AsyncSession, tenant_id: UUID) -> list[RiskRow]:
     _thresh_result = await db.execute(
         select(AppetiteThreshold).where(AppetiteThreshold.tenant_id == tenant_id)
     )
-    _thresholds: dict[str, int] = {
-        _normalize_category(str(row.category)):  int(row.threshold)  # type: ignore[arg-type]
+    _thresholds: dict[str, float] = {
+        str(row.category): float(row.threshold)  # type: ignore[arg-type]
         for row in _thresh_result.scalars()
+        if row.category is not None and row.threshold is not None
     }
 
     result = await db.execute(
@@ -258,7 +252,8 @@ async def _fetch_risks(db: AsyncSession, tenant_id: UUID) -> list[RiskRow]:
             controls=str(r.controls or ""),
             # governance
             appetite_status=_compute_appetite_status(
-                _residual, _thresholds.get(_category)
+                float(r.residual) if r.residual is not None else None,  # type: ignore[arg-type]
+                threshold_for(str(r.category) if r.category is not None else None, _thresholds),
             ),
             linked_decision=str(r.linked_decision or ""),
             linked_decision_at=_parse_date(r.linked_decision_at),         # type: ignore[arg-type]
@@ -1121,6 +1116,8 @@ def compute_recommendations(ctx: ReportContext) -> dict:
 
     # Assurance gaps
     if fn.get("assurance_gaps"):
+        _ce_scale = int(ctx.matrix_config.ce_scale) if ctx.matrix_config is not None else 5  # type: ignore[arg-type]
+        _hc = high_control_text(_ce_scale)
         recs.append({
             "title":                "Evidence control effectiveness ratings",
             "priority":             "High",
@@ -1129,11 +1126,11 @@ def compute_recommendations(ctx: ReportContext) -> dict:
             "trigger":              fn["assurance_gaps"][0],
             "body": (
                 "Obtain test dates and assertion sources for all unverified control ratings. "
-                "Ratings of 3 or above should be evidenced first."
+                f"Ratings of {_hc} should be evidenced first."
             ),
             "completion_criterion": (
-                "Every control rated 3 or above carries a test date within the last 12 months "
-                "and a named asserting party."
+                f"Every control rated {_hc} carries a test dated within the last 12 months "
+                "that was independently tested or externally audited."
             ),
         })
 

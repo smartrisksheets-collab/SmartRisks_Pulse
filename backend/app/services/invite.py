@@ -69,7 +69,7 @@ async def validate_invite(db: AsyncSession, token: str) -> dict:
 
 
 async def accept_invite(db: AsyncSession, token: str, password: str) -> dict:
-    from app.services.auth import _build_workspace_token
+    from app.services.auth import _build_workspace_token, record_identity
     from app.core.security import hash_password
 
     claims    = _decode(token)
@@ -91,7 +91,9 @@ async def accept_invite(db: AsyncSession, token: str, password: str) -> dict:
         raise InvalidTokenError("Invite is no longer valid. Contact your workspace admin.")
 
     account.password_hash = hash_password(password)  # type: ignore[assignment]
+    account.last_login = datetime.now(timezone.utc)  # type: ignore[assignment]
     await db.flush()
+    await record_identity(db, account.id, "password")  # type: ignore[arg-type]
 
     tenant = await db.get(Tenant, tenant_id)
     workspace_token = _build_workspace_token(account, member, tenant)  # type: ignore[arg-type]

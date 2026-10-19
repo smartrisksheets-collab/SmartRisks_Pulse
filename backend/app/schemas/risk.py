@@ -123,6 +123,7 @@ class RiskResponse(BaseModel):
     source:                   str = 'internal'
     created_at:               datetime
     updated_at:               datetime
+    appetite_status:          str | None = None
 
     model_config = {'from_attributes': True}
 

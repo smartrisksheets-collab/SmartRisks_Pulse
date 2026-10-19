@@ -18,6 +18,8 @@ export function useMatrix() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['matrix-config'] });
       qc.invalidateQueries({ queryKey: ['risks'] });
+      qc.invalidateQueries({ queryKey: ['dashboard'] });
+      qc.invalidateQueries({ queryKey: ['help'] });
     },
   });
 
@@ -33,6 +35,7 @@ export function useSaveCeConfig() {
       qc.invalidateQueries({ queryKey: ['risks'] });
       qc.invalidateQueries({ queryKey: ['dashboard'] });
       qc.invalidateQueries({ queryKey: ['exec-insights'] });
+      qc.invalidateQueries({ queryKey: ['help'] });
     },
   });
 }

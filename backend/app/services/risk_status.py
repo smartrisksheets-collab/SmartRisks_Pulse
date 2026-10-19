@@ -7,6 +7,7 @@ functions rather than restating the rules. Pure functions over plain values,
 no database access, so they are cheap to call per row and easy to test.
 """
 
+import math
 from datetime import date, datetime, timedelta
 
 from app.services.phase_one import compute_freshness
@@ -39,6 +40,21 @@ def ce_avg_pct(avg_level: float | None, scale: int) -> float:
 def is_high_control(control_effectiveness: int | None, scale: int) -> bool:
     """High control rating: fraction of the scale >= CE_HIGH_FRACTION."""
     return control_effectiveness is not None and ce_avg_pct(float(control_effectiveness), scale) >= CE_HIGH_FRACTION * 100
+
+
+def high_control_min(scale: int) -> int:
+    """Lowest level that is_high_control treats as high on this scale."""
+    return math.ceil(CE_HIGH_FRACTION * scale)
+
+
+def high_control_text(scale: int) -> str:
+    """The high-rating levels in words: '4 or 5' on a 5-level scale, '3 or 4' on a 4-level scale."""
+    low = high_control_min(scale)
+    if low >= scale:
+        return str(scale)
+    if scale - low == 1:
+        return f"{low} or {scale}"
+    return f"{low} to {scale}"
 
 
 def ce_label(level: int | None, labels: dict[str, str]) -> str:
@@ -79,6 +95,13 @@ def appetite_status(residual: float | None, threshold: float | None) -> str | No
     if residual > threshold * APPETITE_NEAR_RATIO:
         return "near"
     return "within"
+
+
+def threshold_for(category: str | None, thresholds: dict[str, float]) -> float | None:
+    """The appetite threshold that applies to a risk: exact category match, none for a blank category."""
+    if category is None or not category.strip():
+        return None
+    return thresholds.get(category)
 
 
 def is_stale(last_reviewed_at: datetime | None, logged_at: date | None) -> bool:

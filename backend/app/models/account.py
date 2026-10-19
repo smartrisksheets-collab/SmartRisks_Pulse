@@ -15,6 +15,7 @@ class Account(Base):
     last_seen = Column(DateTime(timezone=True))
     supabase_uid  = Column(String, unique=True, nullable=True)
     password_hash = Column(String, nullable=True)
+    created_via   = Column(String, nullable=True)
     token_version    = Column(Integer,      nullable=False, server_default="1")
     max_workspaces   = Column(SmallInteger, nullable=False, server_default="1")
     created_at = Column(DateTime(timezone=True), server_default=func.now())

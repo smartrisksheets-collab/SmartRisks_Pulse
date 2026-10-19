@@ -6,6 +6,7 @@ logger = logging.getLogger(__name__)
 from sqlalchemy import select, func
 from uuid import UUID
 from app.models.account import Account
+from app.models.account_identity import AccountIdentity
 from app.models.workspace_member import WorkspaceMember
 from app.models.tenant import Tenant
 from app.models.audit_log import AuditLog
@@ -50,6 +51,31 @@ def effective_permissions(member: WorkspaceMember, ws: dict) -> dict[str, bool]:
     return _role_permissions(str(member.role or "Analyst"), ws)
 
 
+async def sign_in_methods(db: AsyncSession, account_ids: list[UUID]) -> dict[str, set[str]]:
+    """Sign-in methods per account, keyed by account id string."""
+    out: dict[str, set[str]] = {}
+    if not account_ids:
+        return out
+    result = await db.execute(
+        select(AccountIdentity.account_id, AccountIdentity.provider)
+        .where(AccountIdentity.account_id.in_(account_ids))
+    )
+    for account_id, provider in result.all():
+        out.setdefault(str(account_id), set()).add(str(provider))
+    return out
+
+
+def sign_in_status(providers: set[str]) -> dict[str, str | bool]:
+    """The one definition of a member's sign-in label. No method yet means the invite was never accepted."""
+    if not providers:
+        return {"label": "Invite pending", "pending": True}
+    if providers >= {"password", "google"}:
+        return {"label": "Password + Google", "pending": False}
+    if "google" in providers:
+        return {"label": "Google", "pending": False}
+    return {"label": "Password", "pending": False}
+
+
 async def _active_owner_count(db: AsyncSession, tenant_id: UUID) -> int:
     count = await db.scalar(
         select(func.count()).where(
@@ -89,7 +115,7 @@ async def add_member(
 
     account = await db.scalar(select(Account).where(Account.email == payload.email.lower()))
     if not account:
-        account = Account(email=payload.email.lower(), name=payload.name)
+        account = Account(email=payload.email.lower(), name=payload.name, created_via="invite")
         db.add(account)
         await db.flush()
 

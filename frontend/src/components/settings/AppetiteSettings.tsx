@@ -7,6 +7,7 @@ import { useAppetite } from '../../hooks/useAppetite';
 import { useMatrix } from '../../hooks/useMatrix';
 import { useToast } from '../../hooks/useToast';
 import type { AppetiteThresholdUpsert } from '../../types/settings';
+import Explain from '../help/Explain';
 
 interface Draft {
   threshold: number;
@@ -262,7 +263,7 @@ export default function AppetiteSettings() {
   return (
     <div>
       <div className="settings-section">
-        <div className="settings-title">Risk Appetite Thresholds</div>
+        <div className="settings-title">Risk Appetite Thresholds<Explain id="risk-appetite" /></div>
         <p className="muted small">
           Set the maximum residual risk each category is permitted to carry, on your workspace&apos;s 1&ndash;{scaleMax} risk scale.
         </p>

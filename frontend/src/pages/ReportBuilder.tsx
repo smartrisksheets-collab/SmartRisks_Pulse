@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import BlockSelector   from '../components/reports/BlockSelector';
 import BlockCanvas     from '../components/reports/BlockCanvas';
+import Explain         from '../components/help/Explain';
 import { useReports }  from '../hooks/useReports';
 import { useCanDo }    from '../utils/permissions';
 import { AI_BLOCKS, type BlockKey, type DatePreset, type ExportFormat } from '../types/report';
@@ -364,16 +365,19 @@ export default function ReportBuilder() {
   const [showEmail,           setShowEmail]           = useState(false);
   const [dateMenuOpen,        setDateMenuOpen]        = useState(false);
   const [tplMenuOpen,         setTplMenuOpen]         = useState(false);
+  const [shareMenuOpen,       setShareMenuOpen]       = useState(false);
   const [showManageTemplates, setShowManageTemplates] = useState(false);
 
   const dateMenuRef = useRef<HTMLDivElement>(null);
   const tplMenuRef  = useRef<HTMLDivElement>(null);
+  const shareMenuRef = useRef<HTMLDivElement>(null);
 
   // Close menus on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (!dateMenuRef.current?.contains(e.target as Node)) setDateMenuOpen(false);
       if (!tplMenuRef.current?.contains(e.target as Node))  setTplMenuOpen(false);
+      if (!shareMenuRef.current?.contains(e.target as Node)) setShareMenuOpen(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
@@ -500,7 +504,7 @@ export default function ReportBuilder() {
         {/* Top row */}
         <div className="rb-top">
           <div className="rb-mark">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#01b88e" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#01b88e" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
               <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
               <polyline points="14 2 14 8 20 8"/>
               <line x1="9" y1="17" x2="9" y2="13"/><line x1="12" y1="17" x2="12" y2="11"/><line x1="15" y1="17" x2="15" y2="14"/>
@@ -508,7 +512,7 @@ export default function ReportBuilder() {
           </div>
 
           <div className="rb-title">
-            <h1>Report Builder</h1>
+            <h1>Report Builder<Explain id="report-builder" /></h1>
             <p>Create insightful reports from your risk data.</p>
           </div>
 
@@ -642,42 +646,50 @@ export default function ReportBuilder() {
               <div className={`rb-num${rb.step >= 2 ? ' active' : ''}`}>3</div>
               <h2>Share your report</h2>
             </div>
-            <p>Send it by email or download a PDF.</p>
+            <p>Send it by email, or download a PDF or PowerPoint.</p>
             <div className="rb-step-btns">
-              <button className="btn btn-secondary" type="button"
-                onClick={handleEmailClick}
-                disabled={step3Disabled || rb.exporting || !canPrint}
-                title={!canPrint ? 'Requires Manager or Owner role' : undefined}>
-                {rb.exporting
-                  ? <><span className="spinner" />Sending…</>
-                  : <><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-                      <rect x="2" y="4" width="20" height="16" rx="2"/><polyline points="22,6 12,13 2,6"/>
-                    </svg>Send by Email</>
-                }
-              </button>
-              <button className="btn btn-navy" type="button"
-                onClick={() => handleDownload('pdf')}
-                disabled={step3Disabled || rb.exporting || !canPrint}
-                title={!canPrint ? 'Requires Manager or Owner role' : undefined}>
-                {rb.exporting
-                  ? <><span className="spinner" />Exporting…</>
-                  : <><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                      <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-                    </svg>Download PDF</>
-                }
-              </button>
-              <button className="btn btn-secondary" type="button"
-                onClick={() => handleDownload('pptx')}
-                disabled={step3Disabled || rb.exporting || !canPrint}
-                title={!canPrint ? 'Requires Manager or Owner role' : undefined}>
-                {rb.exporting
-                  ? <><span className="spinner" />Exporting…</>
-                  : <><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-                      <rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
-                    </svg>PowerPoint</>
-                }
-              </button>
+              <div className={`rb-menu-wrap rb-share-wrap${shareMenuOpen ? ' open' : ''}`} ref={shareMenuRef}>
+                <button className="btn btn-navy" type="button" aria-haspopup="true" aria-expanded={shareMenuOpen}
+                  onClick={() => { setShareMenuOpen(o => !o); setDateMenuOpen(false); setTplMenuOpen(false); }}
+                  disabled={step3Disabled || rb.exporting || !canPrint}
+                  title={!canPrint ? 'Requires Manager or Owner role' : undefined}>
+                  {rb.exporting
+                    ? <><span className="spinner" />Working…</>
+                    : <>
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/>
+                        </svg>
+                        Share report
+                        <svg className="chev" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="6 9 12 15 18 9"/>
+                        </svg>
+                      </>
+                  }
+                </button>
+                <ul className="rb-menu" role="menu" aria-label="Share report">
+                  <li>
+                    <button type="button" role="menuitem" onClick={() => { setShareMenuOpen(false); void handleEmailClick(); }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="2" y="4" width="20" height="16" rx="2"/><polyline points="22,6 12,13 2,6"/>
+                      </svg>Send by email
+                    </button>
+                  </li>
+                  <li>
+                    <button type="button" role="menuitem" onClick={() => { setShareMenuOpen(false); void handleDownload('pdf'); }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                      </svg>Download PDF
+                    </button>
+                  </li>
+                  <li>
+                    <button type="button" role="menuitem" onClick={() => { setShareMenuOpen(false); void handleDownload('pptx'); }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
+                      </svg>Download PowerPoint
+                    </button>
+                  </li>
+                </ul>
+              </div>
             </div>
           </div>
 
