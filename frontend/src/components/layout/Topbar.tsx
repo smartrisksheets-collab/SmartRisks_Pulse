@@ -7,6 +7,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { usePresence } from '../../hooks/usePresence';
 import GetStartedDrawer from './GetStartedDrawer';
 import { roleLabel } from '../../utils/roles';
+import AskPulse from '../help/AskPulse';
 
 function computeGsPulse(tid: string): boolean {
   if (!tid) return false;
@@ -115,6 +116,8 @@ export default function Topbar({ title = 'Dashboard' }: TopbarProps) {
             </span>
           </div>
         )}
+
+        <AskPulse />
 
         <button
           className="topbar-theme-btn"

@@ -250,6 +250,7 @@ class ControlEvidence(BaseModel):
     independently_asserted: int = 0
     evidenced: int = 0
     rated_high: int = 0
+    high_rating_label: str = ""
     contradicted: int = 0
     rows: list[ControlEvidenceRow] = Field(default_factory=list)
     actions: list[RecommendedAction] = Field(default_factory=list)

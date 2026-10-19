@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone, date
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
 from sqlalchemy import select, text
@@ -83,6 +84,17 @@ async def job_recycle_purge() -> None:
                 await purge_expired(db)
     except Exception:
         logger.exception("job_recycle_purge failed")
+
+    from app.services.ask_pulse import HELP_EVENT_RETENTION_DAYS
+    try:
+        async with AsyncSessionLocal() as db:
+            async with db.begin():
+                await db.execute(
+                    text("DELETE FROM help_events WHERE created_at < now() - make_interval(days => :d)"),
+                    {"d": HELP_EVENT_RETENTION_DAYS},
+                )
+    except Exception:
+        logger.exception("job_recycle_purge: help events purge failed")
 
 
 # ── job: orphaned logo sweep ───────────────────────────────────────────────
@@ -314,7 +326,7 @@ async def job_trial_cleanup() -> None:
 async def job_brief_send() -> None:
     """
     Send the daily brief for all tenants whose configured brief_send_time
-    matches the current UTC hour. Runs every hour 07:00–10:00 UTC.
+    matches the current hour in the workspace's own time zone. Runs hourly.
 
     Duplicate send guard: if brief_last_sent == today, skip that tenant.
     Weekend guard: skips Saturday and Sunday.
@@ -323,15 +335,7 @@ async def job_brief_send() -> None:
     from app.services.brief import build_brief_payload
     from app.services.email import build_brief_html, build_brief_subject, send_brief_email
 
-    now       = datetime.now(timezone.utc)
-    today_str = now.strftime("%Y-%m-%d")
-    dow       = now.weekday()  # 0=Mon, 5=Sat, 6=Sun
-
-    if dow >= 5:
-        logger.info("job_brief_send: weekend — skipped")
-        return
-
-    current_hour = now.hour
+    now = datetime.now(timezone.utc)
 
     async with AsyncSessionLocal() as db:
         tenants = (await db.execute(select(Tenant))).scalars().all()
@@ -346,14 +350,24 @@ async def job_brief_send() -> None:
         if not recipients:
             continue
 
+        # Local time in the workspace's time zone. An unknown zone falls back to UTC.
+        tz_name = str(tenant.timezone) if tenant.timezone is not None else str(ws.get("timezone") or "UTC")
+        try:
+            local = now.astimezone(ZoneInfo(tz_name))
+        except (ZoneInfoNotFoundError, ValueError):
+            local = now
+        if local.weekday() >= 5:
+            continue
+        today_str = local.strftime("%Y-%m-%d")
+
         # Duplicate send guard
         if str(ws.get("brief_last_sent") or "") == today_str:
             continue
 
-        # Hour match
+        # Hour match, in local time
         send_time   = str(ws.get("brief_send_time") or "08:00")
         config_hour = int(send_time.split(":")[0])
-        if current_hour != config_hour:
+        if local.hour != config_hour:
             continue
 
         recipient_list = [e.strip() for e in recipients.split(",") if e.strip()]

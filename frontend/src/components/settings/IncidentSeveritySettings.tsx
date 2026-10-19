@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useIncidentSeverity } from '../../hooks/useIncidentSeverity';
 import { useAuthStore } from '../../store/authStore';
 import UnsavedBanner from './UnsavedBanner';
+import Explain from '../help/Explain';
 
 // ── Module-level constants ───────────────────────────────────────────────────
 
@@ -369,7 +370,7 @@ export default function IncidentSeveritySettings() {
           <div className="settings-section" style={{ marginBottom: 14 }}>
             <div className="mx-card-header">
               <span className="mx-card-num">2</span>
-              <span className="mx-card-title">SLA targets</span>
+              <span className="mx-card-title">SLA targets<Explain id="incident-sla" /></span>
             </div>
             <p className="mx-card-desc">
               Time to resolution per severity. Higher severities are typically set in hours, lower in days. Mixed units are supported.

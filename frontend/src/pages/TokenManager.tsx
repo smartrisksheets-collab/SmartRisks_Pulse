@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { useTokens, useCreateToken, useRevokeToken } from '../hooks/useSubmissions';
 import { useToast } from '../hooks/useToast';
 import type { SubmissionToken } from '../types/submission';
+import Explain from '../components/help/Explain';
 
 const BASE_URL = window.location.origin;
 
@@ -75,7 +76,7 @@ export default function TokenManager() {
               </svg>
               Risk Register
             </button>
-            <span style={{ fontWeight: 800, color: 'var(--navy)' }}>Submission Links</span>
+            <span style={{ fontWeight: 800, color: 'var(--navy)' }}>Submission Links<Explain id="submission-link" /></span>
           </div>
           <button className="btn btn-primary btn-compact" onClick={() => setShowCreate(true)}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"

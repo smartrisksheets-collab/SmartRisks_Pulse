@@ -8,6 +8,7 @@ from pydantic import BaseModel, field_validator
 from app.core.config import settings as app_settings
 
 _HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+BRIEF_SEND_TIMES: frozenset[str] = frozenset({"07:00", "08:00", "09:00", "10:00"})
 
 
 class SettingsResponse(BaseModel):
@@ -175,6 +176,13 @@ class SettingsUpdate(BaseModel):
     def _theme_mode(cls, v: str | None) -> str | None:
         if v is not None and v not in {"light", "dark", "auto"}:
             raise ValueError("Theme mode must be light, dark or auto.")
+        return v
+
+    @field_validator("brief_send_time")
+    @classmethod
+    def _brief_send_time(cls, v: str | None) -> str | None:
+        if v is not None and v not in BRIEF_SEND_TIMES:
+            raise ValueError("Send time must be 07:00, 08:00, 09:00 or 10:00.")
         return v
 
 

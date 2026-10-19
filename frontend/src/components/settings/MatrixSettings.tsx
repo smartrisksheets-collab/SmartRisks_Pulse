@@ -5,6 +5,7 @@ import { useMatrix } from '../../hooks/useMatrix';
 import UnsavedBanner from './UnsavedBanner';
 import type { MatrixConfigUpdate } from '../../types/matrix';
 import { MATRIX_DEFAULTS } from '../../types/matrix';
+import Explain from '../help/Explain';
 
 // ── Module-level constants ──────────────────────────────────────────────────
 
@@ -154,7 +155,7 @@ export default function MatrixSettings() {
     <div className="settings-section">
       {isDirty && !warnMsg && <UnsavedBanner onSave={handleSave} saving={save.isPending} />}
 
-      <div className="settings-title">Risk Matrix &amp; Scoring Bands</div>
+      <div className="settings-title">Risk Matrix &amp; Scoring Bands<Explain id="risk-matrix" /></div>
       <p className="muted small" style={{ marginBottom: 20 }}>
         Define how risk is scored in this workspace. Set the matrix dimensions, then map severity scores to bands.
         Saving re-classifies all existing risks immediately.

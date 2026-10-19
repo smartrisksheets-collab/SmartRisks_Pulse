@@ -3,7 +3,7 @@
 **Product:** SmartRisk Pulse v2
 **Stack:** FastAPI + React + Supabase + Render + Vercel
 **Setup document:** SMARTRISK_V2_SETUP.md
-**Last updated:** October 8, 2026
+**Last updated:** October 19, 2026
  
 ---
  
@@ -15,9 +15,99 @@ At the end of every session Claude outputs a fresh version of this file with all
  
 ---
  
-**Phase:** Product polish, AI calibration, and UI refinement. Configurable control effectiveness scale is complete in code, with the scale switch still locked pending staging tests.
-**Status:** Session 26, October 2 to 8, 2026: control effectiveness Phases A, B and C, migrations 057 and 058, unified trend calendar axis, triage reroute and close fix, settings section divider, connectors explainer. See session log below.
-**Next action:** Begin next session by reading SMARTRISK_V2_SETUP.md, SMARTRISK_V2_DECISIONS.md, then this file. First task: work through the carried-over list under Session 26, starting with migrations on every database.
+**Phase:** Product polish and hardening. Unified-only product, report export, security and access controls, workspace theming. Control effectiveness scale switch still locked pending staging tests.
+**Status:** Session 27, October 14 to 19, 2026: AI brief fix, report email CC, unified modules (migration 059), risk and incident correlation block, PowerPoint export, settings and user access security, Google sign-in and password reset fixes, workspace color and theme overhaul. See session log below.
+**Next action:** Begin next session by reading SMARTRISK_V2_SETUP.md, SMARTRISK_V2_DECISIONS.md, then this file. First task: apply migrations 057, 058 and 059 on every database, then the Session 26 carried-over list, then the Session 27 list.
+
+---
+
+### Session 27: October 14 to 19, 2026, Unified Product, Report Export, Access Security, Theming
+
+**Completed:**
+
+**Dashboard AI**
+- Executive Intelligence brief no longer invents organisation or company names. Rule added to the `ai_unified.py` system prompt.
+
+**Report builder**
+- CC field on Send Report by Email (max 5, validated on frontend and backend, To address removed from CC).
+- Risk and Incident Correlation block: backend compute (`report.py`), AI facts (`report_facts.py`), AI evidence and guard rules (`ai_report.py`), PDF renderer (`pdf_report.py`), frontend preview (`ReportPreview.tsx`), block selector entry.
+- PowerPoint export alongside PDF (`pptx_report.py`, python-pptx 1.0.2). Export route returns `file_base64`, `file_name`, `mime_type`. New PowerPoint button on Report Builder.
+- PDF cover template fix: page 1 template chosen by `has_cover`.
+- Registry parity test (`tests/test_export_registries.py`): every PDF renderer has a PPTX renderer.
+
+**Unified-only product**
+- Migration 059: `tenants.modules` set to `{risk,incident}` for all rows and as the column default. `DEFAULT_MODULES` and the model default updated. Wizard store entry updated.
+- Founder Panel can no longer change modules: the `AdminWorkspaceUpdate` validator accepts only both, and the drawer shows modules read-only.
+
+**API docs fix**
+- `routes/external.py`: removed `from __future__ import annotations`, which broke `/api/docs` with a ForwardRef UUID error under slowapi.
+
+**Settings security**
+- Save settings, set PIN and upload logo now require `manage_settings` (Owner).
+- Logo upload: PNG, JPEG or WebP detected from file bytes, 2 MB cap, per-workspace random path. `logo_url` must point into the `workspace-logos` bucket. Old logo deleted only after save. Removing a logo now saves.
+- Settings GET: members without `manage_settings` get blank alert and brief recipients and AI policy text. Permission fields are hidden unless the member also has `manage_users`.
+- Color and theme values validated on the backend.
+
+**User management security**
+- Nobody can change access for, deactivate or remove their own account.
+- Only Admins (Owner role) can act on another Admin, grant the Admin role, or grant Manage Settings or Manage Users.
+- The last Admin cannot be demoted. Unknown permission keys are rejected. Roles are validated.
+- Users page now uses backend effective permissions and a new `GET /api/v1/users/role-permissions` endpoint instead of a hardcoded table that was wrong for Analysts.
+
+**Google sign-in and password reset**
+- Google sign-in refused when `GOOGLE_CLIENT_ID` is missing (previously the app check was skipped).
+- Forgot password now emails passwordless accounts a "Set your SmartRisk Pulse password" email.
+- Login and register messages point Google users to the right action. `last_login` recorded on Google sign-in. Name fallback via the Google profile endpoint.
+- Reset links work once (the token carries `token_version`).
+
+**Workspace colors and theme**
+- Color helpers in `utils/brand.ts`: hex validation, contrast check, default constants, `--accent-rgb`, and cached colors to stop the flash of default colors on load (cleared on logout).
+- Settings: invalid colors blocked on save, readability warnings, Restore default colors button, Reset renamed Discard changes.
+- `apply_brand_vars.py` (102 replacements): hardcoded teal and navy in in-app rules now use variables. New `--primary-strong` and `--accent-strong` via `color-mix`.
+- `apply_dark_text.py`: `--accent-text` makes accent-colored text light in dark mode.
+- Risk register, incidents and Users page inline colors moved to classes.
+- Theme: the header switch is each person's choice, the workspace Mode is only the default, and "auto" is resolved in code to light or dark.
+
+**Docs**
+- Google sign-in check guide created as a doc for the team.
+
+**Files changed this session (49, plus 1 migration):**
+
+Backend: `alembic/versions/059_unified_modules.py` (new, name as created), `app/services/ai_unified.py`, `app/schemas/report.py`, `app/api/v1/routes/reports.py`, `app/services/email.py`, `app/models/tenant.py`, `app/core/config.py`, `app/services/report.py`, `app/api/v1/routes/external.py`, `app/services/report_facts.py`, `app/services/ai_report.py`, `app/services/pdf_report.py`, `app/services/pptx_report.py` (new), `requirements.txt`, `tests/test_export_registries.py` (new), `app/schemas/admin.py`, `app/api/v1/routes/settings.py`, `app/services/settings.py`, `app/schemas/settings.py`, `app/services/auth.py`, `app/core/security.py`, `app/schemas/user.py`, `app/services/user.py`, `app/api/v1/routes/users.py`
+
+Frontend: `src/utils/validation.ts`, `src/pages/ReportBuilder.tsx`, `src/hooks/useReports.ts`, `src/services/reports.ts`, `src/types/report.ts`, `src/components/reports/BlockSelector.tsx`, `src/components/reports/ReportPreview.tsx`, `src/pages/CreateWorkspace.tsx`, `src/pages/Login.tsx` and `src/pages/Register.tsx` (redesign dropped in), `src/utils/brand.ts`, `src/components/settings/WorkspaceSettings.tsx`, `src/store/uiStore.ts`, `src/hooks/useSettings.ts`, `src/hooks/useAuth.ts`, `src/App.tsx`, `src/components/risks/RiskTable.tsx`, `src/components/risks/StatCards.tsx`, `src/pages/Incidents.tsx`, `src/hooks/useUsers.ts`, `src/pages/Users.tsx`, `src/index.css`
+
+Admin: `admin/src/pages/Workspaces.tsx`
+
+Data: one-off `UPDATE tenants SET modules = ARRAY['risk','incident']` (Supabase SQL editor, mirrored in migration 059)
+
+Docs: `SMARTRISK_V2_DECISIONS.md` (17 entries appended), `SMARTRISK_V2_SETUP.md` (section 35 appended)
+
+**Status:** Complete in code. The checks below are carried over.
+
+**Carried over (do these first next session, after the Session 26 list):**
+1. Confirm `alembic heads` shows `059` after applying it, and that production, staging and local all have 057, 058 and 059.
+2. Confirm `apply_dark_text.py` was run, and check dark mode on the incident drawer, Settings, modals and dashboard.
+3. Test the theme fix: header choice survives reload and settings saves; Auto follows the OS.
+4. Test Restore default colors, Discard changes, and no color flash on reload or after logout.
+5. Test settings trimming as an Analyst (recipients and AI policy blank) and as an Owner.
+6. Test Users page guards (self-promotion, Admin grants, last Admin) and that Analyst defaults show Manage Incidents and Review and Resolve ticked.
+7. Check the incidents trend chart renders with `fill="var(--primary)"`.
+8. If `tests/test_auth.py` calls `create_reset_token` with two arguments, add the version argument. Add `GOOGLE_CLIENT_ID` to the CI test environment if any test calls `google_auth`.
+9. Re-upload to the project: every file listed above, plus `SMARTRISK_V2_BUILD.md` and `SMARTRISK_V2_SETUP.md`. The project's `reports/ReportPreview.tsx` is an old `ReportBuilder.tsx`; replace it with the real file.
+
+**Open decisions:**
+- Report colors: should the PDF and PowerPoint stay SmartRisk branded or follow the workspace colors?
+- Recording how each account was created (`auth_provider` column, migration needed). The user is handling this on the backend side.
+- Session 26 item 7 (the two remaining gradients) overlaps with the color work: decide alongside report colors.
+
+**Next session starts with:**
+1. Read SMARTRISK_V2_SETUP.md, SMARTRISK_V2_DECISIONS.md, then this file.
+2. Migrations 057, 058 and 059 on every database.
+3. Session 26 carried-over items 2 to 10.
+4. Session 27 carried-over items above.
+5. Inline navy text on pages not read this session (dashboard sections) moved to classes, so dark mode applies.
+6. Optional cleanup: remove the now-unused `[data-theme="auto"]` rules from `index.css`.
 
 ---
 

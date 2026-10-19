@@ -22,6 +22,10 @@ async def list_users(
     rows = await user_service.list_members(db, tenant_id)
     can_manage = bool(claims.get("permissions", {}).get("manage_users"))
     ws = await user_service.get_workspace_settings(db, tenant_id) if can_manage else {}
+    methods = (
+        await user_service.sign_in_methods(db, [UUID(str(a.id)) for _, a in rows])
+        if can_manage else {}
+    )
     data = [
         {
             "id":           str(m.id),
@@ -33,6 +37,7 @@ async def list_users(
             "permissions":  m.permissions if can_manage else None,
             "effective_permissions": user_service.effective_permissions(m, ws) if can_manage else None,
             "last_login":   a.last_login.isoformat() if a.last_login else None,
+            "sign_in":      user_service.sign_in_status(methods.get(str(a.id), set())) if can_manage else None,
         }
         for m, a in rows
     ]

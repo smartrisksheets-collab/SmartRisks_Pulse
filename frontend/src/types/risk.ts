@@ -50,6 +50,7 @@ export interface Risk {
   financial_exposure:       string | null;
   linked_decision:          string | null;
   control_test_result:  string | null;
+  appetite_status:      'within' | 'near' | 'exceeds' | null;
   source:               string;
   created_at:           string;
   updated_at:           string;

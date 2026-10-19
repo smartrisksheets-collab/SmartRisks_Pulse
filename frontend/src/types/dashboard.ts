@@ -251,6 +251,7 @@ export interface ControlEvidence {
   independently_asserted: number;
   evidenced: number;
   rated_high: number;
+  high_rating_label: string;
   contradicted: number;
   rows: ControlEvidenceRow[];
   actions: RecommendedAction[];

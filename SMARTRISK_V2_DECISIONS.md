@@ -1905,3 +1905,84 @@ Why: Incident data exists regardless of snapshots. Missed snapshots, as on a sle
 Raised by: The goal of making SmartRisk the intelligence layer over an organisation's existing tools and data.
 Chosen: Proposed order: saved import mappings, a KRI model with manual readings, a push API with workspace keys, a durable job runner, then selected pull connectors, then bank-grade options. KRI readings never change risk scores automatically. Metrics are collected, not raw records. A partner explainer PDF was produced, and no build is scheduled.
 Why: The first three steps reuse existing patterns and need no customer credentials. Scheduled pulls must wait for a reliable job runner.
+
+---
+
+## Session 27: October 14 to 19, 2026: Unified Product, Report Export, Access Security, Theming
+
+**Decision: AI dashboard brief never names organisations (October 14, 2026)**
+Raised by: The Executive Intelligence brief named companies that do not exist.
+Chosen: A system prompt rule in `ai_unified.py`: refer only to "the organisation"; the only identifiers allowed are record IDs and category names from the facts.
+Why: The facts carry no organisation name, so the model invented one. Forbidding names is safer than passing the real name into every prompt.
+
+**Decision: Report email supports CC, validated on both sides (October 14, 2026)**
+Chosen: Up to 5 CC addresses, checked in the frontend and in the backend schema. The To address is removed from CC.
+Why: Matches how reports are shared in practice, and the backend check stops oversized or malformed lists.
+
+**Decision: Product is unified only (October 14, 2026)**
+Chosen: Every workspace has `["risk","incident"]`. Existing rows updated, column default changed, `DEFAULT_MODULES` changed. The Founder Panel can no longer change modules: the schema accepts only both, and the drawer shows them read-only.
+Why: Product decision. Risk and incident are sold together. A 422 rather than silent ignore surfaces any old UI still sending one module.
+
+**Decision: Risk and incident correlation follows the dashboard rules (October 14, 2026)**
+Chosen: Coverage counts all incidents ("Across all incidents, ..."). Fewer than 5 incidents is marked indicative. Wording is association only ("linked to", never "caused"). Tables are capped at 15 rows.
+Why: One definition across the dashboard and reports, and causal claims are not supported by the data.
+
+**Decision: PowerPoint export alongside PDF (October 14, 2026)**
+Chosen: `pptx_report.py` (python-pptx 1.0.2) with its own renderer registry. A test enforces that every PDF renderer has a PPTX renderer. The deck always has a cover. The export route returns a generic file payload.
+Why: Board packs are often edited in PowerPoint. The parity test stops the two formats drifting apart.
+
+**Decision: No `from __future__ import annotations` in route files using the rate limiter (October 14, 2026)**
+Raised by: `/api/docs` failed with a Pydantic ForwardRef UUID error.
+Chosen: Removed the future import from `routes/external.py`.
+Why: slowapi's wrapper stops FastAPI resolving string annotations for query parameters.
+
+**Decision: Workspace settings are Owner-only to change (October 16, 2026)**
+Raised by: Any member could save settings (including the permission settings), set the PIN or upload a logo.
+Chosen: `require_permission("manage_settings")` on save, set PIN and logo upload. Reading stays open because every member needs the brand colors and logo, but recipients and AI policy text are blanked for non-Owners, and permission fields are hidden unless the member can also manage users.
+Why: Closes privilege escalation and data redirection. Blank values keep the frontend type shape intact.
+
+**Decision: Logo upload and storage rules (October 16, 2026)**
+Chosen: Type detected from file bytes (PNG, JPEG, WebP only, no SVG), 2 MB cap, path `logos/<tenant>/<time>_<random>.<ext>`. `logo_url` must point into the `workspace-logos` bucket. The old logo is deleted only after the new value is saved. An empty `logo_url` means remove.
+Why: Browser-supplied type and filename cannot be trusted. SVG can carry script and the PPTX builder skips it anyway. Deleting before save left broken logos after a cancel.
+
+**Decision: Google sign-in fails closed and accounts are joined by verified email (October 16, 2026)**
+Chosen: Without `GOOGLE_CLIENT_ID`, Google sign-in is refused. A Google sign-in logs into any existing account with the same verified email.
+Why: A missing setting must not switch off a security check. Joining by verified email is accepted because Google proves inbox ownership, the same proof the reset and invite flows rely on.
+
+**Decision: Passwordless accounts can set a password through Forgot password (October 16, 2026)**
+Raised by: Google-created accounts could not use email login, and Forgot password silently sent nothing.
+Chosen: The reset email goes to every existing account. Accounts without a password get "Set your SmartRisk Pulse password" wording. The login error message (the same for every failure) mentions Continue with Google and Forgot password.
+Why: The reset link proves inbox ownership, the same as the invite link (invited members are already ACTIVE). Identical replies keep accounts from being enumerated.
+
+**Decision: Password reset links are single use (October 16, 2026)**
+Chosen: The reset token carries the account's `token_version`. `reset_password` rejects a mismatch, and the reset itself increments the version.
+Why: No new table is needed, and a used or forwarded link stops working immediately.
+
+**Decision: Brand color validation and readability thresholds (October 16, 2026)**
+Chosen: Colors must be 6-digit hex (backend and frontend). Readability is a warning, not a block: primary needs at least 2.5 contrast with white text (the default teal scores 2.55), accent needs 4.5 because it is used as title text. Invalid stored values fall back to the defaults.
+Why: The default brand teal fails the strict 4.5 rule, so the floor is set at the default's level. A hard block would stop legitimate brand colors.
+
+**Decision: Workspace colors applied through CSS variables, with deliberate exclusions (October 16, 2026)**
+Chosen: Hardcoded in-app teal and navy replaced with `--primary`, `--accent`, `--primary-rgb`, `--accent-rgb`, `--primary-strong` and `--accent-strong` (the last two derived with `color-mix`). Excluded: pages before a workspace is chosen (auth, picker, wizard, PIN, expired), public forms, Help and Frameworks, and colors that carry meaning (success, risk bands, severity, chart legends).
+Why: A workspace color should change the whole app shell, but status colors must keep their meaning and pages without a workspace keep the product brand.
+
+**Decision: Accent text turns light in dark mode through `--accent-text` (October 19, 2026)**
+Chosen: `--accent-text` equals the accent in light mode and `--text` in dark mode. Only `color:` declarations use it. Backgrounds and borders keep the accent. Boxes that stay light in dark mode (freshness tips, risk preview card) keep navy text.
+Why: `--accent` is used for backgrounds too, so changing it in dark mode would turn navy buttons white.
+
+**Decision: Theme is a personal choice; workspace mode is the default (October 16, 2026)**
+Chosen: The header switch sets the person's own theme and marks it as chosen (stored on the device). The workspace Mode applies only until a person chooses. "Auto" is resolved in code to light or dark and follows OS changes.
+Why: Light or dark is a personal preference, and the workspace setting kept overriding it. The old `[data-theme="auto"]` CSS applied dark component rules on light systems.
+
+**Decision: Last workspace colors cached in the browser (October 16, 2026)**
+Chosen: `applyBrandColors` saves the colors under `sr-brand`. `App.tsx` applies them before first draw, and logout clears them.
+Why: Removes the flash of default colors on every load. Cached values are validated, so tampering only falls back to defaults.
+
+**Decision: User management guards and backend effective permissions (October 19, 2026)**
+Raised by: A member with Manage Users could make themselves Admin, grant themselves Manage Settings, and act on Admins. The last Admin could be demoted. The Users page used a hardcoded permission table that was wrong for Analysts.
+Chosen: Nobody changes their own access. Only Admins act on Admins, grant the Admin role, or grant Manage Settings or Manage Users. The last Admin cannot be demoted. Roles and permission keys are validated. The list returns `effective_permissions` (same `_role_permissions` logic as the token), and `GET /users/role-permissions` gives role defaults.
+Why: Closes privilege escalation. One permission definition shared by the token and the UI.
+
+**Decision: Restore default colors is a form action, Reset renamed Discard changes (October 16, 2026)**
+Chosen: Restore puts teal and navy into the form, and saving applies them. Reset is renamed Discard changes because it only undoes unsaved edits.
+Why: Keeps the single rule that nothing changes until Save, and the old label read like a factory reset.

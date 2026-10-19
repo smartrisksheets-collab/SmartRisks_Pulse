@@ -17,6 +17,7 @@ import {
   type WorkspaceMember,
   type UpdateMemberPayload,
   type RolePermissions,
+  type SignInStatus,
 } from "../hooks/useUsers";
 
 // ── local toast hook ──────────────────────────────────────────────────────
@@ -66,6 +67,14 @@ function StatusBadge({ status }: { status: string }) {
   return (
     <span className={`member-badge ${active ? "active" : "inactive"}`}>
       {active ? "Active" : "Deactivated"}
+    </span>
+  );
+}
+
+function SignInBadge({ signIn }: { signIn: SignInStatus }) {
+  return (
+    <span className={`member-badge ${signIn.pending ? "pending" : "method"}`}>
+      {signIn.label}
     </span>
   );
 }
@@ -374,6 +383,7 @@ export default function Users() {
   // ── derived stats ───────────────────────────────────────────────────────
   const activeCount  = members.filter((m) => m.status === "ACTIVE").length;
   const deactCount   = members.filter((m) => m.status !== "ACTIVE").length;
+  const showSignIn   = members.some((m) => m.sign_in !== null);
 
   // ── filtered list ───────────────────────────────────────────────────────
   const filtered = members.filter((m) => {
@@ -473,6 +483,7 @@ export default function Users() {
                 <th>Email</th>
                 <th>Role</th>
                 <th>Status</th>
+                {showSignIn && <th>Sign-in</th>}
                 <th>Last Login</th>
                 <th style={{ textAlign: "center" }}>Actions</th>
               </tr>
@@ -480,13 +491,13 @@ export default function Users() {
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={6} className="muted small" style={{ textAlign: "center", padding: 40 }}>
+                  <td colSpan={showSignIn ? 7 : 6} className="muted small" style={{ textAlign: "center", padding: 40 }}>
                     Loading users…
                   </td>
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="muted small" style={{ textAlign: "center", padding: 40 }}>
+                  <td colSpan={showSignIn ? 7 : 6} className="muted small" style={{ textAlign: "center", padding: 40 }}>
                     No users found.
                   </td>
                 </tr>
@@ -501,6 +512,7 @@ export default function Users() {
                   <td style={{ fontSize: 13 }}>{m.email}</td>
                   <td><RoleBadge role={m.role} /></td>
                   <td><StatusBadge status={m.status} /></td>
+                  {showSignIn && <td>{m.sign_in && <SignInBadge signIn={m.sign_in} />}</td>}
                   <td className="muted small">
                     {m.last_login ? new Date(m.last_login).toLocaleDateString() : "—"}
                   </td>
