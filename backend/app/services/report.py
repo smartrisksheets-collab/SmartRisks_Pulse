@@ -30,7 +30,10 @@ from app.models.risk_history import RiskHistory
 from app.models.appetite_threshold import AppetiteThreshold
 from app.models.matrix_config import MatrixConfig
 from app.models.tenant import Tenant
-from app.services.risk_status import ce_avg_pct, appetite_status, threshold_for, high_control_text
+from app.services.risk_status import (
+    ce_avg_pct, appetite_status, threshold_for, high_control_text,
+    band_labels, elevated_phrase, residual_max,
+)
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -46,41 +49,21 @@ def _is_high(r: 'RiskRow') -> bool:  # type: ignore[return]
 
 def _band_labels(mc: MatrixConfig | None) -> list[str]:
     """Band labels for this workspace, trimmed to the configured band count."""
-    if mc is None:
-        return ["Low", "Medium", "High", "Critical"]
-    count  = int(mc.band_count or 4)  # type: ignore[arg-type]
-    labels = [
-        str(mc.band_1_label or "Low"),
-        str(mc.band_2_label or "Medium"),
-        str(mc.band_3_label or "High"),
-        str(mc.band_4_label or "Critical"),
-        str(mc.band_5_label or "Extreme"),
-    ]
-    return labels[:count]
+    return band_labels(mc)
 
 
 def _residual_max(mc: MatrixConfig | None) -> int:
     """Max possible residual score for this workspace's matrix.
     Defaults to 25 (5x5) when matrix config is absent."""
-    if mc is None:
-        return 25
-    return int(mc.likelihood_scale) * int(mc.impact_scale)  # type: ignore[arg-type]
+    return residual_max(mc)
 
 
 def _elevated_phrase(mc: MatrixConfig | None) -> str:
     """Human phrase naming the bands counted as elevated, e.g. 'High or Critical'.
 
-    The threshold mirrors services/risk.py _score, which sets is_elevated via
-    max(band_count - 1, 2). Keep the two in step if that formula changes.
+    Delegates to risk_status.elevated_phrase, the same rule risk._score uses.
     """
-    labels    = _band_labels(mc)
-    threshold = max(len(labels) - 1, 2)
-    top       = labels[threshold - 1:]
-    if not top:
-        return "elevated"
-    if len(top) == 1:
-        return top[0]
-    return " or ".join(top)
+    return elevated_phrase(mc)
 
 
 def _level_color(level: str | None) -> str:

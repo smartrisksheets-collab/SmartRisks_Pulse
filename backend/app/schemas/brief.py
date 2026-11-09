@@ -18,6 +18,7 @@ class BriefTableRow(BaseModel):
     id: str
     description: str
     level: str | None = None
+    tone: str | None = None  # high, medium or low; set by services/brief.py from the residual band
     delta: float | None = None
     days_logged: int | None = None
     days_since_review: int | None = None
@@ -73,7 +74,9 @@ class BriefPayload(BaseModel):
     meta: BriefMeta | None = None
     greeting: str | None = None
     residual_change_summary: str | None = None
-    critical_count: int = 0
+    critical_count: int = 0  # risks in the top residual band
+    elevated_label: str = "High or Critical"
+    top_band_label: str = "Critical"
     signal_rows: list[SignalRow] = []
     recommended_action: str | None = None
     tables: BriefTables | None = None

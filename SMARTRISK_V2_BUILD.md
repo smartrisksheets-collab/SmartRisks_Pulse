@@ -3,7 +3,7 @@
 **Product:** SmartRisk Pulse v2
 **Stack:** FastAPI + React + Supabase + Render + Vercel
 **Setup document:** SMARTRISK_V2_SETUP.md
-**Last updated:** October 19, 2026
+**Last updated:** November 9, 2026
  
 ---
  
@@ -16,8 +16,47 @@ At the end of every session Claude outputs a fresh version of this file with all
 ---
  
 **Phase:** Product polish and hardening. Unified-only product, report export, security and access controls, workspace theming. Control effectiveness scale switch still locked pending staging tests.
-**Status:** Session 27, October 14 to 19, 2026: AI brief fix, report email CC, unified modules (migration 059), risk and incident correlation block, PowerPoint export, settings and user access security, Google sign-in and password reset fixes, workspace color and theme overhaul. See session log below.
-**Next action:** Begin next session by reading SMARTRISK_V2_SETUP.md, SMARTRISK_V2_DECISIONS.md, then this file. First task: apply migrations 057, 058 and 059 on every database, then the Session 26 carried-over list, then the Session 27 list.
+**Status:** Session 28, November 9, 2026: AI brief bands risks by residual score and by band position (patch `brief-residual-band.patch`, not yet applied or committed). Previous: Session 27, October 14 to 19, 2026: AI brief fix, report email CC, unified modules (migration 059), risk and incident correlation block, PowerPoint export, settings and user access security, Google sign-in and password reset fixes, workspace color and theme overhaul. See session log below.
+**Next action:** Begin next session by reading SMARTRISK_V2_SETUP.md, SMARTRISK_V2_DECISIONS.md, then this file. First task: apply and verify the Session 28 brief patch (see Session 28 incomplete items), then apply migrations 057, 058 and 059 on every database, then the Session 26 carried-over list, then the Session 27 list.
+
+---
+
+### Session 28: November 9, 2026, AI Brief Residual Bands
+
+**Completed:**
+
+**AI brief (daily, weekly, monthly, quarterly email)**
+- Root cause confirmed: `services_brief.py` `_risk_to_dict` read `Risk.level`, which `services_risk.py` `_score` bands from inherent severity (likelihood x impact) before controls. Every High/Critical count, table, outreach line, preheader and subject used the inherent band.
+- The brief now bands each risk from its residual score.
+- High/Critical and Critical are decided by band position (`is_elevated_index`, top 2 bands, and the top band), not by the literal names. Renamed bands and the fifth band are now counted. Email text, the High/Critical heading and the subject use the workspace band names.
+- Email badge colours come from a backend `tone` field (high, medium, low) on `BriefTableRow`. `BriefPayload` gained `elevated_label` and `top_band_label`.
+- Daily snapshot band crossings compare band positions recomputed from the stored residuals on the current matrix, so old snapshots that stored the inherent label do not raise false crossings.
+
+**One band rule (`services_risk_status.py`)**
+- Added `band_for_score`, `band_labels`, `band_count`, `elevated_min_index`, `is_elevated_index`, `elevated_phrase`, `residual_max`.
+- `services_risk.py` `_score` and the `_band_labels`, `_elevated_phrase`, `_residual_max` helpers in `services_report.py` now delegate to them. Inherent levels are unchanged.
+
+**Other brief flaws fixed**
+- Weekly overdue reviews, biweekly accountability and outreach used a hardcoded 30 days instead of `brief_stale_threshold`.
+- Four copies of the overdue action check replaced by `risk_status.is_past_target`.
+- Brief health score divided by a fixed 25. It now uses `likelihood_scale x impact_scale`.
+
+**Verification:** ruff shows no new warnings on the changed files, all files compile, and a smoke test with renamed 4-band and 5-band configs gave the expected bands, counts, heading and subject. `git apply --check` passes on staging 76c57b2. pytest (needs PostgreSQL) and `tsc --noEmit` were not run.
+
+**Migrations:** none.
+
+**Files changed this session (in `brief-residual-band.patch`):**
+
+Backend: `services_risk_status.py`, `services_risk.py`, `services_report.py`, `services_brief.py`, `services_snapshot.py`, `services_email.py`, `schemas_brief.py`
+
+Frontend: `types_brief.ts`
+
+**Status:** Patch delivered, not yet applied or committed.
+
+**Incomplete (first tasks next session):**
+1. Apply `brief-residual-band.patch` on staging (`git apply --check` then `git apply`), run pytest, ruff, `tsc --noEmit` and `npm run build`, then send a test brief and confirm risks with strong controls no longer show as High/Critical.
+2. Partner review: in a 5-band workspace "elevated" is the top 2 bands (band 3 is not flagged). If the partner wants band 3 included, change `elevated_min_index` only; it also changes the register `is_elevated` flag and reports.
+3. Residual formula confirmation with partner is still open. The brief bands now depend on it.
 
 ---
 
@@ -3329,6 +3368,7 @@ Admin: `admin_src_types_admin.ts`, `admin_src_services_api.ts`, `admin_src_pages
 - Every new table enables RLS and revokes `anon` and `authenticated`, wrapped in a role-exists check so it also runs locally.
 - Derived scores, statuses and labels come from one backend function (`risk_status.py`, `get_severity_ranks`, `covering_risk_categories`). Never recompute them on the frontend.
 - Never hardcode severity labels or a 25-point scale. Use the workspace severity levels and `likelihood_scale × impact_scale`.
+- Risk band membership (elevated, top band) is decided by band position through `risk_status.py` (`band_for_score`, `is_elevated_index`), never by comparing label text. Band names are user-configurable.
 - Deep link parameters are cleared from the URL once handled. Never set React state synchronously inside an effect (react-hooks/set-state-in-effect); derive from the URL or set state inside an async callback.
 - Feed event wording, tiers and badges live in `src/utils/feedEvents.ts`; tier colours are CSS classes, not inline styles.
 

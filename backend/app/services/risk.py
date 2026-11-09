@@ -30,6 +30,7 @@ from app.services.phase_one import (
 from app.services.recycle import soft_delete
 from app.services.risk_status import (
     APPETITE_NEAR_RATIO, ce_fraction, ce_avg_pct, resolve_ce_input, appetite_status, threshold_for,
+    band_count, band_for_score, is_elevated_index,
 )
 
 logger = logging.getLogger(__name__)
@@ -47,35 +48,8 @@ def _score(
     severity = likelihood * impact_score
     residual = round(severity * (1 - ce), 2)
 
-    if cfg is not None:
-        bc = int(cfg.band_count)                            # type: ignore[arg-type]
-        # Descending: highest band first. Skip bands beyond band_count.
-        band_defs = [
-            (5, int(cfg.band_extreme_min or 0),  str(cfg.band_5_label or 'Extreme')),  # type: ignore[arg-type]
-            (4, int(cfg.band_critical_min or 0), str(cfg.band_4_label or 'Critical')), # type: ignore[arg-type]
-            (3, int(cfg.band_high_min or 0),     str(cfg.band_3_label or 'High')),     # type: ignore[arg-type]
-            (2, int(cfg.band_medium_min or 0),   str(cfg.band_2_label or 'Medium')),   # type: ignore[arg-type]
-        ]
-        level_index = 1
-        level       = str(cfg.band_1_label or 'Low')       # type: ignore[arg-type]
-        for idx, threshold, label in band_defs:
-            if idx <= bc and severity >= threshold:
-                level_index = idx
-                level       = label
-                break
-    else:
-        bc = 4
-        if severity >= 17:
-            level_index, level = 4, 'Critical'
-        elif severity >= 10:
-            level_index, level = 3, 'High'
-        elif severity >= 5:
-            level_index, level = 2, 'Medium'
-        else:
-            level_index, level = 1, 'Low'
-
-    elevated_threshold = max(bc - 1, 2)
-    is_elevated = level_index >= elevated_threshold
+    level_index, level = band_for_score(severity, cfg)
+    is_elevated = is_elevated_index(level_index, band_count(cfg))
 
     return {
         'severity':       Decimal(str(severity)),

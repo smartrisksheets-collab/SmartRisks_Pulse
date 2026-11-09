@@ -496,12 +496,12 @@ def _signal_text(row: object) -> str:
     return _esc(str(row.exposure_driver or ""))
 
 
-def _level_style(level: str) -> str:
+def _level_style(tone: str | None) -> str:
+    """Badge style from the backend tone (high, medium, low), so renamed band labels still colour correctly."""
     base = "display:inline-block;font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;"
-    l = (level or "").lower()
-    if l in ("critical", "high"):
+    if tone == "high":
         return base + "color:#c02a3d;background-color:#fdeaed;"
-    if l == "medium":
+    if tone == "medium":
         return base + "color:#b9791a;background-color:#fdf3e2;"
     return base + "color:#5a6b8c;background-color:#eef1f6;"
 
@@ -584,7 +584,7 @@ def build_brief_html(payload: object) -> str:
             f'<td style="padding:11px 0;font-size:13.5px;font-weight:700;color:#1f2854;border-bottom:1px solid #f2f4f8;">{_esc(r.id)}</td>'
             f'<td style="padding:11px 0;font-size:13.5px;color:#5a6b8c;border-bottom:1px solid #f2f4f8;">{_esc(r.description)}</td>'
             f'<td align="right" style="padding:11px 0;border-bottom:1px solid #f2f4f8;">'
-            f'<span style="{_level_style(r.level or "")}">{_esc(r.level or "")}</span>'
+            f'<span style="{_level_style(r.tone)}">{_esc(r.level or "")}</span>'
             f'</td></tr>'
             for r in tables.volatile
         )
@@ -611,7 +611,7 @@ def build_brief_html(payload: object) -> str:
             f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">'
             f'<tr>'
             f'<td style="font-size:12px;font-weight:800;color:#1f2854;letter-spacing:.4px;">{_esc(r.id)}</td>'
-            f'<td align="right"><span style="{_level_style(r.level or "")}">{_esc(r.level or "")}</span></td>'
+            f'<td align="right"><span style="{_level_style(r.tone)}">{_esc(r.level or "")}</span></td>'
             f'</tr>'
             f'<tr><td colspan="2" style="font-size:14px;color:#1f2854;font-weight:600;padding-top:5px;line-height:1.45;">{_esc(r.description)}</td></tr>'
             f'<tr><td colspan="2" style="font-size:11.5px;color:#01b88e;font-style:italic;padding:5px 0 14px;border-bottom:1px solid #f2f4f8;line-height:1.5;">'
@@ -624,7 +624,7 @@ def build_brief_html(payload: object) -> str:
             '<tr><td class="sr-pad" style="padding:24px 36px 0 36px;'
             "font-family:'Segoe UI',Helvetica,Arial,sans-serif;\">"
             '<div style="font-size:14px;font-weight:700;color:#1f2854;padding-bottom:2px;">'
-            '<span style="color:#d1364a;">&#9679;</span>&nbsp; High &amp; Critical Risks</div>'
+            f'<span style="color:#d1364a;">&#9679;</span>&nbsp; {_esc(payload.elevated_label)} Risks</div>'
             '</td></tr>'
             '<tr><td class="sr-pad" style="padding:8px 36px 0 36px;">'
             '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"'
@@ -639,7 +639,7 @@ def build_brief_html(payload: object) -> str:
             f'<td style="padding:11px 0;font-size:13.5px;font-weight:700;color:#1f2854;border-bottom:1px solid #f2f4f8;">{_esc(r.id)}</td>'
             f'<td style="padding:11px 0;font-size:13.5px;color:#5a6b8c;border-bottom:1px solid #f2f4f8;">{_esc(r.description)}</td>'
             f'<td align="right" style="padding:11px 0;border-bottom:1px solid #f2f4f8;">'
-            f'<span style="{_level_style(r.level or "")}">{_esc(r.level or "")}</span>'
+            f'<span style="{_level_style(r.tone)}">{_esc(r.level or "")}</span>'
             f'</td></tr>'
             for r in tables.stale
         )
@@ -784,7 +784,7 @@ def build_brief_subject(payload: object) -> str:
 
     if payload.critical_count:
         n = payload.critical_count
-        return f'{prefix}{ws} Brief — {n} Critical risk{"s" if n != 1 else ""} require attention'
+        return f'{prefix}{ws} Brief — {n} {payload.top_band_label} risk{"s" if n != 1 else ""} require attention'
 
     if payload.signal_rows:
         n = len(payload.signal_rows)

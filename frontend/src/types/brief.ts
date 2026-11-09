@@ -15,6 +15,7 @@ export interface BriefTableRow {
   id: string;
   description: string;
   level?: string | null;
+  tone?: string | null;
   delta?: number | null;
   days_logged?: number | null;
   days_since_review?: number | null;
@@ -66,6 +67,8 @@ export interface BriefPayload {
   greeting?: string | null;
   residual_change_summary?: string | null;
   critical_count: number;
+  elevated_label?: string;
+  top_band_label?: string;
   signal_rows: SignalRow[];
   recommended_action?: string | null;
   tables?: BriefTables | null;

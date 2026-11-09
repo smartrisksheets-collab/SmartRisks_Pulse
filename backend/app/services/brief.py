@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.incident import Incident
+from app.models.matrix_config import MatrixConfig
 from app.models.risk import Risk
 from app.models.tenant import Tenant
 from app.schemas.brief import (
@@ -26,12 +27,21 @@ from app.schemas.brief import (
     SignalRow,
     WeeklyDigest,
 )
+from app.services.matrix_config import _get_or_create as _get_matrix
+from app.services.risk_status import (
+    band_count,
+    band_for_score,
+    band_labels,
+    elevated_min_index,
+    elevated_phrase,
+    is_elevated_index,
+    is_past_target,
+    residual_max,
+)
 from app.services.snapshot import get_daily_deltas
 
 # ── constants ──────────────────────────────────────────────────────────────
 
-_BAND_ORDER = {"Low": 1, "Medium": 2, "High": 3, "Critical": 4}
-_HIGH_CRIT   = {"High", "Critical"}
 
 # ── entry point ────────────────────────────────────────────────────────────
 
@@ -68,7 +78,10 @@ async def build_brief_payload(
         select(Incident).where(Incident.tenant_id == tenant_id, Incident.deleted_at.is_(None))
     )).scalars().all()
 
-    risks     = [_risk_to_dict(r) for r in risk_rows]
+    cfg       = await _get_matrix(db, tenant_id)
+    labels    = band_labels(cfg)
+    bands     = {"elevated": elevated_phrase(cfg), "top": labels[-1], "residual_max": residual_max(cfg)}
+    risks     = [_risk_to_dict(r, cfg) for r in risk_rows]
     incidents = [_incident_to_dict(i) for i in incident_rows]
 
     # ── deltas ─────────────────────────────────────────────────────────────
@@ -93,7 +106,7 @@ async def build_brief_payload(
     control_metrics  = _compute_control_metrics(risks, ws)
     stale_metrics    = _compute_stale_metrics(risks, ws)
     concentration    = _compute_concentration(risks)
-    health_now       = _compute_health_score(risks)
+    health_now       = _compute_health_score(risks, bands["residual_max"])
     shown: set[str]  = set()
 
     # ── section builders ───────────────────────────────────────────────────
@@ -101,26 +114,26 @@ async def build_brief_payload(
 
     if "monthly_posture" in cadence_sections:
         sections["monthly_posture"] = _build_monthly_posture(
-            risks, control_metrics, stale_metrics, concentration, shown
+            risks, control_metrics, stale_metrics, concentration, labels, shown
         )
 
     if "quarterly_board_summary" in cadence_sections:
         sections["quarterly_board_summary"] = _build_quarterly_board(
-            risks, control_metrics, shown
+            risks, control_metrics, labels, shown
         )
 
     if "weekly_digest" in cadence_sections:
-        health_prev = _compute_health_score_from_deltas(risks, delta_list_7d)
+        health_prev = _compute_health_score_from_deltas(risks, delta_list_7d, bands["residual_max"])
         sections["weekly_digest"] = _build_weekly_digest(
             risks, delta_list_7d, incidents, stale_metrics,
             suppression, ws, health_now, health_prev, shown
         )
 
     if "biweekly_owner_accountability" in cadence_sections:
-        sections["biweekly_owner_accountability"] = _build_biweekly_accountability(risks, shown)
+        sections["biweekly_owner_accountability"] = _build_biweekly_accountability(risks, ws, shown)
 
     daily_section = _build_daily_exception(
-        risks, delta_list, incidents, control_metrics, stale_metrics, suppression, ws, shown
+        risks, delta_list, incidents, control_metrics, stale_metrics, suppression, ws, bands, shown
     )
     sections["daily_exception"] = daily_section
 
@@ -128,10 +141,10 @@ async def build_brief_payload(
     await db.flush()
 
     # ── final payload fields ───────────────────────────────────────────────
-    tables          = _build_tables(risks, delta_list, ws)
-    outreach        = _build_suggested_outreach(risks, delta_list, ws)
+    tables          = _build_tables(risks, delta_list, ws, bands)
+    outreach        = _build_suggested_outreach(risks, delta_list, ws, bands)
     signal_rows     = _build_signal_rows(daily_section, control_metrics, incidents, today)
-    rec_action      = _build_recommended_action(daily_section, control_metrics, stale_metrics, outreach)
+    rec_action      = _build_recommended_action(daily_section, control_metrics, stale_metrics, outreach, bands)
     first_name      = _first_name_from_email(reader_email) if reader_email else str(ws.get("name") or "there")
     workspace_name  = str(tenant.name or "SmartRisk")
 
@@ -157,8 +170,10 @@ async def build_brief_payload(
             generated_at=today.isoformat(),
         ),
         greeting=_get_greeting(today),
-        residual_change_summary=_build_preheader(daily_section, risks),
-        critical_count=sum(1 for r in risks if r["level"].lower() == "critical"),
+        residual_change_summary=_build_preheader(daily_section, risks, bands),
+        critical_count=sum(1 for r in risks if r["is_top"]),
+        elevated_label=bands["elevated"],
+        top_band_label=bands["top"],
         signal_rows=signal_rows,
         recommended_action=rec_action,
         tables=tables,
@@ -210,6 +225,7 @@ def _build_daily_exception(
     stale_metrics: dict,
     suppression: dict,
     ws: dict,
+    bands: dict,
     shown: set[str],
 ) -> dict:
     """Source: BriefService.gs _buildDailyException_."""
@@ -223,8 +239,9 @@ def _build_daily_exception(
                 items.append({"type": "band_crossing", **d})
                 shown.add(key)
 
+    hc_ids = {r["id"] for r in risks if r["is_hc"]}
     for d in deltas:
-        if d["type"] == "new" and d.get("band") in _HIGH_CRIT:
+        if d["type"] == "new" and d["riskId"] in hc_ids:
             key = f"new_{d['riskId']}"
             if key not in shown:
                 items.append({"type": "net_new_critical", **d})
@@ -263,7 +280,7 @@ def _build_daily_exception(
     is_empty = len(items) == 0
     empty_message: str | None = None
     if is_empty:
-        small = _smallest_open_obligation(risks, stale_metrics)
+        small = _smallest_open_obligation(risks, stale_metrics, bands)
         empty_message = "No material movement since your last brief. " + small
 
     return {"items": items, "persistItems": persist_items, "isEmpty": is_empty, "emptyMessage": empty_message}
@@ -301,7 +318,7 @@ def _build_weekly_digest(
              "daysOverdue": _days_since(r.get("last_reviewed_at") or r.get("logged_at"))}
             for r in risks
             if f"stale_hc_{r['id']}" not in shown
-            and _days_since(r.get("last_reviewed_at") or r.get("logged_at")) >= 30
+            and _days_since(r.get("last_reviewed_at") or r.get("logged_at")) >= threshold
         ],
         key=lambda x: x["daysOverdue"],
         reverse=True,
@@ -313,10 +330,7 @@ def _build_weekly_digest(
              "targetDate": str(r["target_date"]),
              "daysPast": (today - r["target_date"]).days}
             for r in risks
-            if r.get("target_date")
-            and isinstance(r["target_date"], date)
-            and r["target_date"] < today
-            and r.get("mitigation_status") in ("Open", "In Progress")
+            if _past_target(r, today)
         ],
         key=lambda x: x["daysPast"],
         reverse=True,
@@ -334,26 +348,25 @@ def _build_weekly_digest(
     }
 
 
-def _build_biweekly_accountability(risks: list[dict], shown: set[str]) -> dict:
+def _build_biweekly_accountability(risks: list[dict], ws: dict, shown: set[str]) -> dict:
     """Source: BriefService.gs _buildBiweeklyAccountability_."""
     today = date.today()
+    threshold = int(ws.get("brief_stale_threshold") or 30)
     owner_map: dict[str, dict] = {}
 
     for r in risks:
-        if _days_since(r.get("last_reviewed_at") or r.get("logged_at")) >= 30:
+        if _days_since(r.get("last_reviewed_at") or r.get("logged_at")) >= threshold:
             owner = r["owner"] or "Unassigned"
             owner_map.setdefault(owner, {"owner": owner, "overdueReviews": 0, "overdueActions": 0})
             owner_map[owner]["overdueReviews"] += 1
 
     for r in risks:
-        td = r.get("target_date")
-        if (td and isinstance(td, date) and td < today
-                and r.get("mitigation_status") in ("Open", "In Progress")):
+        if _past_target(r, today):
             owner = r["owner"] or "Unassigned"
             owner_map.setdefault(owner, {"owner": owner, "overdueReviews": 0, "overdueActions": 0})
             owner_map[owner]["overdueActions"] += 1
 
-    unowned_hc = [r for r in risks if not r["owner"] and r["level"] in _HIGH_CRIT]
+    unowned_hc = [r for r in risks if not r["owner"] and r["is_hc"]]
     owner_list = sorted(
         owner_map.values(),
         key=lambda o: o["overdueReviews"] + o["overdueActions"],
@@ -367,14 +380,11 @@ def _build_monthly_posture(
     control_metrics: dict,
     stale_metrics: dict,
     concentration: dict,
+    labels: list[str],
     shown: set[str],
 ) -> dict:
     """Source: BriefService.gs _buildMonthlyPosture_."""
-    band_counts: dict[str, int] = {"Low": 0, "Medium": 0, "High": 0, "Critical": 0}
-    for r in risks:
-        b = r["level"].capitalize() if r["level"] else ""
-        if b in band_counts:
-            band_counts[b] += 1
+    band_counts = _band_counts(risks, labels)
 
     tested   = sum(1 for r in risks if r.get("control_test_result") and r["control_test_result"] != "Not Tested")
     coverage = round((tested / len(risks)) * 100) if risks else 0
@@ -396,13 +406,9 @@ def _build_monthly_posture(
     }
 
 
-def _build_quarterly_board(risks: list[dict], control_metrics: dict, shown: set[str]) -> dict:
+def _build_quarterly_board(risks: list[dict], control_metrics: dict, labels: list[str], shown: set[str]) -> dict:
     """Source: BriefService.gs _buildQuarterlyBoard_."""
-    band_counts: dict[str, int] = {"Low": 0, "Medium": 0, "High": 0, "Critical": 0}
-    for r in risks:
-        b = r["level"].capitalize() if r["level"] else ""
-        if b in band_counts:
-            band_counts[b] += 1
+    band_counts = _band_counts(risks, labels)
 
     top_drivers = sorted(risks, key=lambda r: r["residual"] or 0, reverse=True)[:5]
     shown.add("control_fail")
@@ -431,14 +437,14 @@ def _compute_control_metrics(risks: list[dict], ws: dict) -> dict:
 
     overdue = [
         r for r in risks
-        if (not r.get("control_last_tested") and r["level"] in _HIGH_CRIT)
+        if (not r.get("control_last_tested") and r["is_hc"])
         or (isinstance(r.get("control_last_tested"), date)
             and (today - r["control_last_tested"]).days > interval)
     ]
 
     untested_hc = [
         r for r in risks
-        if r["level"] in _HIGH_CRIT
+        if r["is_hc"]
         and (not r.get("control_test_result") or r["control_test_result"] == "Not Tested")
     ]
 
@@ -465,13 +471,8 @@ def _compute_stale_metrics(risks: list[dict], ws: dict) -> dict:
             stale30.append(entry)
 
     all_stale    = stale90 + stale60 + stale30
-    stale_hc     = [r for r in all_stale if r["level"] in _HIGH_CRIT]
-    overdue_acts = [
-        r for r in risks
-        if isinstance(r.get("target_date"), date)
-        and r["target_date"] < today
-        and r.get("mitigation_status") in ("Open", "In Progress")
-    ]
+    stale_hc     = [r for r in all_stale if r["is_hc"]]
+    overdue_acts = [r for r in risks if _past_target(r, today)]
 
     return {
         "stale30":       stale30,
@@ -484,7 +485,7 @@ def _compute_stale_metrics(risks: list[dict], ws: dict) -> dict:
 
 def _compute_concentration(risks: list[dict]) -> dict:
     """Source: BriefService.gs _computeConcentration_."""
-    hc = [r for r in risks if r["level"] in _HIGH_CRIT]
+    hc = [r for r in risks if r["is_hc"]]
     by_owner: dict[str, int]    = {}
     by_category: dict[str, int] = {}
     for r in hc:
@@ -504,31 +505,31 @@ def _compute_concentration(risks: list[dict]) -> dict:
     return {"flags": flags}
 
 
-def _compute_health_score(risks: list[dict]) -> float:
-    """Source: BriefService.gs _computeHealthScore_."""
+def _compute_health_score(risks: list[dict], max_score: int) -> float:
+    """Source: BriefService.gs _computeHealthScore_. max_score is the matrix maximum (25 on 5x5)."""
     if not risks:
         return 100.0
     avg     = sum(r["residual"] or 0 for r in risks) / len(risks)
-    hc_pct  = sum(1 for r in risks if r["level"] in _HIGH_CRIT) / len(risks)
-    score   = 100 - (avg / 25) * 50 - hc_pct * 50
+    hc_pct  = sum(1 for r in risks if r["is_hc"]) / len(risks)
+    score   = 100 - (avg / max(max_score, 1)) * 50 - hc_pct * 50
     return float(max(0, min(100, round(score, 1))))
 
 
-def _compute_health_score_from_deltas(risks: list[dict], deltas: list[dict]) -> float:
-    """Source: BriefService.gs _computeHealthScoreFromDeltas_."""
+def _compute_health_score_from_deltas(risks: list[dict], deltas: list[dict], max_score: int) -> float:
+    """Source: BriefService.gs _computeHealthScoreFromDeltas_. is_hc is today's band, not the baseline's."""
     if not deltas:
-        return _compute_health_score(risks)
+        return _compute_health_score(risks, max_score)
     delta_map = {d["riskId"]: d.get("residualDelta") or 0 for d in deltas}
     baseline  = [
         {**r, "residual": (r["residual"] or 0) - delta_map.get(r["id"], 0)}
         for r in risks
     ]
-    return _compute_health_score(baseline)
+    return _compute_health_score(baseline, max_score)
 
 
 # ── tables ─────────────────────────────────────────────────────────────────
 
-def _build_tables(risks: list[dict], deltas: list[dict], ws: dict) -> BriefTables:
+def _build_tables(risks: list[dict], deltas: list[dict], ws: dict, bands: dict) -> BriefTables:
     """Source: BriefService.gs _buildTables_."""
     delta_map = {d["riskId"]: d for d in deltas}
     threshold = int(ws.get("brief_stale_threshold") or 30)
@@ -540,7 +541,7 @@ def _build_tables(risks: list[dict], deltas: list[dict], ws: dict) -> BriefTable
     )[:3]
 
     high_crit = sorted(
-        [r for r in risks if r["level"] in _HIGH_CRIT],
+        [r for r in risks if r["is_hc"]],
         key=lambda r: r["residual"] or 0,
         reverse=True,
     )[:3]
@@ -559,8 +560,8 @@ def _build_tables(risks: list[dict], deltas: list[dict], ws: dict) -> BriefTable
         days_rev = _days_since(r.get("last_reviewed_at") or r.get("logged_at"))
         if days_rev > 60:
             return f"Controls unreviewed for {days_rev} days — open the register to re-attest."
-        if str(r.get("level") or "").lower() == "critical":
-            return "Critical exposure — open the register to confirm escalation and mitigation plan."
+        if r["is_top"]:
+            return f"{bands['top']} exposure — open the register to confirm escalation and mitigation plan."
         return "Open the register to review mitigation status and update control effectiveness."
 
     return BriefTables(
@@ -569,6 +570,7 @@ def _build_tables(risks: list[dict], deltas: list[dict], ws: dict) -> BriefTable
                 id=r["id"],
                 description=r["description"],
                 level=r["level"],
+                tone=r["tone"],
                 delta=delta_map[r["id"]].get("residualDelta"),
             )
             for r in volatile
@@ -578,6 +580,7 @@ def _build_tables(risks: list[dict], deltas: list[dict], ws: dict) -> BriefTable
                 id=r["id"],
                 description=r["description"],
                 level=r["level"],
+                tone=r["tone"],
                 days_logged=_days_since(r.get("logged_at")),
                 days_since_review=_days_since(r.get("last_reviewed_at") or r.get("logged_at")),
                 action=_hc_action(r),
@@ -585,7 +588,7 @@ def _build_tables(risks: list[dict], deltas: list[dict], ws: dict) -> BriefTable
             for r in high_crit
         ],
         stale=[
-            BriefTableRow(id=r["id"], description=r["description"], level=r["level"])
+            BriefTableRow(id=r["id"], description=r["description"], level=r["level"], tone=r["tone"])
             for r in stale
         ],
     )
@@ -643,6 +646,7 @@ def _build_recommended_action(
     control_metrics: dict,
     stale_metrics: dict,
     outreach: list[OutreachItem],
+    bands: dict,
 ) -> str:
     """Source: BriefService.gs _buildRecommendedAction_."""
     parts: list[str] = []
@@ -662,7 +666,7 @@ def _build_recommended_action(
 
     if control_metrics["untestedHighCrit"]:
         n = len(control_metrics["untestedHighCrit"])
-        parts.append(f"schedule testing for {n} High/Critical risk{'s' if n > 1 else ''} with untested controls")
+        parts.append(f"schedule testing for {n} {bands['elevated']} risk{'s' if n > 1 else ''} with untested controls")
 
     if not parts and outreach:
         parts.append(outreach[0].message)
@@ -675,26 +679,26 @@ def _build_recommended_action(
 
 # ── suggested outreach ─────────────────────────────────────────────────────
 
-def _build_suggested_outreach(risks: list[dict], deltas: list[dict], ws: dict) -> list[OutreachItem]:
+def _build_suggested_outreach(risks: list[dict], deltas: list[dict], ws: dict, bands: dict) -> list[OutreachItem]:
     """Source: BriefService.gs _buildSuggestedOutreach_."""
     cap       = int(ws.get("brief_outreach_cap") or 5)
+    threshold = int(ws.get("brief_stale_threshold") or 30)
     today     = date.today()
     delta_map = {d["riskId"]: d for d in deltas}
     items: list[dict] = []
 
     for r in risks:
         rid   = r["id"]
-        level = str(r.get("level") or "").lower()
-        is_hc = level in {"high", "critical"}
+        is_hc = r["is_hc"]
         owner = r.get("owner") or ""
         email = r.get("owner_email") or ""
         d     = delta_map.get(rid)
 
         if d and d.get("bandCrossed") and d.get("bandDirection") == "up" and is_hc:
-            items.append(_outreach_entry(owner, email, rid, "crossed_to_" + level,
+            items.append(_outreach_entry(owner, email, rid, "crossed_to_top" if r["is_top"] else "crossed_up",
                          f"Confirm mitigation plan for {rid} — now {r['level']}."))
 
-        if _days_since(r.get("last_reviewed_at") or r.get("logged_at")) > 30 and is_hc:
+        if _days_since(r.get("last_reviewed_at") or r.get("logged_at")) >= threshold and is_hc:
             days = _days_since(r.get("last_reviewed_at") or r.get("logged_at"))
             items.append(_outreach_entry(owner, email, rid, "overdue_review",
                          f"Re-attest {rid} — review overdue {days} days."))
@@ -708,7 +712,7 @@ def _build_suggested_outreach(risks: list[dict], deltas: list[dict], ws: dict) -
                          f"Assign an owner to {rid} before committee."))
 
         td = r.get("target_date")
-        if isinstance(td, date) and td < today and r.get("mitigation_status") in ("Open", "In Progress"):
+        if isinstance(td, date) and _past_target(r, today):
             days_past = (today - td).days
             items.append(_outreach_entry(owner, email, rid, "overdue_action",
                          f"Overdue action on {rid} — target date passed {days_past} days ago."))
@@ -716,16 +720,16 @@ def _build_suggested_outreach(risks: list[dict], deltas: list[dict], ws: dict) -
     # Concentration flags
     by_owner: dict[str, dict] = {}
     for r in risks:
-        if r["level"] in _HIGH_CRIT and r.get("owner"):
+        if r["is_hc"] and r.get("owner"):
             key = r["owner"]
             by_owner.setdefault(key, {"count": 0, "email": r.get("owner_email") or ""})
             by_owner[key]["count"] += 1
     for owner, data in by_owner.items():
         if data["count"] >= 2:
             items.append(_outreach_entry(owner, data["email"], None, "concentration",
-                         f"You now hold {data['count']} High/Critical risks — review load with risk team."))
+                         f"You now hold {data['count']} {bands['elevated']} risks — review load with risk team."))
 
-    order = {"crossed_to_critical": 0, "control_fail": 1, "overdue_review": 2,
+    order = {"crossed_to_top": 0, "control_fail": 1, "overdue_review": 2,
              "concentration": 3, "overdue_action": 4, "unowned_high_crit": 5}
     items.sort(key=lambda x: order.get(x["reason"], 9))
 
@@ -851,31 +855,52 @@ def _top_delta_driver(score_changes: list[dict]) -> str:
     return f"driven by {top['riskId']}" if top.get("riskId") else "residual shift"
 
 
-def _build_preheader(daily: dict, risks: list[dict]) -> str:
+def _build_preheader(daily: dict, risks: list[dict], bands: dict) -> str:
     if daily["isEmpty"]:
         return "no material movement overnight"
     crossings = sum(1 for i in daily["items"] if i["type"] == "band_crossing")
     if crossings:
         return f"{crossings} risk{'s' if crossings > 1 else ''} changed band overnight"
-    crit = sum(1 for r in risks if str(r.get("level") or "").lower() == "critical")
-    return f"{crit} Critical risk{'s' if crit != 1 else ''} require attention"
+    crit = sum(1 for r in risks if r["is_top"])
+    return f"{crit} {bands['top']} risk{'s' if crit != 1 else ''} require attention"
 
 
-def _smallest_open_obligation(risks: list[dict], stale_metrics: dict) -> str:
+def _smallest_open_obligation(risks: list[dict], stale_metrics: dict, bands: dict) -> str:
     if stale_metrics["overdueActions"]:
         n = len(stale_metrics["overdueActions"])
         return f"{n} action{'s' if n > 1 else ''} overdue."
     stale_count = len(stale_metrics["stale30"]) + len(stale_metrics["stale60"]) + len(stale_metrics["stale90"])
     if stale_count:
         return f"{stale_count} review{'s' if stale_count > 1 else ''} still due."
-    hc = sum(1 for r in risks if r.get("level") in _HIGH_CRIT)
-    return f"{hc} High/Critical risk{'s' if hc != 1 else ''} in register."
+    hc = sum(1 for r in risks if r["is_hc"])
+    return f"{hc} {bands['elevated']} risk{'s' if hc != 1 else ''} in register."
+
+
+def _past_target(r: dict, today: date) -> bool:
+    return is_past_target(target_date=r.get("target_date"), mitigation_status=r.get("mitigation_status"), today=today)
+
+
+def _band_counts(risks: list[dict], labels: list[str]) -> dict[str, int]:
+    counts = {label: 0 for label in labels}
+    for r in risks:
+        if r["level"] in counts:
+            counts[r["level"]] += 1
+    return counts
 
 
 # ── ORM to dict converters ─────────────────────────────────────────────────
 
-def _risk_to_dict(r: Risk) -> dict:
-    """Convert ORM Risk to plain dict for brief computation. Avoids Column attr issues."""
+def _risk_to_dict(r: Risk, cfg: MatrixConfig | None) -> dict:
+    """Convert ORM Risk to plain dict for brief computation. Avoids Column attr issues.
+
+    level is the residual band (after controls), not the stored inherent Risk.level.
+    is_hc and is_top use band position, so renamed labels and the 5th band are counted.
+    """
+    residual = float(r.residual or 0)  # type: ignore[arg-type]
+    bc = band_count(cfg)
+    level_index, level = band_for_score(residual, cfg)
+    is_hc = is_elevated_index(level_index, bc)
+    tone = "high" if is_hc else ("medium" if level_index == elevated_min_index(bc) - 1 else "low")
     td = r.target_date  # type: ignore[union-attr]
     lr = r.last_reviewed_at  # type: ignore[union-attr]
     cl = r.control_last_tested  # type: ignore[union-attr]
@@ -883,8 +908,12 @@ def _risk_to_dict(r: Risk) -> dict:
         "id":                   str(r.id),
         "description":          str(r.description or ""),
         "category":             str(r.category or ""),
-        "level":                str(r.level or ""),
-        "residual":             float(r.residual or 0),  # type: ignore[arg-type]
+        "level":                level,
+        "level_index":          level_index,
+        "is_hc":                is_hc,
+        "is_top":               level_index == bc,
+        "tone":                 tone,
+        "residual":             residual,
         "owner":                str(r.owner or ""),
         "owner_email":          str(r.owner_email or ""),
         "control_test_result":  str(r.control_test_result or ""),
