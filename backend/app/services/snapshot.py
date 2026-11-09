@@ -20,7 +20,7 @@ from app.models.risk import Risk
 from app.models.incident import Incident
 from app.schemas.dashboard import SnapshotDelta
 from app.services.matrix_config import _get_or_create as _get_matrix
-from app.services.risk_status import ce_fraction, ce_avg_pct
+from app.services.risk_status import band_for_score, ce_fraction, ce_avg_pct
 from decimal import Decimal
 
 
@@ -273,11 +273,8 @@ async def get_snapshot_delta(
 # Source: SnapshotService.gs api_captureRiskHistoryNow + api_getDailyDeltas
 # ---------------------------------------------------------------------------
 
-_BAND_ORDER: dict[str, int] = {"Low": 1, "Medium": 2, "High": 3, "Critical": 4}
-
-
-def _band_direction(from_band: str, to_band: str) -> str:
-    return "up" if (_BAND_ORDER.get(to_band, 0) > _BAND_ORDER.get(from_band, 0)) else "down"
+def _band_direction(from_index: int, to_index: int) -> str:
+    return "up" if to_index > from_index else "down"
 
 
 async def write_daily_snapshot(db: AsyncSession, tenant_id: UUID) -> None:
@@ -321,7 +318,7 @@ async def write_daily_snapshot(db: AsyncSession, tenant_id: UUID) -> None:
         ce_level = int(r.control_effectiveness) if r.control_effectiveness is not None else None
         snapshot_data[str(r.id)] = {
             "residual":         float(r.residual or 0),
-            "band":             str(r.level or ""),
+            "band":             band_for_score(float(r.residual or 0), cfg)[1],
             "control_eff":      float(r.control_effectiveness or 0),
             "mitigation_status": str(r.mitigation_status or ""),
             "severity":         float(r.severity or 0),
@@ -361,6 +358,8 @@ async def get_daily_deltas(
     """
     Compare snapshots from on/before since_date with the latest snapshot.
     Returns {ok, has_data, deltas} where each delta matches GAS getDailyDeltas format.
+    Bands are recomputed from the stored residuals on the current matrix, so old
+    snapshots that stored the inherent level do not produce false band crossings.
     Source: SnapshotService.gs api_getDailyDeltas.
     """
     today_key = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -395,13 +394,15 @@ async def get_daily_deltas(
     baseline = by_date[baseline_date]
     latest   = by_date[latest_date]
     deltas: list[dict] = []
+    cfg      = await _get_matrix(db, tenant_id)
 
     for risk_id, cur in latest.items():
         prev = baseline.get(risk_id)
+        cur_index, cur_band = band_for_score(float(cur["residual"]), cfg)
         if not prev:
             deltas.append({
                 "riskId": risk_id, "type": "new",
-                "band": cur["band"], "residual": cur["residual"],
+                "band": cur_band, "residual": cur["residual"],
                 "residualDelta": None, "bandCrossed": False,
                 "previousBand": None, "mitigationStatus": cur["mitigation_status"],
             })
@@ -411,19 +412,20 @@ async def get_daily_deltas(
         scale_changed  = int(prev.get("ce_scale", 5)) != cur_scale
         prev_residual  = _rebase_residual(prev, cur_scale) if scale_changed else float(prev["residual"])
         residual_delta = round(cur["residual"] - prev_residual, 2)
-        band_crossed   = cur["band"] != prev["band"]
+        prev_index, prev_band = band_for_score(prev_residual, cfg)
+        band_crossed   = cur_index != prev_index
         status_changed = cur["mitigation_status"] != prev["mitigation_status"]
 
         if residual_delta != 0 or band_crossed or status_changed:
             deltas.append({
                 "riskId":          risk_id,
                 "type":            "band_crossing" if band_crossed else "score_change",
-                "band":            cur["band"],
-                "previousBand":    prev["band"],
+                "band":            cur_band,
+                "previousBand":    prev_band,
                 "residual":        cur["residual"],
                 "residualDelta":   round(residual_delta, 4),
                 "bandCrossed":     band_crossed,
-                "bandDirection":   _band_direction(prev["band"], cur["band"]) if band_crossed else None,
+                "bandDirection":   _band_direction(prev_index, cur_index) if band_crossed else None,
                 "mitigationStatus": cur["mitigation_status"],
                 "controlEffDelta": cur["control_eff"] - prev["control_eff"],
                 "scaleChanged":    scale_changed,
@@ -433,7 +435,7 @@ async def get_daily_deltas(
         if risk_id not in latest:
             deltas.append({
                 "riskId": risk_id, "type": "retired",
-                "band": None, "previousBand": prev["band"],
+                "band": None, "previousBand": band_for_score(float(prev["residual"]), cfg)[1],
                 "residual": None, "residualDelta": None,
             })
 

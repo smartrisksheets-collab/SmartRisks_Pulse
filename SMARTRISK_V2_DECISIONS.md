@@ -1986,3 +1986,13 @@ Why: Closes privilege escalation. One permission definition shared by the token 
 **Decision: Restore default colors is a form action, Reset renamed Discard changes (October 16, 2026)**
 Chosen: Restore puts teal and navy into the form, and saving applies them. Reset is renamed Discard changes because it only undoes unsaved edits.
 Why: Keeps the single rule that nothing changes until Save, and the old label read like a factory reset.
+
+**Decision: The AI brief labels risks by residual band, not inherent level (November 9, 2026)**
+Raised by: The brief email flagged risks as High from the inherent score and ignored the controls added.
+Chosen: The brief bands each risk from its residual score with `risk_status.band_for_score`, the same function that bands inherent severity in `risk._score`. The stored `Risk.level` stays inherent for the register.
+Why: The brief tells readers where attention is needed now, which is the exposure left after controls. One banding function keeps the register, reports and brief from drifting apart.
+
+**Decision: Band membership is decided by position, not by label text (November 9, 2026)**
+Raised by: The brief matched the literal words "High" and "Critical", so workspaces that renamed their bands, or used the fifth band, got wrong or zero counts.
+Chosen: Elevated means the top 2 bands (`max(band_count - 1, 2)`, the existing `is_elevated` rule) and Critical means the top band. Display text uses the workspace labels. Email badge colours come from a backend `tone` field. Snapshot band crossings compare band positions recomputed from stored residuals.
+Why: Band names are user-configurable in the matrix settings. In a 5-band workspace band 3 is not elevated; kept as is pending partner review, with `elevated_min_index` as the single place to change it.

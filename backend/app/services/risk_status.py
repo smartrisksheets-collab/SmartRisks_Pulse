@@ -10,6 +10,7 @@ no database access, so they are cheap to call per row and easy to test.
 import math
 from datetime import date, datetime, timedelta
 
+from app.models.matrix_config import MatrixConfig
 from app.services.phase_one import compute_freshness
 
 OPEN_MITIGATION = frozenset({"Open", "In Progress"})
@@ -17,6 +18,79 @@ EVIDENCE_WINDOW_DAYS = 365
 APPETITE_NEAR_RATIO = 0.75  # same boundary as _get_kpis and the register appetite filter
 CE_SCALES = (4, 5)
 CE_HIGH_FRACTION = 0.75  # "high control rating" boundary, scale independent
+
+
+DEFAULT_BAND_LABELS = ("Low", "Medium", "High", "Critical", "Extreme")
+
+
+def band_labels(cfg: MatrixConfig | None) -> list[str]:
+    """Band labels for this workspace, lowest first, trimmed to the configured band count."""
+    if cfg is None:
+        return list(DEFAULT_BAND_LABELS[:4])
+    count = int(cfg.band_count or 4)  # type: ignore[arg-type]
+    labels = [
+        str(cfg.band_1_label or "Low"),
+        str(cfg.band_2_label or "Medium"),
+        str(cfg.band_3_label or "High"),
+        str(cfg.band_4_label or "Critical"),
+        str(cfg.band_5_label or "Extreme"),
+    ]
+    return labels[:count]
+
+
+def band_count(cfg: MatrixConfig | None) -> int:
+    return int(cfg.band_count or 4) if cfg is not None else 4  # type: ignore[arg-type]
+
+
+def band_for_score(score: float, cfg: MatrixConfig | None) -> tuple[int, str]:
+    """(level_index, label) for a score on the workspace bands.
+
+    The one banding rule. Inherent severity and residual both use it.
+    """
+    if cfg is None:
+        if score >= 17:
+            return 4, "Critical"
+        if score >= 10:
+            return 3, "High"
+        if score >= 5:
+            return 2, "Medium"
+        return 1, "Low"
+    bc = band_count(cfg)
+    # Descending: highest band first. Skip bands beyond band_count.
+    band_defs = [
+        (5, int(cfg.band_extreme_min or 0),  str(cfg.band_5_label or "Extreme")),  # type: ignore[arg-type]
+        (4, int(cfg.band_critical_min or 0), str(cfg.band_4_label or "Critical")), # type: ignore[arg-type]
+        (3, int(cfg.band_high_min or 0),     str(cfg.band_3_label or "High")),     # type: ignore[arg-type]
+        (2, int(cfg.band_medium_min or 0),   str(cfg.band_2_label or "Medium")),   # type: ignore[arg-type]
+    ]
+    for idx, threshold, label in band_defs:
+        if idx <= bc and score >= threshold:
+            return idx, label
+    return 1, str(cfg.band_1_label or "Low")  # type: ignore[arg-type]
+
+
+def elevated_min_index(bands: int) -> int:
+    """Lowest band index counted as elevated: the top two bands, never below band 2."""
+    return max(bands - 1, 2)
+
+
+def is_elevated_index(level_index: int, bands: int) -> bool:
+    return level_index >= elevated_min_index(bands)
+
+
+def elevated_phrase(cfg: MatrixConfig | None) -> str:
+    """The elevated band names in words, e.g. 'High or Critical'."""
+    top = band_labels(cfg)[elevated_min_index(band_count(cfg)) - 1:]
+    if not top:
+        return "elevated"
+    return " or ".join(top)
+
+
+def residual_max(cfg: MatrixConfig | None) -> int:
+    """Highest possible score on this workspace's matrix. 25 (5x5) when config is absent."""
+    if cfg is None:
+        return 25
+    return int(cfg.likelihood_scale) * int(cfg.impact_scale)  # type: ignore[arg-type]
 
 
 def ce_fraction(level: int | None, scale: int) -> float | None:
