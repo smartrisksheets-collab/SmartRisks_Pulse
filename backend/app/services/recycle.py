@@ -2,6 +2,7 @@
 
 from datetime import date, datetime, timezone, timedelta
 from decimal import Decimal
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select, delete
@@ -10,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.recycle_bin import RecycleBin
 from app.models.audit_log import AuditLog
 from app.core.config import settings
-from app.core.exceptions import ResourceNotFoundError, ValidationError
+from app.core.exceptions import PermissionDeniedError, ResourceNotFoundError, ValidationError
 
 
 def _to_date(v: str | date | None) -> date | None:
@@ -33,6 +34,17 @@ def _to_decimal(v: float | int | str | None) -> Decimal | None:
     if v is None:
         return None
     return Decimal(str(v))
+
+
+# The permission that owns each kind of record in the bin. Restoring or purging
+# a record needs the same permission as deleting it.
+_BIN_PERMISSION: dict[str, str] = {'risk': 'manage_risks', 'incident': 'manage_incidents'}
+
+
+def _check_bin_permission(item_type: str, permissions: dict[str, Any]) -> None:
+    perm = _BIN_PERMISSION.get(item_type)
+    if perm is None or not permissions.get(perm):
+        raise PermissionDeniedError(f"Permission denied: {perm or 'manage_risks'} required")
 
 
 async def soft_delete(
@@ -105,6 +117,8 @@ async def restore_item(
     tenant_id: UUID,
     bin_id: UUID,
     restored_by: str,
+    *,
+    permissions: dict[str, Any],
 ) -> dict:
     result = await db.execute(
         select(RecycleBin)
@@ -114,6 +128,7 @@ async def restore_item(
     bin_item = result.scalar_one_or_none()
     if not bin_item:
         raise ResourceNotFoundError(f'Bin item {bin_id} not found')
+    _check_bin_permission(str(bin_item.item_type), permissions)
 
     data = bin_item.item_data
 
@@ -181,23 +196,28 @@ async def restore_item(
 
     elif bin_item.item_type == 'incident':
         from app.models.incident import Incident
+        from app.services.incident_status import normalise_status
+        # Every stored field comes back (linkage, owner, dates, cost and so on),
+        # not only the original subset. Statuses from before migration 064 are renamed.
+        text_fields = (
+            'title', 'description', 'category', 'severity', 'priority', 'root_cause',
+            'assigned_to', 'reported_by', 'reporter_email', 'channel', 'incident_type',
+            'location', 'impact_summary', 'affected_asset', 'business_unit', 'linked_risk_id',
+            'linked_control', 'control_outcome', 'impact_confidence', 'immediate_actions',
+            'evidence_link', 'analyst_notes', 'tags', 'review_status', 'risk_impacted',
+            'resolution_summary', 'ai_impact', 'ai_actions', 'ai_status',
+        )
         restored = Incident(
             id=data['id'],
             tenant_id=tenant_id,
-            title=data.get('title'),
-            description=data.get('description'),
-            category=data.get('category'),
-            severity=data.get('severity'),
-            priority=data.get('priority'),
-            status=data.get('status', 'Open'),
-            root_cause=data.get('root_cause'),
-            assigned_to=data.get('assigned_to'),
-            reported_by=data.get('reported_by'),
+            status=normalise_status(data.get('status')),
             reported_at=_to_date(data.get('reported_at')),
+            containment_date=_to_date(data.get('containment_date')),
+            incident_dt=_to_dt(data.get('incident_dt')),
             resolved_at=_to_dt(data.get('resolved_at')),
+            ai_last_generated=_to_dt(data.get('ai_last_generated')),
             financial_impact=_to_decimal(data.get('financial_impact')),
-            ai_impact=data.get('ai_impact'),
-            ai_actions=data.get('ai_actions'),
+            **{f: data.get(f) for f in text_fields},
         )
         db.add(restored)
 
@@ -223,6 +243,8 @@ async def permanent_delete(
     tenant_id: UUID,
     bin_id: UUID,
     deleted_by: str = "",
+    *,
+    permissions: dict[str, Any],
 ) -> None:
     result = await db.execute(
         select(RecycleBin)
@@ -232,6 +254,7 @@ async def permanent_delete(
     bin_item = result.scalar_one_or_none()
     if not bin_item:
         raise ResourceNotFoundError(f'Bin item {bin_id} not found')
+    _check_bin_permission(str(bin_item.item_type), permissions)
     item_type  = str(bin_item.item_type or "item").capitalize()
     item_id    = str(bin_item.item_id   or "")
     await db.execute(delete(RecycleBin).where(RecycleBin.id == bin_id))
@@ -253,4 +276,4 @@ async def purge_expired(db: AsyncSession) -> int:
         delete(RecycleBin).where(RecycleBin.purge_at < now)
     )
     await db.flush()
-    return result.rowcount
+    return result.rowcount

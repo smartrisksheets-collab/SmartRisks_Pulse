@@ -23,6 +23,7 @@ import PlanExpired    from './pages/PlanExpired';
 import Home           from './pages/Home';
 import RiskRegister   from './pages/RiskRegister';
 import RiskFormPage   from './pages/RiskFormPage';
+import IncidentFormPage from './pages/IncidentFormPage';
 import Incidents      from './pages/Incidents';
 
 // Apply the last workspace colors before React draws anything, so pages do not flash teal.
@@ -127,6 +128,8 @@ export default function App() {
                     <Route path="/analytics" element={<Analytics />} />
                     <Route path="/risks"     element={<RequireModule module="risk"><RiskRegister /></RequireModule>} />
                     <Route path="/incidents" element={<RequireModule module="incident"><Incidents /></RequireModule>} />
+                    <Route path="/incidents/new"           element={<RequireModule module="incident"><RequirePermission permission="manage_incidents"><IncidentFormPage /></RequirePermission></RequireModule>} />
+                    <Route path="/incidents/:id/edit"      element={<RequireModule module="incident"><RequirePermission permission="manage_incidents"><IncidentFormPage /></RequirePermission></RequireModule>} />
                     <Route path="/reports"   element={<ReportBuilder />} />
                     <Route path="/audit"     element={<RequirePermission permission="manage_settings"><AuditLog /></RequirePermission>} />
                     <Route path="/users"     element={<RequirePermission permission="manage_users"><Users /></RequirePermission>} />

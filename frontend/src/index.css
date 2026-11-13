@@ -5709,6 +5709,24 @@ textarea.pl-input.pl-rr-short { min-height: 64px; }
   .pl-rr-actions { width: 100%; }
 }
 
+/* ── Incidents (UI step 6) ────────────────────────────────────────────────── */
+.pl-in-table { min-width: 960px; }
+.pl-in-nowrap { white-space: nowrap; }
+.pl-in-target { font-size: var(--pl-fs-body-s); font-weight: 600; color: var(--pl-text-body); white-space: nowrap; }
+.pl-in-missed { color: #9f1239; }
+.pl-in-today { color: #854d0e; }
+.pl-in-met { color: var(--pl-success-text); }
+.pl-in-choices { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
+.pl-in-span2 { grid-column: span 2; }
+.pl-in-outcomes { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: var(--pl-fs-body-s); color: var(--pl-text-body); line-height: 1.45; }
+[data-theme="dark"] .pl-in-missed { color: #fb7185; }
+[data-theme="dark"] .pl-in-today { color: #fbbf24; }
+[data-theme="dark"] .pl-in-met { color: #34d399; }
+@media (max-width: 767px) {
+  .pl-in-span2 { grid-column: auto; }
+  .pl-in-choices { grid-template-columns: 1fr 1fr; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .pl-kpi, .pl-kpi:hover { transition: none; transform: none; }
   .pl-sky-sunrise, .pl-sky-halo, .pl-sky-drift, .pl-sky-sunpath, .pl-sky-rays, .pl-sky-float, .pl-sky-glow, .pl-sky-tw, .pl-sky-tw2, .pl-sky-tw3 { animation: none; }

@@ -227,10 +227,11 @@ async def job_incident_escalation() -> None:
     from app.models.workspace_member import WorkspaceMember
     from app.models.account import Account
     from app.services.incident_severity import compute_breach, get_sla_map
+    from app.services.incident_status import OPEN_STATUSES
     from app.services.email import send_escalation_alert
 
     now = datetime.now(timezone.utc)
-    open_statuses = {'New', 'Open', 'In Progress', 'Under Review'}
+    open_statuses = set(OPEN_STATUSES)
 
     tenant_ids = await _get_all_tenant_ids()
 
@@ -403,4 +404,4 @@ async def job_brief_send() -> None:
                     logger.info("job_brief_send: sent for tenant=%s to=%d recipients", tenant.id, len(recipient_list))
 
         except Exception:
-            logger.exception("job_brief_send failed for tenant=%s", tenant.id)
+            logger.exception("job_brief_send failed for tenant=%s", tenant.id)

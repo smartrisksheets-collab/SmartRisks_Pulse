@@ -12,6 +12,7 @@ from app.schemas.incident import (
     IncidentUpdate,
     AIIncidentRequest,
     AIIncidentSuggestRequest,
+    TargetPreviewRequest,
 )
 from app.services import incident as incident_service
 from app.services import ai_incident as ai_incident_service
@@ -30,6 +31,35 @@ async def get_stats(
     return {"data": stats, "error": None, "meta": {}}
 
 
+@router.get("/views")
+async def get_view_counts(
+    category: str | None = Query(None),
+    severity: str | None = Query(None),
+    owner:    str | None = Query(None),
+    search:   str | None = Query(None),
+    db: AsyncSession     = Depends(get_db),
+    claims: dict         = Depends(require_module("incident")),
+):
+    tenant_id = UUID(claims["active_tenant_id"])
+    counts = await incident_service.get_view_counts(
+        db, tenant_id, category=category, severity=severity, owner=owner, search=search,
+    )
+    return {"data": counts, "error": None, "meta": {}}
+
+
+@router.post("/target-preview")
+@limiter.limit("120/minute")
+async def target_preview(
+    request: Request,
+    payload: TargetPreviewRequest,
+    db: AsyncSession = Depends(get_db),
+    claims: dict     = Depends(require_module("incident")),
+):
+    tenant_id = UUID(claims["active_tenant_id"])
+    result = await incident_service.target_preview(db, tenant_id, payload)
+    return {"data": result, "error": None, "meta": {}}
+
+
 @router.get("")
 async def list_incidents(
     page: int               = Query(1, ge=1),
@@ -40,6 +70,8 @@ async def list_incidents(
     status: str | None      = Query(None),
     business_unit: str | None = Query(None),
     search: str | None      = Query(None),
+    view: str | None        = Query(None),
+    owner: str | None       = Query(None),
     db: AsyncSession        = Depends(get_db),
     claims: dict            = Depends(require_module("incident")),
 ):
@@ -47,6 +79,7 @@ async def list_incidents(
     result = await incident_service.list_incidents(
         db, tenant_id, page, page_size,
         incident_id, category, severity, status, business_unit, search,
+        view=view, owner=owner,
     )
     return {
         "data": result.items,
@@ -73,6 +106,17 @@ async def create_incident(
         db, tenant_id, payload, claims["email"]
     )
     return {"data": inc, "error": None, "meta": {}}
+
+
+@router.get("/{incident_id}/context")
+async def get_incident_context(
+    incident_id: str,
+    db: AsyncSession = Depends(get_db),
+    claims: dict     = Depends(require_module("incident")),
+):
+    tenant_id = UUID(claims["active_tenant_id"])
+    ctx = await incident_service.get_incident_context(db, tenant_id, incident_id)
+    return {"data": ctx, "error": None, "meta": {}}
 
 
 @router.get("/{incident_id}")
@@ -193,4 +237,4 @@ async def get_page_insights(
 ):
     tenant_id = UUID(claims["active_tenant_id"])
     result = await ai_incident_page_service.generate_page_insights(db, tenant_id)
-    return {"data": result, "error": None, "meta": {}}
+    return {"data": result, "error": None, "meta": {}}

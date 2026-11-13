@@ -80,6 +80,7 @@ export default function PageShell({ children, title }: PageShellProps) {
   const location   = useLocation();
   const routeTitle = ROUTE_META[location.pathname]
     ?? (location.pathname === '/risks/new' || /^\/risks\/[^/]+\/edit$/.test(location.pathname) ? 'Risk Register' : undefined)
+    ?? (location.pathname === '/incidents/new' || /^\/incidents\/[^/]+\/edit$/.test(location.pathname) ? 'Incident Management' : undefined)
     ?? title ?? 'SmartRisk';
   const { sidebarCollapsed, mobSidebarOpen } = useUIStore();
   const { logout } = useAuth();
@@ -125,4 +126,4 @@ export default function PageShell({ children, title }: PageShellProps) {
     </div>
     </>
   );
-}
+}

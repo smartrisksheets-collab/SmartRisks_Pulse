@@ -31,9 +31,11 @@ from app.schemas.incident_severity import (
     SlaTargetUpsert,
 )
 
+from app.services.incident_status import OPEN_STATUSES
+
 logger = logging.getLogger(__name__)
 
-_OPEN_STATUSES = {'New', 'Open', 'In Progress', 'Under Review'}
+_OPEN_STATUSES = OPEN_STATUSES  # kept for existing importers (home, dashboard)
 
 _DEFAULT_LEVELS: list[dict] = [
     {'label': 'Very High', 'sort_order': 1, 'color': '#c0392b',
@@ -412,4 +414,4 @@ async def get_preview(
         breach_count=breach_count,
         breach_rate_pct=breach_rate,
         unowned_count=unowned_count,
-    )
+    )

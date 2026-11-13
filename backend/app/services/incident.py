@@ -15,10 +15,18 @@ from app.models.incident import Incident
 from app.models.risk import Risk
 from app.models.audit_log import AuditLog
 from app.schemas.incident import (
+    IncidentContext,
     IncidentCreate,
+    IncidentHistoryItem,
+    IncidentRiskRef,
+    IncidentRow,
+    IncidentStep,
     IncidentUpdate,
     IncidentResponse,
     IncidentListResponse,
+    IncidentViewCounts,
+    TargetPreviewRequest,
+    TargetPreviewResponse,
     IncidentStatsResponse,
     IncidentCost,
     CategoryDriver,
@@ -31,12 +39,39 @@ from app.schemas.incident import (
     MonthlyTrend,
     TopDriver,
 )
+from app.schemas.risk import display_title
 from app.services.recycle import soft_delete
 from app.services.incident_severity import (
     compute_breach,
     get_sla_map,
     get_severity_ranks,
     high_severity_labels,
+)
+from app.services.incident_status import (
+    OPEN_STATUSES,
+    TERMINAL_STATUSES,
+    effective_sla,
+    is_open,
+    next_label,
+    next_status,
+    normalise_status,
+    stage_note,
+    stepper,
+    target_days,
+    target_hours_for,
+    target_state,
+    resolve_by,
+)
+from app.services.lookup import covering_risk_categories, get_lookups
+from app.services.matrix_config import _get_or_create as _get_matrix
+from app.services.risk_status import is_contradicted
+
+HISTORY_LIMIT = 10
+SUGGESTED_RISK_LIMIT = 3
+VIEW_KEYS: tuple[str, ...] = ('open', 'unlinked', 'high', 'resolved', 'all')
+# Fields a partial update may not clear: the incident would lose what identifies it.
+_REQUIRED_ON_UPDATE: frozenset[str] = frozenset(
+    {'description', 'category', 'severity', 'status', 'reported_by', 'reported_at'}
 )
 
 
@@ -100,6 +135,160 @@ async def _validate_linked_risk(db: AsyncSession, tenant_id: UUID, risk_id: str)
         raise ValidationError(f'Risk {risk_id} does not exist in this workspace.')
 
 
+async def _validate_severity(db: AsyncSession, tenant_id: UUID, severity: str) -> None:
+    """Severity must be one of the workspace's configured levels (or the defaults before seeding)."""
+    ranks = await get_severity_ranks(db, tenant_id)
+    if severity not in ranks:
+        raise ValidationError(f"Severity '{severity}' is not one of this workspace's levels: {', '.join(ranks)}.")
+
+
+class _Coverage:
+    """Which incident categories a live risk covers (same rule as the dashboard correlation)."""
+
+    def __init__(self, cat_map: dict[str, list[str]], risk_cats: list[str], held: set[str]) -> None:
+        self.cat_map = cat_map
+        self.risk_cats = risk_cats
+        self.held = held
+
+    def covering(self, inc_cat: str | None) -> list[str]:
+        cat = str(inc_cat or 'Other')
+        return [c for c in covering_risk_categories(cat, self.cat_map, self.risk_cats) if c in self.held]
+
+
+async def _coverage(db: AsyncSession, tenant_id: UUID) -> _Coverage:
+    lookups = await get_lookups(db, tenant_id)
+    held = (await db.execute(
+        select(Risk.category).distinct().where(
+            Risk.tenant_id == tenant_id, Risk.deleted_at.is_(None), Risk.category.is_not(None),
+        )
+    )).scalars().all()
+    return _Coverage(lookups.incident_category_map, lookups.category, {str(c) for c in held})
+
+
+async def _risk_titles(db: AsyncSession, tenant_id: UUID, ids: set[str]) -> dict[str, str]:
+    """Display titles of live risks, by ID."""
+    if not ids:
+        return {}
+    rows = (await db.execute(
+        select(Risk.id, Risk.title, Risk.description).where(
+            Risk.tenant_id == tenant_id, Risk.deleted_at.is_(None), Risk.id.in_(ids),
+        )
+    )).all()
+    return {str(r.id): display_title(r.title, r.description, str(r.id)) for r in rows}
+
+
+class _RowContext:
+    """Workspace settings every row label needs, loaded once per request."""
+
+    def __init__(self, sla: dict[str, float], high: set[str], cov: _Coverage, today: date, now: datetime) -> None:
+        self.sla = sla
+        self.high = high
+        self.cov = cov
+        self.today = today
+        self.now = now
+
+
+async def _row_context(db: AsyncSession, tenant_id: UUID) -> _RowContext:
+    ranks = await get_severity_ranks(db, tenant_id)
+    return _RowContext(
+        sla=effective_sla(await get_sla_map(db, tenant_id)),
+        high=set(high_severity_labels(ranks)),
+        cov=await _coverage(db, tenant_id),
+        today=date.today(),
+        now=datetime.now(timezone.utc),
+    )
+
+
+def _age_hours(reported_at: date | None, now: datetime) -> float:
+    if reported_at is None:
+        return 0.0
+    ref = datetime(reported_at.year, reported_at.month, reported_at.day, tzinfo=timezone.utc)
+    return (now - ref).total_seconds() / 3600
+
+
+def _to_row(inc: Incident, ctx: _RowContext, titles: dict[str, str]) -> IncidentRow:
+    base = IncidentResponse.model_validate(inc)
+    hours = target_hours_for(base.severity, ctx.sla)
+    open_ = is_open(base.status)
+    breached = open_ and base.reported_at is not None and compute_breach(_age_hours(base.reported_at, ctx.now), hours)
+    state, text_, due = target_state(
+        status=base.status, reported_at=base.reported_at, resolved_at=base.resolved_at,
+        hours=hours, breached=breached, today=ctx.today,
+    )
+    link = str(base.linked_risk_id or '').strip()
+    if link:
+        link_state = 'linked'
+    elif ctx.cov.covering(base.category):
+        link_state = 'unlinked'
+    else:
+        link_state = 'uncovered'
+    return IncidentRow(
+        **base.model_dump(),
+        display_title=display_title(base.title, base.description, base.id),
+        is_open=open_,
+        is_high=str(base.severity or '') in ctx.high,
+        target_state=state,
+        target_text=text_,
+        resolve_by=due,
+        target_days=target_days(hours),
+        link_state=link_state,
+        linked_risk_title=titles.get(link) if link else None,
+    )
+
+
+def _filtered(
+    q: Any,
+    *,
+    category: str | None,
+    severity: str | None,
+    status: str | None,
+    business_unit: str | None,
+    owner: str | None,
+    search: str | None,
+) -> Any:
+    """Filters shared by the list and the quick-view counts, so both agree."""
+    if category:
+        q = q.where(Incident.category == category)
+    if severity:
+        q = q.where(Incident.severity == severity)
+    if status:
+        q = q.where(Incident.status == normalise_status(status))
+    if business_unit:
+        q = q.where(Incident.business_unit == business_unit)
+    if owner:
+        q = q.where(Incident.assigned_to == owner)
+    if search:
+        term = f'%{search.strip().lower()}%'
+        q = q.where(
+            func.lower(Incident.id).like(term)
+            | func.lower(func.coalesce(Incident.title, '')).like(term)
+            | func.lower(func.coalesce(Incident.description, '')).like(term)
+            | func.lower(func.coalesce(Incident.category, '')).like(term)
+            | func.lower(func.coalesce(Incident.reported_by, '')).like(term)
+            | func.lower(func.coalesce(Incident.assigned_to, '')).like(term)
+            | func.lower(func.coalesce(Incident.affected_asset, '')).like(term)
+            | func.lower(func.coalesce(Incident.business_unit, '')).like(term)
+        )
+    return q
+
+
+def _unlinked() -> Any:
+    return func.coalesce(func.trim(Incident.linked_risk_id), '') == ''
+
+
+def _view_clause(view: str, high: set[str]) -> Any:
+    open_ = Incident.status.in_(OPEN_STATUSES)
+    if view == 'open':
+        return open_
+    if view == 'unlinked':
+        return open_ & _unlinked()
+    if view == 'high':
+        return open_ & Incident.severity.in_(high)
+    if view == 'resolved':
+        return Incident.status.in_(TERMINAL_STATUSES)
+    return None
+
+
 # ── Public API ────────────────────────────────────────────────────────────────
 
 async def list_incidents(
@@ -113,50 +302,98 @@ async def list_incidents(
     status: str | None = None,
     business_unit: str | None = None,
     search: str | None = None,
+    *,
+    view: str | None = None,
+    owner: str | None = None,
 ) -> IncidentListResponse:
+    """Incident log, newest first. Each row carries its target, link and severity labels."""
+    if view is not None and view not in VIEW_KEYS:
+        raise ValidationError(f"view must be one of {', '.join(VIEW_KEYS)}")
+    ctx = await _row_context(db, tenant_id)
     q = (
         select(Incident)
         .where(Incident.tenant_id == tenant_id)
         .where(Incident.deleted_at.is_(None))
     )
-
     if incident_id:
         q = q.where(func.upper(Incident.id) == incident_id.strip().upper())
-    if category:
-        q = q.where(Incident.category == category)
-    if severity:
-        q = q.where(Incident.severity == severity)
-    if status:
-        q = q.where(Incident.status == status)
-    if business_unit:
-        q = q.where(Incident.business_unit == business_unit)
-    if search:
-        term = f'%{search.lower()}%'
-        q = q.where(
-            func.lower(Incident.description).like(term)
-            | func.lower(Incident.category).like(term)
-            | func.lower(Incident.reported_by).like(term)
-            | func.lower(Incident.affected_asset).like(term)
-            | func.lower(Incident.business_unit).like(term)
-        )
+    q = _filtered(q, category=category, severity=severity, status=status,
+                  business_unit=business_unit, owner=owner, search=search)
+    clause = _view_clause(view or 'all', ctx.high)
+    if clause is not None:
+        q = q.where(clause)
 
-    count_result = await db.execute(
-        select(func.count()).select_from(q.subquery())
-    )
-    total = count_result.scalar() or 0
-
-    rows = await db.execute(
-        q.order_by(Incident.id.asc())
+    total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar() or 0
+    incidents = (await db.execute(
+        q.order_by(Incident.reported_at.desc().nulls_last(), Incident.id.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
-    )
-    incidents = rows.scalars().all()
+    )).scalars().all()
 
+    titles = await _risk_titles(
+        db, tenant_id, {str(i.linked_risk_id).strip() for i in incidents if str(i.linked_risk_id or '').strip()},
+    )
     return IncidentListResponse(
-        items=[IncidentResponse.model_validate(i) for i in incidents],
+        items=[_to_row(i, ctx, titles) for i in incidents],
         total=total,
         page=page,
         page_size=page_size,
+    )
+
+
+def _plural(n: int, one: str, many: str) -> str:
+    return f"{n} {one if n == 1 else many}"
+
+
+async def get_view_counts(
+    db: AsyncSession,
+    tenant_id: UUID,
+    *,
+    category: str | None = None,
+    severity: str | None = None,
+    owner: str | None = None,
+    search: str | None = None,
+) -> IncidentViewCounts:
+    """Quick-view counts (they follow the filters) and a one-line summary of the whole log."""
+    ranks = await get_severity_ranks(db, tenant_id)
+    high = set(high_severity_labels(ranks))
+    base = select(Incident.id).where(Incident.tenant_id == tenant_id, Incident.deleted_at.is_(None))
+    filtered = _filtered(base, category=category, severity=severity, status=None,
+                         business_unit=None, owner=owner, search=search)
+
+    async def _count(q: Any) -> int:
+        return int((await db.execute(select(func.count()).select_from(q.subquery()))).scalar() or 0)
+
+    counts: dict[str, int] = {}
+    for key in VIEW_KEYS:
+        clause = _view_clause(key, high)
+        counts[key] = await _count(filtered.where(clause) if clause is not None else filtered)
+
+    open_all = await _count(base.where(_view_clause('open', high)))
+    high_all = await _count(base.where(_view_clause('high', high)))
+    unlinked_all = await _count(base.where(_view_clause('unlinked', high)))
+    if open_all == 0:
+        total_all = await _count(base)
+        summary = 'No open incidents.' if total_all else 'No incidents logged yet.'
+    else:
+        summary = f"{open_all} open"
+        if high_all:
+            summary += f", {high_all} of them high or above"
+        summary += "."
+        if unlinked_all:
+            summary += f" {_plural(unlinked_all, 'open incident has', 'open incidents have')} no linked risk."
+
+    owners = (await db.execute(
+        select(Incident.assigned_to).distinct().where(
+            Incident.tenant_id == tenant_id, Incident.deleted_at.is_(None),
+            func.coalesce(func.trim(Incident.assigned_to), '') != '',
+        ).order_by(Incident.assigned_to)
+    )).scalars().all()
+
+    top = [label for label, rank in sorted(ranks.items(), key=lambda p: p[1])]
+    high_label = f"{top[1]} or above" if len(top) > 1 else (f"{top[0]}" if top else "High or above")
+    return IncidentViewCounts(
+        **counts, high_label=high_label, summary=summary, owners=[str(o) for o in owners],
     )
 
 
@@ -183,8 +420,10 @@ async def create_incident(
     payload: IncidentCreate,
     created_by: str,
 ) -> IncidentResponse:
-    if payload.linked_risk_id:
-        await _validate_linked_risk(db, tenant_id, payload.linked_risk_id)
+    await _validate_severity(db, tenant_id, payload.severity)
+    linked = (payload.linked_risk_id or '').strip() or None
+    if linked:
+        await _validate_linked_risk(db, tenant_id, linked)
     inc_id = await _generate_id(db, tenant_id)
 
     inc = Incident(
@@ -208,9 +447,9 @@ async def create_incident(
         impact_summary=payload.impact_summary,
         affected_asset=payload.affected_asset,
         business_unit=payload.business_unit,
-        linked_risk_id=payload.linked_risk_id,
+        linked_risk_id=linked,
         linked_control=payload.linked_control,
-        control_outcome=payload.control_outcome,
+        control_outcome=payload.control_outcome if linked else None,
         impact_confidence=payload.impact_confidence,
         immediate_actions=payload.immediate_actions,
         evidence_link=payload.evidence_link,
@@ -221,7 +460,9 @@ async def create_incident(
         risk_impacted=payload.risk_impacted,
         resolution_summary=payload.resolution_summary,
         financial_impact=payload.financial_impact,
-        resolved_at=payload.resolved_at,
+        resolved_at=payload.resolved_at or (
+            datetime.now(timezone.utc) if normalise_status(payload.status) in TERMINAL_STATUSES else None
+        ),
     )
     db.add(inc)
     await db.flush()
@@ -229,7 +470,7 @@ async def create_incident(
 
     await _audit(
         db, tenant_id, created_by, 'CREATE', inc_id,
-        f'Created incident: {(payload.description or inc_id)[:60]}',
+        f'Logged as {inc.status}: {display_title(payload.title, payload.description, inc_id)[:60]}',
     )
 
     return IncidentResponse.model_validate(inc)
@@ -252,23 +493,40 @@ async def update_incident(
     if not inc:
         raise ResourceNotFoundError(f'Incident {incident_id} not found')
 
-    if patch.linked_risk_id:
-        await _validate_linked_risk(db, tenant_id, patch.linked_risk_id)
+    changes = {
+        k: v for k, v in patch.model_dump(exclude_unset=True).items()
+        if not (v is None and k in _REQUIRED_ON_UPDATE)
+    }
+    if 'severity' in changes:
+        await _validate_severity(db, tenant_id, str(changes['severity']))
+    if 'linked_risk_id' in changes:
+        changes['linked_risk_id'] = str(changes['linked_risk_id'] or '').strip() or None
+        if changes['linked_risk_id']:
+            await _validate_linked_risk(db, tenant_id, changes['linked_risk_id'])
+        else:
+            changes['control_outcome'] = None   # an outcome describes a linked risk's control
 
-    for field, value in patch.model_dump(exclude_none=True).items():
+    old_status = normalise_status(str(inc.status or ''))
+    for field, value in changes.items():
         setattr(inc, field, value)
 
-    # Auto-set resolved_at when status moves to Resolved or Closed (mirrors GAS closeDate logic)
-    if patch.status in ('Resolved', 'Closed') and not inc.resolved_at:
-        inc.resolved_at = datetime.now(timezone.utc)
+    new_status = normalise_status(str(inc.status or ''))
+    inc.status = new_status  # type: ignore[assignment]
+    if new_status in TERMINAL_STATUSES and inc.resolved_at is None:
+        # Mirrors GAS closeDate: the first move to Resolved or Closed stamps the date.
+        inc.resolved_at = datetime.now(timezone.utc)  # type: ignore[assignment]
+    elif new_status not in TERMINAL_STATUSES and 'resolved_at' not in changes:
+        # Reopened: the old date would make resolution time and SLA results wrong.
+        inc.resolved_at = None  # type: ignore[assignment]
 
     await db.flush()
     await db.refresh(inc)
 
-    await _audit(
-        db, tenant_id, updated_by, 'UPDATE', incident_id,
-        f'Updated incident: {incident_id} status: {inc.status}',
+    summary = (
+        f'Moved from {old_status} to {new_status}' if new_status != old_status
+        else f'Updated {", ".join(sorted(changes)) or "nothing"}'
     )
+    await _audit(db, tenant_id, updated_by, 'UPDATE', incident_id, summary[:200])
 
     return IncidentResponse.model_validate(inc)
 
@@ -328,8 +586,8 @@ async def get_stats(db: AsyncSession, tenant_id: UUID) -> IncidentStatsResponse:
     rows = result.all()
     total = len(rows)
 
-    OPEN_STATES     = {'New', 'Open', 'In Progress', 'Under Review'}
-    TERMINAL_STATES = {'Resolved', 'Closed'}
+    OPEN_STATES     = OPEN_STATUSES
+    TERMINAL_STATES = TERMINAL_STATUSES
     today   = date.today()
     now_utc = datetime.now(timezone.utc)
 
@@ -341,8 +599,7 @@ async def get_stats(db: AsyncSession, tenant_id: UUID) -> IncidentStatsResponse:
     def _sev_weight(r) -> int:  # type: ignore[no-untyped-def]
         rank = sev_ranks.get(str(r.severity or ''))
         return _RANK_WEIGHTS[rank] if rank is not None and rank < len(_RANK_WEIGHTS) else 1
-    _DEF_H  = {'Very High': 24.0, 'High': 72.0, 'Medium': 120.0, 'Low': 240.0}
-    eff_h   = sla_map if sla_map else _DEF_H
+    eff_h   = effective_sla(sla_map)
     sla_d   = {sev: max(1, round(h / 24)) for sev, h in eff_h.items()}
 
     def _age_h(r) -> float:  # type: ignore[no-untyped-def]
@@ -376,11 +633,11 @@ async def get_stats(db: AsyncSession, tenant_id: UUID) -> IncidentStatsResponse:
 
     # ── Lifecycle ──────────────────────────────────────────────────────────────
     status_counts: dict[str, int] = {
-        'New': 0, 'Open': 0, 'In Progress': 0,
-        'Under Review': 0, 'Resolved': 0, 'Closed': 0,
+        'New': 0, 'Triaged': 0, 'Investigating': 0,
+        'Remediating': 0, 'Resolved': 0, 'Closed': 0,
     }
     for r in rows:
-        s = str(r.status or '')
+        s = normalise_status(str(r.status or ''))
         if s in status_counts:
             status_counts[s] += 1
 
@@ -660,9 +917,9 @@ async def get_stats(db: AsyncSession, tenant_id: UUID) -> IncidentStatsResponse:
         ),
         lifecycle=IncidentLifecycle(
             new=status_counts['New'],
-            open=status_counts['Open'],
-            in_progress=status_counts['In Progress'],
-            under_review=status_counts['Under Review'],
+            triaged=status_counts['Triaged'],
+            investigating=status_counts['Investigating'],
+            remediating=status_counts['Remediating'],
             resolved=status_counts['Resolved'],
             closed=status_counts['Closed'],
             oldest_open_days=oldest_open_days,
@@ -686,4 +943,150 @@ async def get_stats(db: AsyncSession, tenant_id: UUID) -> IncidentStatsResponse:
         by_severity=by_severity,
         costs=costs,
         by_category=by_category,
+    )
+
+# ── UI step 6: side panel context and target preview ─────────────────────────
+
+async def _suggested(db: AsyncSession, tenant_id: UUID, cats: list[str]) -> list[IncidentRiskRef]:
+    """Live risks in the categories that cover an incident, highest residual first."""
+    if not cats:
+        return []
+    rows = (await db.execute(
+        select(Risk.id, Risk.title, Risk.description, Risk.residual).where(
+            Risk.tenant_id == tenant_id, Risk.deleted_at.is_(None), Risk.category.in_(cats),
+        ).order_by(Risk.residual.desc().nulls_last(), Risk.id).limit(SUGGESTED_RISK_LIMIT)
+    )).all()
+    return [
+        IncidentRiskRef(
+            id=str(r.id), title=display_title(r.title, r.description, str(r.id)),
+            residual=int(float(r.residual) + 0.5) if r.residual is not None else None,  # type: ignore[arg-type]
+        )
+        for r in rows
+    ]
+
+
+def _link_note(category: str | None, covered: bool, has_suggestions: bool) -> str:
+    cat = str(category or 'Other')
+    if not covered:
+        return f"No risk on the register covers {cat}, so this exposure is not in any score."
+    if has_suggestions:
+        return f"These risks cover {cat}. Link the one this incident belongs to."
+    return "Find the risk this incident belongs to."
+
+
+async def get_incident_context(db: AsyncSession, tenant_id: UUID, incident_id: str) -> IncidentContext:
+    """What the incident side panel shows: stages, linked risk or suggestions, and history."""
+    inc = (await db.execute(
+        select(Incident).where(
+            Incident.tenant_id == tenant_id, Incident.id == incident_id, Incident.deleted_at.is_(None),
+        )
+    )).scalar_one_or_none()
+    if inc is None:
+        raise ResourceNotFoundError(f'Incident {incident_id} not found')
+
+    ctx = await _row_context(db, tenant_id)
+    link = str(inc.linked_risk_id or '').strip()
+    linked: IncidentRiskRef | None = None
+    titles: dict[str, str] = {}
+    if link:
+        risk = (await db.execute(
+            select(Risk.id, Risk.title, Risk.description, Risk.residual).where(
+                Risk.tenant_id == tenant_id, Risk.id == link, Risk.deleted_at.is_(None),
+            )
+        )).first()
+        if risk is not None:
+            title = display_title(risk.title, risk.description, str(risk.id))
+            titles[link] = title
+            linked = IncidentRiskRef(
+                id=link, title=title,
+                residual=int(float(risk.residual) + 0.5) if risk.residual is not None else None,  # type: ignore[arg-type]
+            )
+        else:
+            # Soft reference (decision 5 Sep 2026): keep the ID, say the risk is gone.
+            linked = IncidentRiskRef(id=link, title='No longer on the register', on_register=False)
+
+    row = _to_row(inc, ctx, titles)
+    cats = ctx.cov.covering(row.category)
+    suggestions = [] if link else await _suggested(db, tenant_id, cats)
+
+    audit_rows = (await db.execute(
+        select(AuditLog.created_at, AuditLog.user_email, AuditLog.action, AuditLog.summary)
+        .where(
+            AuditLog.tenant_id == tenant_id,
+            AuditLog.module == 'Incident',
+            AuditLog.record_id == incident_id,
+        )
+        .order_by(AuditLog.created_at.desc())
+        .limit(HISTORY_LIMIT)
+    )).all()
+
+    return IncidentContext(
+        incident=row,
+        steps=[IncidentStep(name=n, state=st) for n, st in stepper(row.status)],
+        stage_note=stage_note(row.status),
+        next_status=next_status(row.status),
+        next_label=next_label(row.status),
+        linked_risk=linked,
+        covered=bool(cats),
+        link_note='' if link else _link_note(row.category, bool(cats), bool(suggestions)),
+        suggested_risks=suggestions,
+        history=[
+            IncidentHistoryItem(at=a.created_at, user=a.user_email, action=a.action, summary=a.summary)
+            for a in audit_rows
+        ],
+    )
+
+
+async def target_preview(
+    db: AsyncSession, tenant_id: UUID, payload: TargetPreviewRequest,
+) -> TargetPreviewResponse:
+    """Target date and what saving will change, for the log form. Writes nothing."""
+    ranks = await get_severity_ranks(db, tenant_id)
+    if payload.severity not in ranks:
+        raise ValidationError(f"Severity '{payload.severity}' is not one of this workspace's levels.")
+    sla = effective_sla(await get_sla_map(db, tenant_id))
+    hours = target_hours_for(payload.severity, sla)
+    days = target_days(hours)
+    reported = payload.reported_at or date.today()
+    cov = await _coverage(db, tenant_id)
+    cats = cov.covering(payload.category) if payload.category else []
+    covered = bool(cats)
+    link = (payload.linked_risk_id or '').strip()
+    is_high = payload.severity in set(high_severity_labels(ranks))
+
+    outcomes = ['It appears as New in the incident log, with this target.']
+    suggestions: list[IncidentRiskRef] = []
+    if link:
+        risk = (await db.execute(
+            select(Risk.id, Risk.control_effectiveness).where(
+                Risk.tenant_id == tenant_id, Risk.id == link, Risk.deleted_at.is_(None),
+            )
+        )).first()
+        if risk is None:
+            raise ValidationError(f'Risk {link} does not exist in this workspace.')
+        outcomes.append(f"It shows under {link} in the Risk Register panel and counts as that risk materialising.")
+        matrix = await _get_matrix(db, tenant_id)
+        rating = int(risk.control_effectiveness) if risk.control_effectiveness is not None else None  # type: ignore[arg-type]
+        if is_contradicted(rating, int(matrix.ce_scale), True):  # type: ignore[arg-type]
+            outcomes.append(f"{link} is rated well controlled, so Analytics will mark its control rating as contradicted.")
+    else:
+        if payload.category and not covered:
+            outcomes.append(
+                f"No risk covers {payload.category}. Analytics shows it as a register blind spot until one is logged."
+            )
+        else:
+            outcomes.append('With no linked risk, it counts as unlinked on Analytics.')
+        if is_high:
+            outcomes.append(f"A {payload.severity} incident with no linked risk is named in the Home summary.")
+        suggestions = await _suggested(db, tenant_id, cats)
+
+    return TargetPreviewResponse(
+        severity=payload.severity,
+        target_hours=hours,
+        target_days=days,
+        resolve_by=resolve_by(reported, hours),
+        due_note=f"{payload.severity} incidents have {days} {'day' if days == 1 else 'days'} from the date reported.",
+        covered=covered,
+        suggested_risks=suggestions,
+        outcomes=outcomes,
     )

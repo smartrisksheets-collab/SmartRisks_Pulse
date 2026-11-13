@@ -3,12 +3,12 @@
 import { useEffect } from 'react';
 import { useRecycleBin } from '../../hooks/useRecycleBin';
 
-interface Props { open: boolean; onClose: () => void; onRestored: () => void; }
+interface Props { open: boolean; onClose: () => void; onRestored: () => void; itemType?: 'risk' | 'incident'; }
 
-export default function RecycleBinModal({ open, onClose, onRestored }: Props) {
+export default function RecycleBinModal({ open, onClose, onRestored, itemType = 'risk' }: Props) {
   const { items, loading, error, fetch, restore, purge } = useRecycleBin();
 
-  useEffect(() => { if (open) fetch('risk'); }, [open]);
+  useEffect(() => { if (open) fetch(itemType); }, [open, itemType]);
 
   if (!open) return null;
 
@@ -53,4 +53,4 @@ export default function RecycleBinModal({ open, onClose, onRestored }: Props) {
       </div>
     </div>
   );
-}
+}

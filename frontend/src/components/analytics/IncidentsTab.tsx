@@ -25,9 +25,9 @@ export default function IncidentsTab({ stats, isLoading, uncovered, currency, go
   const noFigure = res.impact_total_count - res.impact_count;
   const stages: { label: string; n: number }[] = [
     { label: 'New', n: lc.new },
-    { label: 'Open', n: lc.open },
-    { label: 'In Progress', n: lc.in_progress },
-    { label: 'Under Review', n: lc.under_review },
+    { label: 'Triaged', n: lc.triaged },
+    { label: 'Investigating', n: lc.investigating },
+    { label: 'Remediating', n: lc.remediating },
     { label: 'Resolved', n: lc.resolved },
     { label: 'Closed', n: lc.closed },
   ];

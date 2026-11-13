@@ -602,9 +602,9 @@ async def _lifecycle(db: AsyncSession, tenant_id: UUID) -> IncidentLifecycle:
     counts: dict[str, int] = {}
     for r in rows:
         s = str(r.status or "Open").lower()
-        if s == "new" or s == "open":
+        if s == "new":
             counts["new"] = counts.get("new", 0) + int(r.cnt)
-        elif s in ("under review", "in progress", "investigating"):
+        elif s in ("open", "under review", "in progress", "triaged", "investigating", "remediating"):
             counts["review"] = counts.get("review", 0) + int(r.cnt)
         elif s in ("resolved", "closed"):
             counts["resolved"] = counts.get("resolved", 0) + int(r.cnt)
@@ -699,7 +699,7 @@ async def _incident_feed(
         # Derive event_type from the incident's state
         if resolved_at is not None:
             event_type = "incident_resolved"
-        elif status.lower() in ("in progress", "under review"):
+        elif status.lower() in ("in progress", "under review", "triaged", "investigating", "remediating"):
             event_type = "incident_in_progress"
         elif severity.lower() in ("critical", "very high", "high"):
             event_type = "incident_escalated"
@@ -1506,4 +1506,4 @@ def _build_attention(
         items.append("Incident health is At Risk — monitor resolution velocity.")
     if not items:
         items.append("No urgent items flagged. Risk posture is within tolerance.")
-    return items
+    return items

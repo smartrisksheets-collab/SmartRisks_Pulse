@@ -6,8 +6,48 @@ from decimal import Decimal
 from uuid import UUID
 from pydantic import BaseModel, Field, field_validator
 
-_VALID_SEVERITY = {'Low', 'Medium', 'High', 'Very High'}
-_VALID_STATUS = {'New', 'Open', 'In Progress', 'Under Review', 'Resolved', 'Closed'}
+from app.schemas.risk import TITLE_MAX
+from app.services.incident_status import (
+    CONTROL_OUTCOMES,
+    IMPACT_CONFIDENCE,
+    STAGES,
+    is_valid_status,
+    normalise_status,
+)
+
+# Severity is checked against the workspace's configured levels in the service,
+# never against a fixed list here (SETUP section 35).
+
+
+def _check_status(v: str | None) -> str | None:
+    if v is None:
+        return None
+    if not is_valid_status(str(v)):
+        raise ValueError(f'status must be one of {list(STAGES)}')
+    return normalise_status(str(v))
+
+
+def _check_outcome(v: str | None) -> str | None:
+    if v is None or str(v).strip() == '':
+        return None
+    if v not in CONTROL_OUTCOMES:
+        raise ValueError(f'control_outcome must be one of {list(CONTROL_OUTCOMES)}')
+    return str(v)
+
+
+def _check_confidence(v: str | None) -> str | None:
+    if v is None or str(v).strip() == '':
+        return None
+    if v not in IMPACT_CONFIDENCE:
+        raise ValueError(f'impact_confidence must be one of {list(IMPACT_CONFIDENCE)}')
+    return str(v)
+
+
+def _blank_title(v: str | None) -> str | None:
+    if v is None:
+        return None
+    t = ' '.join(str(v).split())
+    return t or None
 
 
 class IncidentCreate(BaseModel):
@@ -16,7 +56,7 @@ class IncidentCreate(BaseModel):
     severity: str = 'Medium'
     reported_by: str
     reported_at: date
-    title: str | None = None
+    title: str | None = Field(default=None, max_length=TITLE_MAX)
     priority: str | None = None
     status: str | None = 'New'
     root_cause: str | None = None
@@ -54,23 +94,36 @@ class IncidentCreate(BaseModel):
 
     @field_validator('severity', mode='before')
     @classmethod
-    def validate_severity(cls, v: str) -> str:
-        if v not in _VALID_SEVERITY:
-            raise ValueError(f'severity must be one of {sorted(_VALID_SEVERITY)}')
+    def strip_severity(cls, v: str) -> str:
+        v = str(v).strip()
+        if not v:
+            raise ValueError('Severity cannot be empty')
         return v
 
     @field_validator('status', mode='before')
     @classmethod
     def validate_status(cls, v: str | None) -> str | None:
-        if v is None:
-            return 'New'
-        if v not in _VALID_STATUS:
-            raise ValueError(f'status must be one of {sorted(_VALID_STATUS)}')
-        return v
+        return _check_status(v) or 'New'
+
+    @field_validator('title', mode='before')
+    @classmethod
+    def clean_title(cls, v: str | None) -> str | None:
+        return _blank_title(v)
+
+    @field_validator('control_outcome', mode='before')
+    @classmethod
+    def validate_outcome(cls, v: str | None) -> str | None:
+        return _check_outcome(v)
+
+    @field_validator('impact_confidence', mode='before')
+    @classmethod
+    def validate_confidence(cls, v: str | None) -> str | None:
+        return _check_confidence(v)
 
 
 class IncidentUpdate(BaseModel):
-    title: str | None = None
+    """Partial update. Only fields sent are changed; null clears an optional field."""
+    title: str | None = Field(default=None, max_length=TITLE_MAX)
     description: str | None = None
     category: str | None = None
     severity: str | None = None
@@ -89,6 +142,9 @@ class IncidentUpdate(BaseModel):
     affected_asset: str | None = None
     business_unit: str | None = None
     linked_risk_id: str | None = None
+    linked_control: str | None = None
+    control_outcome: str | None = None
+    impact_confidence: str | None = None
     immediate_actions: str | None = None
     evidence_link: str | None = None
     analyst_notes: str | None = None
@@ -100,23 +156,35 @@ class IncidentUpdate(BaseModel):
     financial_impact: Decimal | None = None
     resolved_at: datetime | None = None
 
-    @field_validator('severity', mode='before')
-    @classmethod
-    def validate_severity(cls, v: str | None) -> str | None:
-        if v is None:
-            return None
-        if v not in _VALID_SEVERITY:
-            raise ValueError(f'severity must be one of {sorted(_VALID_SEVERITY)}')
-        return v
-
     @field_validator('status', mode='before')
     @classmethod
     def validate_status(cls, v: str | None) -> str | None:
+        return _check_status(v)
+
+    @field_validator('title', mode='before')
+    @classmethod
+    def clean_title(cls, v: str | None) -> str | None:
+        return _blank_title(v)
+
+    @field_validator('description', 'category', 'reported_by', 'severity', mode='before')
+    @classmethod
+    def strip_required(cls, v: str | None) -> str | None:
         if v is None:
             return None
-        if v not in _VALID_STATUS:
-            raise ValueError(f'status must be one of {sorted(_VALID_STATUS)}')
+        v = str(v).strip()
+        if not v:
+            raise ValueError('Field cannot be empty')
         return v
+
+    @field_validator('control_outcome', mode='before')
+    @classmethod
+    def validate_outcome(cls, v: str | None) -> str | None:
+        return _check_outcome(v)
+
+    @field_validator('impact_confidence', mode='before')
+    @classmethod
+    def validate_confidence(cls, v: str | None) -> str | None:
+        return _check_confidence(v)
 
 
 class IncidentResponse(BaseModel):
@@ -164,8 +232,21 @@ class IncidentResponse(BaseModel):
     model_config = {'from_attributes': True}
 
 
+class IncidentRow(IncidentResponse):
+    """An incident with the labels the log and panel show, all computed in the backend."""
+    display_title: str
+    is_open: bool
+    is_high: bool
+    target_state: str           # due | due_today | missed | met | none
+    target_text: str
+    resolve_by: date | None
+    target_days: int
+    link_state: str             # linked | unlinked | uncovered
+    linked_risk_title: str | None = None
+
+
 class IncidentListResponse(BaseModel):
-    items: list[IncidentResponse]
+    items: list[IncidentRow]
     total: int
     page: int
     page_size: int
@@ -200,9 +281,9 @@ class IncidentTotals(BaseModel):
 
 class IncidentLifecycle(BaseModel):
     new: int
-    open: int
-    in_progress: int
-    under_review: int
+    triaged: int
+    investigating: int
+    remediating: int
     resolved: int
     closed: int
     oldest_open_days: int | None = None
@@ -295,3 +376,65 @@ class AIIncidentResponse(BaseModel):
 
 class AIIncidentSuggestResponse(BaseModel):
     suggestion: str
+
+# ── UI step 6: quick views, panel context, target preview ────────────────────
+
+class IncidentViewCounts(BaseModel):
+    open: int
+    unlinked: int
+    high: int
+    resolved: int
+    all: int
+    high_label: str             # how the top severities read, e.g. "High or above"
+    summary: str                # one sentence about the whole log, unfiltered
+    owners: list[str]           # distinct owners for the filter
+
+
+class IncidentStep(BaseModel):
+    name: str
+    state: str                  # done | current | todo
+
+
+class IncidentRiskRef(BaseModel):
+    id: str
+    title: str
+    residual: int | None = None
+    on_register: bool = True
+
+
+class IncidentHistoryItem(BaseModel):
+    at: datetime
+    user: str | None
+    action: str | None
+    summary: str | None
+
+
+class IncidentContext(BaseModel):
+    incident: IncidentRow
+    steps: list[IncidentStep]
+    stage_note: str
+    next_status: str | None
+    next_label: str | None
+    linked_risk: IncidentRiskRef | None
+    covered: bool
+    link_note: str
+    suggested_risks: list[IncidentRiskRef]
+    history: list[IncidentHistoryItem]
+
+
+class TargetPreviewRequest(BaseModel):
+    severity: str
+    reported_at: date | None = None
+    category: str | None = None
+    linked_risk_id: str | None = None
+
+
+class TargetPreviewResponse(BaseModel):
+    severity: str
+    target_hours: float
+    target_days: int
+    resolve_by: date | None
+    due_note: str
+    covered: bool
+    suggested_risks: list[IncidentRiskRef]
+    outcomes: list[str]

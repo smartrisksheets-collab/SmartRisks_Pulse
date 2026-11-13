@@ -43,58 +43,113 @@ export interface Incident {
   updated_at: string;
 }
 
+/** Fields the log form sends. Optional fields send null to clear them on edit. */
 export interface IncidentCreate {
   description: string;
   category: string;
   severity: string;
   reported_by: string;
   reported_at: string;
-  title?: string;
-  priority?: string;
-  status?: string;
-  root_cause?: string;
-  assigned_to?: string;
-  reporter_email?: string;
-  channel?: string;
-  incident_type?: string;
-  incident_dt?: string;
-  location?: string;
-  impact_summary?: string;
-  affected_asset?: string;
-  business_unit?: string;
+  title?: string | null;
+  priority?: string | null;
+  status?: IncidentStage;
+  root_cause?: string | null;
+  assigned_to?: string | null;
+  reporter_email?: string | null;
+  channel?: string | null;
+  incident_type?: string | null;
+  incident_dt?: string | null;
+  location?: string | null;
+  impact_summary?: string | null;
+  affected_asset?: string | null;
+  business_unit?: string | null;
   linked_risk_id?:    string | null;
   linked_control?:    string | null;
   control_outcome?:   string | null;
   impact_confidence?: string | null;
   immediate_actions?: string | null;
-  evidence_link?: string;
-  analyst_notes?: string;
-  containment_date?: string;
-  tags?: string;
-  review_status?: string;
-  risk_impacted?: string;
-  resolution_summary?: string;
-  financial_impact?: string;
-  resolved_at?: string;
+  evidence_link?: string | null;
+  analyst_notes?: string | null;
+  containment_date?: string | null;
+  tags?: string | null;
+  resolution_summary?: string | null;
+  financial_impact?: string | null;
+  resolved_at?: string | null;
 }
 
-export type IncidentUpdate = Partial<IncidentCreate> & {
-  status?: string;
-  assigned_to?: string;
-  review_status?: string;
-  risk_impacted?: string;
-  resolution_summary?: string;
-};
+export type IncidentUpdate = Partial<IncidentCreate>;
+
+export const INCIDENT_STAGES = ['New', 'Triaged', 'Investigating', 'Remediating', 'Resolved', 'Closed'] as const;
+export type IncidentStage = typeof INCIDENT_STAGES[number];
+
+export const INCIDENT_TITLE_MAX = 80;
+
+/** An incident with the labels the log and panel show. All computed by the backend. */
+export interface IncidentRow extends Incident {
+  display_title: string;
+  is_open: boolean;
+  is_high: boolean;
+  target_state: 'due' | 'due_today' | 'missed' | 'met' | 'none';
+  target_text: string;
+  resolve_by: string | null;
+  target_days: number;
+  link_state: 'linked' | 'unlinked' | 'uncovered';
+  linked_risk_title: string | null;
+}
+
+export interface IncidentViewCounts {
+  open: number;
+  unlinked: number;
+  high: number;
+  resolved: number;
+  all: number;
+  high_label: string;
+  summary: string;
+  owners: string[];
+}
+
+export interface IncidentRiskRef {
+  id: string;
+  title: string;
+  residual: number | null;
+  on_register: boolean;
+}
+
+export interface IncidentContext {
+  incident: IncidentRow;
+  steps: { name: string; state: 'done' | 'current' | 'todo' }[];
+  stage_note: string;
+  next_status: IncidentStage | null;
+  next_label: string | null;
+  linked_risk: IncidentRiskRef | null;
+  covered: boolean;
+  link_note: string;
+  suggested_risks: IncidentRiskRef[];
+  history: { at: string; user: string | null; action: string | null; summary: string | null }[];
+}
+
+export interface TargetPreviewRequest {
+  severity: string;
+  reported_at?: string | null;
+  category?: string | null;
+  linked_risk_id?: string | null;
+}
+
+export interface TargetPreview {
+  severity: string;
+  target_hours: number;
+  target_days: number;
+  resolve_by: string | null;
+  due_note: string;
+  covered: boolean;
+  suggested_risks: IncidentRiskRef[];
+  outcomes: string[];
+}
 
 export interface IncidentListMeta {
   total: number;
   page: number;
   page_size: number;
-}
-
-export interface IncidentListResponse {
-  items: Incident[];
-  meta: IncidentListMeta;
 }
 
 export interface HealthComponent {
@@ -151,9 +206,9 @@ export interface IncidentPageInsight {
 
 export interface IncidentLifecycle {
   new: number;
-  open: number;
-  in_progress: number;
-  under_review: number;
+  triaged: number;
+  investigating: number;
+  remediating: number;
   resolved: number;
   closed: number;
   oldest_open_days: number | null;
@@ -207,4 +262,4 @@ export interface IncidentStats {
   by_severity: SeverityPerformance[];
   costs: IncidentCost[];
   by_category: CategoryDriver[];
-}
+}
