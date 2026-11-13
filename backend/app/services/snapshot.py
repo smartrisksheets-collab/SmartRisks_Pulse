@@ -22,6 +22,9 @@ from app.schemas.dashboard import SnapshotDelta
 from app.services.matrix_config import _get_or_create as _get_matrix
 from app.services.risk_status import band_for_score, ce_fraction, ce_avg_pct
 from decimal import Decimal
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -112,6 +115,27 @@ async def compute_live_kpis(
 # Monthly snapshot writer
 # ---------------------------------------------------------------------------
 
+async def _live_scores(db: AsyncSession, tenant_id: UUID) -> tuple[int | None, int | None]:
+    """Enterprise health and risk pressure as the dashboard computes them now.
+
+    Runs inside a savepoint so a failed read cannot abort the snapshot insert.
+    Returns None for a score the dashboard reports as "No data".
+    """
+    # Imported here: dashboard imports this module for get_snapshot_delta.
+    from app.services.dashboard import _intel
+
+    try:
+        async with db.begin_nested():
+            health, pressure, _, _, _ = await _intel(db, tenant_id)
+    except Exception:
+        logger.exception("snapshot score computation failed for tenant %s", tenant_id)
+        return None, None
+    return (
+        None if health.status == "No data" else health.score,
+        None if pressure.level == "No data" else pressure.score,
+    )
+
+
 async def write_monthly_snapshot(
     db: AsyncSession,
     tenant_id: UUID,
@@ -146,6 +170,7 @@ async def write_monthly_snapshot(
         return existing
 
     kpis = await compute_live_kpis(db, tenant_id)
+    health_score, pressure_score = await _live_scores(db, tenant_id)
 
     snap = SnapshotMonthly(
         tenant_id=tenant_id,
@@ -160,6 +185,8 @@ async def write_monthly_snapshot(
         open_incidents=kpis["open_incidents"],
         avg_mttr=kpis["avg_mttr"],
         financial_impact=kpis["financial_impact"],
+        health_score=health_score,
+        pressure_score=pressure_score,
     )
     db.add(snap)
     await db.flush()

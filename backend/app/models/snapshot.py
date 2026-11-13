@@ -31,6 +31,8 @@ class SnapshotMonthly(Base):
     open_incidents = Column(Integer)
     avg_mttr = Column(Numeric)
     financial_impact = Column(Numeric)
+    health_score = Column(Integer)
+    pressure_score = Column(Integer)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 

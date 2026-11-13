@@ -7,7 +7,7 @@ import { useSettingsStore } from '../../store/settingsStore';
 import { roleLabel } from '../../utils/roles';
 // useCanDo not needed here — claims used directly in nav filter
 import {
-  LayoutDashboard, FileText, ShieldAlert,
+  LayoutDashboard, LineChart, FileText, ShieldAlert,
   BarChart2, Grid2X2, Users, Settings, HelpCircle, ClipboardList,
   type LucideIcon,
 } from 'lucide-react';
@@ -19,6 +19,7 @@ const ADMIN_PATHS = new Set(['/users', '/audit', '/settings', '/help']);
 
 const NAV: NavItem[] = [
   { label: 'Dashboard',      path: '/',            Icon: LayoutDashboard },
+  { label: 'Analytics',      path: '/analytics',   Icon: LineChart       },
   { label: 'Risk Register',  path: '/risks',       Icon: FileText        },
   { label: 'Incidents',      path: '/incidents',   Icon: ShieldAlert     },
   { label: 'Report Builder', path: '/reports',     Icon: BarChart2       },

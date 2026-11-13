@@ -174,6 +174,29 @@ export interface IncidentResolution {
   flag: string | null;
 }
 
+export interface SeverityPerformance {
+  severity: string;
+  target_days: number;
+  open: number;
+  resolved: number;
+  met: number;
+  median_days: number | null;
+}
+
+export interface IncidentCost {
+  id: string;
+  title: string | null;
+  amount: string;
+  confidence: string | null;
+}
+
+export interface CategoryDriver {
+  category: string;
+  count: number;
+  open: number;
+  unlinked_ids: string[];
+}
+
 export interface IncidentStats {
   health: IncidentHealth;
   totals: IncidentTotals;
@@ -181,4 +204,7 @@ export interface IncidentStats {
   resolution: IncidentResolution;
   monthly_trend: MonthlyTrend[];
   top_drivers: TopDriver[];
+  by_severity: SeverityPerformance[];
+  costs: IncidentCost[];
+  by_category: CategoryDriver[];
 }

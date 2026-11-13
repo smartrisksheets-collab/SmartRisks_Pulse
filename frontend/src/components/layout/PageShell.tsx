@@ -7,6 +7,7 @@ import { useInactivityLogout } from '../../hooks/useInactivityLogout';
 
 const ROUTE_META: Record<string, string> = {
   '/':            'Dashboard',
+  '/analytics':   'Analytics',
   '/risks':       'Risk Register',
   '/incidents':   'Incident Management',
   '/reports':     'Report Builder',

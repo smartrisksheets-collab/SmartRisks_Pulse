@@ -29,6 +29,7 @@ applyCachedBrandColors();
 
 // ── Lazy: heavy or infrequently visited pages ─────────────────────────────
 const ReportBuilder    = lazy(() => import('./pages/ReportBuilder'));
+const Analytics        = lazy(() => import('./pages/Analytics'));
 const Settings         = lazy(() => import('./pages/Settings'));
 const Frameworks       = lazy(() => import('./pages/Frameworks'));
 const Help             = lazy(() => import('./pages/Help'));
@@ -122,6 +123,7 @@ export default function App() {
                 <Suspense fallback={<PageLoader />}>
                   <Routes>
                     <Route path="/"          element={<Dashboard />} />
+                    <Route path="/analytics" element={<Analytics />} />
                     <Route path="/risks"     element={<RequireModule module="risk"><RiskRegister /></RequireModule>} />
                     <Route path="/incidents" element={<RequireModule module="incident"><Incidents /></RequireModule>} />
                     <Route path="/reports"   element={<ReportBuilder />} />

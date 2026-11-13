@@ -240,6 +240,26 @@ class IncidentInsightAction(BaseModel):
 class IncidentPageInsightResponse(BaseModel):
     actions: list[IncidentInsightAction]
 
+class SeverityPerformance(BaseModel):
+    severity: str
+    target_days: int
+    open: int = 0
+    resolved: int = 0
+    met: int = 0
+    median_days: float | None = None
+
+class IncidentCost(BaseModel):
+    id: str
+    title: str | None = None
+    amount: Decimal
+    confidence: str | None = None
+
+class CategoryDriver(BaseModel):
+    category: str
+    count: int = 0
+    open: int = 0
+    unlinked_ids: list[str] = []
+
 class IncidentStatsResponse(BaseModel):
     health: IncidentHealth
     totals: IncidentTotals
@@ -247,6 +267,9 @@ class IncidentStatsResponse(BaseModel):
     resolution: IncidentResolution
     monthly_trend: list[MonthlyTrend] = []
     top_drivers: list[TopDriver] = []
+    by_severity: list[SeverityPerformance] = []
+    costs: list[IncidentCost] = []
+    by_category: list[CategoryDriver] = []
 
 
 class AIIncidentRequest(BaseModel):

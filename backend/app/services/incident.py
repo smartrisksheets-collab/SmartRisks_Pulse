@@ -4,6 +4,7 @@ import re
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select, delete, func
@@ -19,6 +20,9 @@ from app.schemas.incident import (
     IncidentResponse,
     IncidentListResponse,
     IncidentStatsResponse,
+    IncidentCost,
+    CategoryDriver,
+    SeverityPerformance,
     IncidentHealth,
     IncidentTotals,
     IncidentLifecycle,
@@ -316,6 +320,7 @@ async def get_stats(db: AsyncSession, tenant_id: UUID) -> IncidentStatsResponse:
             Incident.financial_impact,
             Incident.linked_risk_id,
             Incident.created_at,
+            Incident.impact_confidence,
         )
         .where(Incident.tenant_id == tenant_id)
         .where(Incident.deleted_at.is_(None))
@@ -572,6 +577,66 @@ async def get_stats(db: AsyncSession, tenant_id: UUID) -> IncidentStatsResponse:
         for r in sorted(open_rows, key=lambda r: _age_d(r) * _rfactor(r), reverse=True)[:5]
     ]
 
+    # ── Analytics: per-severity targets, cost list, category drivers ──────────
+    def _median(vals: list[float]) -> float | None:
+        if not vals:
+            return None
+        s = sorted(vals)
+        n = len(s)
+        return round(s[n // 2] if n % 2 == 1 else (s[n // 2 - 1] + s[n // 2]) / 2, 1)
+
+    sev_labels = set(eff_h) | {str(r.severity) for r in rows if r.severity}
+    by_severity: list[SeverityPerformance] = []
+    for sev in sorted(sev_labels, key=lambda s: (sev_ranks.get(s, len(sev_ranks)), s)):
+        sev_rows = [r for r in rows if str(r.severity or '') == sev]
+        td = sla_d.get(sev, 5)
+        days: list[float] = []
+        met = 0
+        for r in sev_rows:
+            if _is_term(r) and r.reported_at and r.resolved_at:
+                rd = r.resolved_at.date() if isinstance(r.resolved_at, datetime) else r.resolved_at
+                d = (rd - r.reported_at).days
+                days.append(float(d))
+                met += int(d <= td)
+        by_severity.append(SeverityPerformance(
+            severity=sev,
+            target_days=td,
+            open=sum(1 for r in sev_rows if _is_open(r)),
+            resolved=len(days),
+            met=met,
+            median_days=_median(days),
+        ))
+
+    costs = [
+        IncidentCost(
+            id=str(r.id),
+            title=str(r.title or '') or None,
+            # Fixed two decimals: some stored values come back in exponent form (4.20E+6).
+            amount=Decimal(r.financial_impact).quantize(Decimal('0.01')),
+            confidence=str(r.impact_confidence or '') or None,
+        )
+        for r in sorted(
+            (r for r in rows if r.financial_impact is not None),
+            key=lambda r: (-r.financial_impact, str(r.id)),
+        )[:10]
+    ]
+
+    cat_groups: dict[str, list[Any]] = defaultdict(list)
+    for r in rows:
+        cat_groups[str(r.category or 'Uncategorised')].append(r)
+    by_category = sorted(
+        (
+            CategoryDriver(
+                category=cat,
+                count=len(grp),
+                open=sum(1 for r in grp if _is_open(r)),
+                unlinked_ids=sorted(str(r.id) for r in grp if not str(r.linked_risk_id or '').strip()),
+            )
+            for cat, grp in cat_groups.items()
+        ),
+        key=lambda c: (-c.count, -c.open, c.category),
+    )
+
     return IncidentStatsResponse(
         health=IncidentHealth(
             score=health_score,
@@ -618,4 +683,7 @@ async def get_stats(db: AsyncSession, tenant_id: UUID) -> IncidentStatsResponse:
         ),
         monthly_trend=monthly_trend,
         top_drivers=top_drivers,
+        by_severity=by_severity,
+        costs=costs,
+        by_category=by_category,
     )

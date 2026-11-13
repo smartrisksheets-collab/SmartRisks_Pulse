@@ -178,10 +178,14 @@ class RiskPressure(BaseModel):
     exceeds_appetite: int = 0
     open_incidents: int = 0
     open_incidents_overdue: int = 0
+    open_high: int = 0
     undecided: int = 0
     past_target: int = 0
     evidenced: int = 0
     rated: int = 0
+    top_owner: str | None = None
+    top_owner_residual: float = 0.0
+    top_owner_risks: int = 0
     by_category: list[PressureCategoryRow] = Field(default_factory=list)
     actions: list[RecommendedAction] = Field(default_factory=list)
 
@@ -261,6 +265,8 @@ class MovementPoint(BaseModel):
     label: str = ""
     avg_residual: float | None = None
     incidents_created: int = 0
+    health_score: int | None = None
+    pressure_score: int | None = None
     is_live: bool = False
 
 
