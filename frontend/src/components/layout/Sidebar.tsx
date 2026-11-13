@@ -14,6 +14,9 @@ import {
 
 interface NavItem { label: string; path: string; Icon: LucideIcon; }
 
+// Workspace administration pages sit below a divider, after the working pages.
+const ADMIN_PATHS = new Set(['/users', '/audit', '/settings', '/help']);
+
 const NAV: NavItem[] = [
   { label: 'Dashboard',      path: '/',            Icon: LayoutDashboard },
   { label: 'Risk Register',  path: '/risks',       Icon: FileText        },
@@ -40,9 +43,11 @@ export default function Sidebar() {
     if (path === '/settings')  return !!claims?.permissions?.manage_settings;
     return true;
   });
+  const workNav  = visibleNav.filter(({ path }) => !ADMIN_PATHS.has(path));
+  const adminNav = visibleNav.filter(({ path }) => ADMIN_PATHS.has(path));
   const { logout } = useAuth();
-  // const canManageUsers    = useCanDo('manage_users');
-  // const canManageSettings = useCanDo('manage_settings');
+  const email    = claims?.email ?? '';
+  const initials = email ? email.slice(0, 2).toUpperCase() : '??';
 
   const workspaceName = useAuthStore((s) =>
     s.workspaces.find((w) => w.tenant_id === s.claims?.active_tenant_id)?.name ?? 'SmartRisk'
@@ -101,20 +106,43 @@ export default function Sidebar() {
         </div>
 
         <div className="nav">
-          {visibleNav.map(({ path, label, Icon }) => (
+          {workNav.map(({ path, label, Icon }) => (
             <button
               key={path}
               className={`nav-item${isActive(path) ? ' active' : ''}`}
               onClick={() => go(path)}
+              aria-current={isActive(path) ? 'page' : undefined}
+              title={label}
             >
               <span className="nav-ico"><Icon size={18} strokeWidth={2} /></span>
               <span className="nav-label">{label}</span>
             </button>
           ))}
-
+          {workNav.length > 0 && adminNav.length > 0 && <div className="nav-divider" role="separator" />}
+          {adminNav.map(({ path, label, Icon }) => (
+            <button
+              key={path}
+              className={`nav-item${isActive(path) ? ' active' : ''}`}
+              onClick={() => go(path)}
+              aria-current={isActive(path) ? 'page' : undefined}
+              title={label}
+            >
+              <span className="nav-ico"><Icon size={18} strokeWidth={2} /></span>
+              <span className="nav-label">{label}</span>
+            </button>
+          ))}
         </div>
 
         <div className="sidebar-foot">
+          <div className="sidebar-profile" title={email}>
+            <span className="pl-avatar" aria-hidden="true">{initials}</span>
+            <div className="sidebar-profile-text">
+              <span className="sidebar-profile-name">{email}</span>
+              <span className="sidebar-profile-meta">
+                {roleLabel(claims?.role) || 'Analyst'} · {claims?.plan ?? 'Trial'}
+              </span>
+            </div>
+          </div>
           <button className="btn-logout" onClick={logout}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
               stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -122,12 +150,6 @@ export default function Sidebar() {
             </svg>
             <span className="nav-label">Logout</span>
           </button>
-          <div className="pill" style={{ overflow: 'hidden' }}>
-            <div className="status-dot active" />
-            <span style={{ fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {roleLabel(claims?.role) || 'Analyst'} · {claims?.plan ?? 'Trial'}
-            </span>
-          </div>
           {showQuota && (
             <div className="sidebar-workspace-quota">
               <span className="sidebar-quota-text">

@@ -80,7 +80,7 @@ export default function Topbar({ title = 'Dashboard' }: TopbarProps) {
   return (
     <>
     <div className="topbar">
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div className="topbar-left">
         <button
           className="mob-menu-btn"
           onClick={() => setMobSidebarOpen(true)}
@@ -127,7 +127,7 @@ export default function Topbar({ title = 'Dashboard' }: TopbarProps) {
         >
           <ThemeIcon size={15} />
         </button>
-        <button className="btn btn-secondary btn-compact" style={{ position: 'relative' }} onClick={() => setGsOpen(true)}>
+        <button className="pl-btn pl-btn-secondary topbar-btn topbar-gs" onClick={() => setGsOpen(true)}>
           Get Started
           {gsPulse && <span className="gs-pulse" />}
         </button>
@@ -135,8 +135,9 @@ export default function Topbar({ title = 'Dashboard' }: TopbarProps) {
         {/* Workspace dropdown */}
         <div className="topbar-dd-wrap" ref={wsRef}>
           <button
-            className="btn btn-secondary btn-compact"
+            className="pl-btn pl-btn-secondary topbar-btn"
             onClick={() => setWsOpen((v) => !v)}
+            aria-expanded={wsOpen}
           >
             Workspace
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
