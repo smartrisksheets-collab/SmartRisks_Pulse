@@ -20,6 +20,7 @@ class Risk(Base):
 
     id = Column(String, nullable=False)
     tenant_id = Column(PG_UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False)
+    title = Column(String)
     category = Column(String)
     description = Column(String)
     primary_impact = Column(String)

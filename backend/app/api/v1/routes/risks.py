@@ -13,7 +13,7 @@ from app.db.session import AsyncSessionLocal
 from app.services.settings import get_ai_config
 from app.schemas.risk import (
     RiskCreate, RiskUpdate, BulkImportRequest, BulkImportResponse,
-    AIInsightRequest, RiskStatsResponse,
+    AIInsightRequest, RiskStatsResponse, ScorePreviewRequest,
 )
 from app.services import risk as risk_service
 from app.services import ai_risk as ai_risk_service
@@ -33,6 +33,9 @@ async def list_risks(
     search: str | None     = Query(None),
     undecided: bool | None = Query(None),
     appetite:  str | None  = Query(None),
+    elevated:  bool | None = Query(None),
+    past_target: bool | None = Query(None),
+    sort:      str | None  = Query(None, pattern="^(residual|recent)$"),
     db: AsyncSession   = Depends(get_db),
     claims: dict       = Depends(require_module("risk")),
 ):
@@ -40,6 +43,7 @@ async def list_risks(
     result = await risk_service.list_risks(
         db, tenant_id, page, page_size,
         risk_id, category, level, treatment, owner, search, undecided, appetite,
+        elevated, past_target, sort,
     )
     return {
         "data": result.items,
@@ -88,6 +92,50 @@ async def get_stats(
         search=search, risk_id=risk_id, undecided=undecided, appetite=appetite,
     )
     return {"data": stats, "error": None, "meta": {}}
+
+
+@router.get("/views")
+async def get_view_counts(
+    category: str | None = Query(None),
+    level:    str | None = Query(None),
+    owner:    str | None = Query(None),
+    search:   str | None = Query(None),
+    db: AsyncSession     = Depends(get_db),
+    claims: dict         = Depends(require_module("risk")),
+):
+    tenant_id = UUID(claims["active_tenant_id"])
+    counts = await risk_service.get_view_counts(
+        db, tenant_id, category=category, level=level, owner=owner, search=search,
+    )
+    return {"data": counts, "error": None, "meta": {}}
+
+
+@router.post("/score-preview")
+@limiter.limit("120/minute")
+async def score_preview(
+    request: Request,
+    payload: ScorePreviewRequest,
+    db: AsyncSession = Depends(get_db),
+    claims: dict     = Depends(require_module("risk")),
+):
+    tenant_id = UUID(claims["active_tenant_id"])
+    # A control rating above the workspace scale raises ValueError, which main.py returns as 422.
+    result = await risk_service.score_preview(db, tenant_id, payload)
+    return {"data": result, "error": None, "meta": {}}
+
+
+@router.get("/{risk_id}/context")
+async def get_risk_context(
+    risk_id: str,
+    db: AsyncSession = Depends(get_db),
+    claims: dict     = Depends(require_module("risk")),
+):
+    tenant_id = UUID(claims["active_tenant_id"])
+    ctx = await risk_service.get_risk_context(
+        db, tenant_id, risk_id,
+        include_incidents="incident" in (claims.get("modules") or []),
+    )
+    return {"data": ctx, "error": None, "meta": {}}
 
 
 @router.get("/{risk_id}")

@@ -11,12 +11,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.risk import Risk
 from app.models.audit_log import AuditLog
+from app.models.incident import Incident
 from app.schemas.risk import (
     RiskCreate, RiskUpdate, RiskResponse,
     RiskListResponse, RiskQuotaInfo,
     BulkImportRequest, BulkImportResponse, BulkImportError,
     RiskStatsResponse, ConcentrationItem, TopOwner,
     ExposureIndex, RiskVolume, ControlSignal,
+    RiskViewCounts, ScorePreviewRequest, ScoreBreakdown,
+    RiskContext, RiskHistoryItem, RiskLinkedIncident,
 )
 from app.core.config import settings
 from app.core.exceptions import ResourceNotFoundError, QuotaExceededError
@@ -31,6 +34,7 @@ from app.services.recycle import soft_delete
 from app.services.risk_status import (
     APPETITE_NEAR_RATIO, ce_fraction, ce_avg_pct, resolve_ce_input, appetite_status, threshold_for,
     band_count, band_for_score, is_elevated_index,
+    OPEN_MITIGATION, ce_label, elevated_phrase, is_past_target, is_undecided, residual_max,
 )
 
 logger = logging.getLogger(__name__)
@@ -136,6 +140,9 @@ def _apply_risk_filters(
     search: str | None = None,
     undecided: bool | None = None,
     appetite: str | None = None,
+    elevated: bool | None = None,
+    past_target: bool | None = None,
+    today: date | None = None,
 ) -> Select[Any]:
     """Register filters shared by list_risks and get_stats, so the table and stat cards always agree."""
     if risk_id:
@@ -154,6 +161,18 @@ def _apply_risk_filters(
             func.lower(Risk.description).like(term)
             | func.lower(Risk.category).like(term)
             | func.lower(Risk.owner).like(term)
+            | func.lower(Risk.id).like(term)
+            | func.lower(func.coalesce(Risk.title, '')).like(term)
+            | func.lower(func.coalesce(Risk.primary_impact, '')).like(term)
+        )
+    if elevated is True:
+        q = q.where(Risk.is_elevated.is_(True))
+    if past_target is True:
+        # Same rule as risk_status.is_past_target.
+        q = q.where(
+            Risk.target_date.isnot(None),
+            Risk.target_date < (today or date.today()),
+            func.coalesce(Risk.mitigation_status, 'Open').in_(sorted(OPEN_MITIGATION)),
         )
     if undecided is True:
         # Same rule as risk_status.is_undecided: elevated or over appetite,
@@ -195,6 +214,39 @@ def _apply_risk_filters(
     return q
 
 
+async def _thresholds(db: AsyncSession, tenant_id: UUID) -> dict[str, float]:
+    """The workspace's appetite thresholds by category."""
+    return {
+        str(t.category): float(t.threshold)  # type: ignore[arg-type]
+        for t in (await db.execute(
+            select(AppetiteThreshold.category, AppetiteThreshold.threshold)
+            .where(AppetiteThreshold.tenant_id == tenant_id)
+        )).all()
+        if t.category is not None and t.threshold is not None
+    }
+
+
+def _with_status(r: Risk, thresholds: dict[str, float], today: date) -> RiskResponse:
+    """RiskResponse plus the statuses every register surface shows, from risk_status rules."""
+    item = RiskResponse.model_validate(r)
+    item.appetite_status = appetite_status(
+        float(r.residual) if r.residual is not None else None,  # type: ignore[arg-type]
+        threshold_for(str(r.category) if r.category is not None else None, thresholds),
+    )
+    item.is_undecided = is_undecided(
+        is_elevated=bool(r.is_elevated),
+        appetite=item.appetite_status,
+        linked_decision=str(r.linked_decision) if r.linked_decision is not None else None,
+        mitigation_status=str(r.mitigation_status) if r.mitigation_status is not None else None,
+    )
+    item.is_past_target = is_past_target(
+        target_date=r.target_date,  # type: ignore[arg-type]
+        mitigation_status=str(r.mitigation_status) if r.mitigation_status is not None else None,
+        today=today,
+    )
+    return item
+
+
 # ── Public API ────────────────────────────────────────────────────────────────
 
 async def list_risks(
@@ -210,11 +262,15 @@ async def list_risks(
     search: str | None = None,
     undecided: bool | None = None,
     appetite: str | None = None,
+    elevated: bool | None = None,
+    past_target: bool | None = None,
+    sort: str | None = None,
 ) -> RiskListResponse:
     q = _apply_risk_filters(
         select(Risk).where(Risk.tenant_id == tenant_id), tenant_id,
         risk_id=risk_id, category=category, level=level, treatment=treatment,
         owner=owner, search=search, undecided=undecided, appetite=appetite,
+        elevated=elevated, past_target=past_target,
     )
 
     total_result = await db.execute(
@@ -222,30 +278,21 @@ async def list_risks(
     )
     total = total_result.scalar() or 0
 
+    if sort == 'residual':
+        order = (Risk.residual.desc().nulls_last(), Risk.id.asc())
+    else:
+        order = (Risk.created_at.desc(), Risk.id.asc())
     rows = await db.execute(
-        q.order_by(Risk.created_at.desc(), Risk.id.asc())
+        q.order_by(*order)
         .offset((page - 1) * page_size)
         .limit(page_size)
     )
     risks  = rows.scalars().all()
     quota  = await _quota(db, tenant_id)
 
-    thresholds: dict[str, float] = {
-        str(t.category): float(t.threshold)  # type: ignore[arg-type]
-        for t in (await db.execute(
-            select(AppetiteThreshold.category, AppetiteThreshold.threshold)
-            .where(AppetiteThreshold.tenant_id == tenant_id)
-        )).all()
-        if t.category is not None and t.threshold is not None
-    }
-    items: list[RiskResponse] = []
-    for r in risks:
-        item = RiskResponse.model_validate(r)
-        item.appetite_status = appetite_status(
-            float(r.residual) if r.residual is not None else None,  # type: ignore[arg-type]
-            threshold_for(str(r.category) if r.category is not None else None, thresholds),
-        )
-        items.append(item)
+    thresholds = await _thresholds(db, tenant_id)
+    today = date.today()
+    items = [_with_status(r, thresholds, today) for r in risks]
 
     return RiskListResponse(
         items=items,
@@ -269,7 +316,7 @@ async def get_risk(
     risk = result.scalar_one_or_none()
     if not risk:
         raise ResourceNotFoundError(f'Risk {risk_id} not found')
-    return RiskResponse.model_validate(risk)
+    return _with_status(risk, await _thresholds(db, tenant_id), date.today())
 
 
 async def create_risk(
@@ -294,6 +341,7 @@ async def create_risk(
     risk = Risk(
         id=risk_id,
         tenant_id=tenant_id,
+        title=payload.title,
         category=payload.category,
         description=payload.description,
         primary_impact=payload.primary_impact,
@@ -473,22 +521,6 @@ async def get_stats(
         owner=owner, search=search, undecided=undecided, appetite=appetite,
     )
 
-    if category:
-        q = q.where(Risk.category == category)
-    if level:
-        q = q.where(Risk.level == level)
-    if treatment:
-        q = q.where(Risk.treatment == treatment)
-    if owner:
-        q = q.where(Risk.owner == owner)
-    if search:
-        term = f'%{search.lower()}%'
-        q = q.where(
-            func.lower(Risk.description).like(term)
-            | func.lower(Risk.category).like(term)
-            | func.lower(Risk.owner).like(term)
-        )
-
     result = await db.execute(q)
     rows = result.all()
 
@@ -615,6 +647,7 @@ async def bulk_import(
             break
         try:
             create_payload = RiskCreate(
+                title=row.title,
                 category=row.category,
                 description=row.description,
                 owner=row.owner,
@@ -648,3 +681,190 @@ async def bulk_import(
     return BulkImportResponse(
         imported=imported, skipped=skipped, duplicates=duplicates, errors=errors
     )
+
+# ── Register views, score preview and risk context (UI step 5) ────────────────
+
+HISTORY_LIMIT = 10
+LINKED_INCIDENT_LIMIT = 20
+
+
+def _fmt(v: float) -> str:
+    return str(int(v + 0.5))
+
+
+def score_note(residual: float, category: str | None, threshold: float | None, status: str | None) -> str:
+    """One sentence on where a residual sits against its category's appetite. Used by preview and panel."""
+    cat = (category or '').strip()
+    if not cat:
+        return 'Choose a category to check this risk against appetite.'
+    if threshold is None or status is None:
+        return (f'No appetite threshold is set for {cat}, so this risk cannot be checked '
+                'against appetite. Set one in Settings.')
+    if status == 'exceeds':
+        return (f'Residual {_fmt(residual)} is above the {cat} threshold of {_fmt(threshold)}. '
+                'Bring it back inside, or have a revised threshold approved.')
+    if status == 'near':
+        return (f'Residual {_fmt(residual)} is close to the {cat} threshold of {_fmt(threshold)}. '
+                'Stronger controls would give more room.')
+    return f'Residual {_fmt(residual)} is inside the {cat} threshold of {_fmt(threshold)}.'
+
+
+def _breakdown(
+    *,
+    severity: float,
+    residual: float,
+    level: str,
+    level_index: int,
+    elevated: bool,
+    ce_level: int | None,
+    category: str | None,
+    cfg: MatrixConfig,
+    thresholds: dict[str, float],
+) -> ScoreBreakdown:
+    scale  = int(cfg.ce_scale)  # type: ignore[arg-type]
+    labels = dict(cfg.ce_labels)  # type: ignore[arg-type]
+    frac   = ce_fraction(ce_level, scale) or 0.0
+    threshold = threshold_for(category, thresholds)
+    status    = appetite_status(residual, threshold)
+    return ScoreBreakdown(
+        severity=severity,
+        level=level,
+        level_index=level_index,
+        is_elevated=elevated,
+        residual=residual,
+        residual_max=residual_max(cfg),
+        ce_level=ce_level,
+        ce_scale=scale,
+        ce_label=ce_label(ce_level, labels),
+        ce_pct=round(frac * 100),
+        threshold=threshold,
+        appetite_status=status,
+        note=score_note(residual, category, threshold, status),
+    )
+
+
+async def score_preview(db: AsyncSession, tenant_id: UUID, payload: ScorePreviewRequest) -> ScoreBreakdown:
+    """Score unsaved form values with the same _score used on save. Writes nothing."""
+    cfg = await _get_matrix(db, tenant_id)
+    scale = int(cfg.ce_scale)  # type: ignore[arg-type]
+    if payload.control_effectiveness is not None and payload.control_effectiveness > scale:
+        raise ValueError(f'Control effectiveness {payload.control_effectiveness} is outside 0 to {scale}.')
+    scored = _score(payload.likelihood, payload.impact_score, payload.control_effectiveness, cfg)
+    return _breakdown(
+        severity=float(scored['severity']),
+        residual=float(scored['residual']),
+        level=str(scored['level']),
+        level_index=int(scored['level_index']),
+        elevated=bool(scored['is_elevated']),
+        ce_level=payload.control_effectiveness,
+        category=(payload.category or '').strip() or None,
+        cfg=cfg,
+        thresholds=await _thresholds(db, tenant_id),
+    )
+
+
+async def get_view_counts(
+    db: AsyncSession,
+    tenant_id: UUID,
+    *,
+    category: str | None = None,
+    level: str | None = None,
+    owner: str | None = None,
+    search: str | None = None,
+) -> RiskViewCounts:
+    """Counts for the register quick views. Each count applies the same dropdown filters as the table."""
+    base: dict[str, Any] = dict(category=category, level=level, owner=owner, search=search)
+    today = date.today()
+
+    async def _count(**extra: Any) -> int:
+        q = _apply_risk_filters(
+            select(Risk.id).where(Risk.tenant_id == tenant_id), tenant_id, today=today, **base, **extra,
+        )
+        return int((await db.execute(select(func.count()).select_from(q.subquery()))).scalar() or 0)
+
+    avg_q = _apply_risk_filters(
+        select(Risk.residual).where(Risk.tenant_id == tenant_id), tenant_id, today=today, **base,
+    ).subquery()
+    avg = (await db.execute(select(func.avg(avg_q.c.residual)))).scalar()
+    cfg = await _get_matrix(db, tenant_id)
+
+    return RiskViewCounts(
+        all=await _count(),
+        exceeds=await _count(appetite='Exceeds'),
+        elevated=await _count(elevated=True),
+        undecided=await _count(undecided=True),
+        past_target=await _count(past_target=True),
+        elevated_label=elevated_phrase(cfg),
+        avg_residual=round(float(avg), 1) if avg is not None else None,
+        residual_max=residual_max(cfg),
+    )
+
+
+async def get_risk_context(
+    db: AsyncSession,
+    tenant_id: UUID,
+    risk_id: str,
+    *,
+    include_incidents: bool,
+) -> RiskContext:
+    """What the register side panel shows beyond the risk row: score breakdown, history, linked incidents."""
+    risk = (await db.execute(
+        select(Risk).where(Risk.tenant_id == tenant_id, Risk.id == risk_id)
+    )).scalar_one_or_none()
+    if risk is None:
+        raise ResourceNotFoundError(f'Risk {risk_id} not found')
+
+    cfg = await _get_matrix(db, tenant_id)
+    severity = float(risk.severity) if risk.severity is not None else 0.0  # type: ignore[arg-type]
+    residual = float(risk.residual) if risk.residual is not None else 0.0  # type: ignore[arg-type]
+    if risk.level_index is not None:
+        level_index, level = int(risk.level_index), str(risk.level or '')  # type: ignore[arg-type]
+    else:
+        level_index, level = band_for_score(severity, cfg)
+    score = _breakdown(
+        severity=severity,
+        residual=residual,
+        level=level,
+        level_index=level_index,
+        elevated=bool(risk.is_elevated),
+        ce_level=int(risk.control_effectiveness) if risk.control_effectiveness is not None else None,  # type: ignore[arg-type]
+        category=str(risk.category) if risk.category is not None else None,
+        cfg=cfg,
+        thresholds=await _thresholds(db, tenant_id),
+    )
+
+    audit_rows = (await db.execute(
+        select(AuditLog.created_at, AuditLog.user_email, AuditLog.action, AuditLog.summary)
+        .where(
+            AuditLog.tenant_id == tenant_id,
+            AuditLog.module == 'Risk',
+            AuditLog.record_id == risk_id,
+        )
+        .order_by(AuditLog.created_at.desc())
+        .limit(HISTORY_LIMIT)
+    )).all()
+    history = [
+        RiskHistoryItem(at=a.created_at, user=a.user_email, action=a.action, summary=a.summary)
+        for a in audit_rows
+    ]
+
+    incidents: list[RiskLinkedIncident] = []
+    if include_incidents:
+        inc_rows = (await db.execute(
+            select(Incident.id, Incident.title, Incident.severity, Incident.status, Incident.reported_at)
+            .where(
+                Incident.tenant_id == tenant_id,
+                Incident.linked_risk_id == risk_id,
+                Incident.deleted_at.is_(None),
+            )
+            .order_by(Incident.reported_at.desc().nulls_last(), Incident.id.desc())
+            .limit(LINKED_INCIDENT_LIMIT)
+        )).all()
+        incidents = [
+            RiskLinkedIncident(
+                id=str(i.id), title=i.title, severity=i.severity, status=i.status, reported_at=i.reported_at,
+            )
+            for i in inc_rows
+        ]
+
+    return RiskContext(score=score, history=history, incidents=incidents)

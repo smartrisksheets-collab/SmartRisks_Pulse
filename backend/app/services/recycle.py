@@ -137,6 +137,7 @@ async def restore_item(
             id=data['id'],
             tenant_id=tenant_id,
             category=data.get('category'),
+            title=data.get('title'),
             description=data.get('description'),
             primary_impact=data.get('primary_impact'),
             owner=data.get('owner'),

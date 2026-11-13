@@ -7,7 +7,8 @@ import type {
   Risk, RiskCreate, RiskUpdate, RiskListMeta,
   BulkImportRow, BulkImportResult,
   AIInsightRequest, AIInsightResult,
-  RecycleBinItem, RiskStats,
+  RecycleBinItem, RiskViewCounts,
+  ScorePreviewRequest, ScoreBreakdown, RiskContext,
 } from '../types/risk';
 
 export interface ListRisksParams {
@@ -21,6 +22,9 @@ export interface ListRisksParams {
   search?:    string;
   undecided?: boolean;
   appetite?:  string;
+  elevated?:    boolean;
+  past_target?: boolean;
+  sort?:        'residual' | 'recent';
 }
 
 export interface RiskListResponse {
@@ -40,6 +44,9 @@ export async function listRisks(params: ListRisksParams = {}): Promise<RiskListR
   if (params.search)    query.set('search',     params.search);
   if (params.undecided) query.set('undecided',  'true');
   if (params.appetite)  query.set('appetite',   params.appetite);
+  if (params.elevated)    query.set('elevated',    'true');
+  if (params.past_target) query.set('past_target', 'true');
+  if (params.sort)        query.set('sort',        params.sort);
 
   const qs  = query.toString();
   const url = `/api/v1/risks${qs ? `?${qs}` : ''}`;
@@ -76,29 +83,29 @@ export async function generateAI(payload: AIInsightRequest): Promise<AIInsightRe
   return apiPost<AIInsightResult>('/api/v1/risks/ai', payload);
 }
 
-export interface StatsParams {
-  category?:  string;
-  level?:     string;
-  treatment?: string;
-  owner?:     string;
-  search?:    string;
-  undecided?: boolean;
-  risk_id?:   string;
-  appetite?:  string;
+export interface ViewCountParams {
+  category?: string;
+  level?:    string;
+  owner?:    string;
+  search?:   string;
 }
 
-export async function getStats(params: StatsParams = {}): Promise<RiskStats> {
+export async function getViewCounts(params: ViewCountParams = {}): Promise<RiskViewCounts> {
   const qs = new URLSearchParams();
-  if (params.category)  qs.set('category',  params.category);
-  if (params.level)     qs.set('level',      params.level);
-  if (params.treatment) qs.set('treatment',  params.treatment);
-  if (params.owner)     qs.set('owner',      params.owner);
-  if (params.search)    qs.set('search',     params.search);
-  if (params.risk_id)   qs.set('risk_id',    params.risk_id);
-  if (params.undecided) qs.set('undecided',  'true');
-  if (params.appetite)  qs.set('appetite',   params.appetite);
+  if (params.category) qs.set('category', params.category);
+  if (params.level)    qs.set('level',    params.level);
+  if (params.owner)    qs.set('owner',    params.owner);
+  if (params.search)   qs.set('search',   params.search);
   const query = qs.toString();
-  return apiGet<RiskStats>(`/api/v1/risks/stats${query ? `?${query}` : ''}`);
+  return apiGet<RiskViewCounts>(`/api/v1/risks/views${query ? `?${query}` : ''}`);
+}
+
+export async function scorePreview(payload: ScorePreviewRequest): Promise<ScoreBreakdown> {
+  return apiPost<ScoreBreakdown>('/api/v1/risks/score-preview', payload);
+}
+
+export async function getRiskContext(id: string): Promise<RiskContext> {
+  return apiGet<RiskContext>(`/api/v1/risks/${encodeURIComponent(id)}/context`);
 }
 
 export async function listBin(itemType?: string): Promise<RecycleBinItem[]> {

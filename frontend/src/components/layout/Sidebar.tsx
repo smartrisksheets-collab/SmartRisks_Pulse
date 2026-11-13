@@ -71,7 +71,7 @@ export default function Sidebar() {
 
   const isActive = (path: string) => {
     if (path === '/') return location.pathname === '/';
-    if (path === '/risks') return location.pathname === '/risks';
+    if (path === '/risks') return location.pathname === '/risks' || location.pathname === '/risks/new' || /^\/risks\/[^/]+\/edit$/.test(location.pathname);
     return location.pathname.startsWith(path);
   };
 

@@ -17,6 +17,8 @@ export interface RiskQuota {
 export interface Risk {
   id:                   string;
   tenant_id:            string;
+  title:                string | null;
+  display_title:        string;
   category:             string | null;
   description:          string | null;
   primary_impact:       string | null;
@@ -51,12 +53,15 @@ export interface Risk {
   linked_decision:          string | null;
   control_test_result:  string | null;
   appetite_status:      'within' | 'near' | 'exceeds' | null;
+  is_undecided:         boolean;
+  is_past_target:       boolean;
   source:               string;
   created_at:           string;
   updated_at:           string;
 }
 
 export interface RiskCreate {
+  title?:                string | null;
   category:              string;
   description:           string;
   owner:                 string;
@@ -93,6 +98,7 @@ export interface RiskListMeta {
 }
 
 export interface BulkImportRow {
+  title?:                string;
   category:              string;
   description:           string;
   owner:                 string;
@@ -162,4 +168,63 @@ export interface RiskStats {
   concentration:   ConcentrationItem[];
   top_owner:       TopOwner | null;
   control_signal:  { eff_pct: number; avg_residual: number; residual_max: number; signal_msg: string; signal_class: string; };
+}
+// ── Register views, score preview and side-panel context (UI step 5) ──────────
+// Every figure and sentence here is computed by the backend (services/risk.py).
+
+export const RISK_TITLE_MAX = 80;
+
+export interface RiskViewCounts {
+  all:            number;
+  exceeds:        number;
+  elevated:       number;
+  undecided:      number;
+  past_target:    number;
+  elevated_label: string;
+  avg_residual:   number | null;
+  residual_max:   number;
+}
+
+export interface ScorePreviewRequest {
+  likelihood:             number;
+  impact_score:           number;
+  control_effectiveness?: number | null;
+  category?:              string | null;
+}
+
+export interface ScoreBreakdown {
+  severity:        number;
+  level:           string;
+  level_index:     number;
+  is_elevated:     boolean;
+  residual:        number;
+  residual_max:    number;
+  ce_level:        number | null;
+  ce_scale:        number;
+  ce_label:        string;
+  ce_pct:          number;
+  threshold:       number | null;
+  appetite_status: 'within' | 'near' | 'exceeds' | null;
+  note:            string;
+}
+
+export interface RiskHistoryItem {
+  at:      string | null;
+  user:    string | null;
+  action:  string | null;
+  summary: string | null;
+}
+
+export interface RiskLinkedIncident {
+  id:          string;
+  title:       string | null;
+  severity:    string | null;
+  status:      string | null;
+  reported_at: string | null;
+}
+
+export interface RiskContext {
+  score:     ScoreBreakdown;
+  history:   RiskHistoryItem[];
+  incidents: RiskLinkedIncident[];
 }

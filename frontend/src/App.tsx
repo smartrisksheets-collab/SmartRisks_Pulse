@@ -22,6 +22,7 @@ import AcceptInvite   from './pages/AcceptInvite';
 import PlanExpired    from './pages/PlanExpired';
 import Home           from './pages/Home';
 import RiskRegister   from './pages/RiskRegister';
+import RiskFormPage   from './pages/RiskFormPage';
 import Incidents      from './pages/Incidents';
 
 // Apply the last workspace colors before React draws anything, so pages do not flash teal.
@@ -130,6 +131,8 @@ export default function App() {
                     <Route path="/audit"     element={<RequirePermission permission="manage_settings"><AuditLog /></RequirePermission>} />
                     <Route path="/users"     element={<RequirePermission permission="manage_users"><Users /></RequirePermission>} />
                     <Route path="/settings"   element={<RequirePermission permission="manage_settings"><Settings /></RequirePermission>} />
+                    <Route path="/risks/new"               element={<RequireModule module="risk"><RequirePermission permission="manage_risks"><RiskFormPage /></RequirePermission></RequireModule>} />
+                    <Route path="/risks/:id/edit"          element={<RequireModule module="risk"><RequirePermission permission="manage_risks"><RiskFormPage /></RequirePermission></RequireModule>} />
                     <Route path="/risks/triage"            element={<RequireModule module="risk"><RequirePermission permission="manage_risks"><TriageQueue /></RequirePermission></RequireModule>} />
                     <Route path="/risks/submission-links"  element={<RequireModule module="risk"><RequirePermission permission="manage_risks"><TokenManager /></RequirePermission></RequireModule>} />
                     <Route path="/frameworks" element={<Frameworks />} />

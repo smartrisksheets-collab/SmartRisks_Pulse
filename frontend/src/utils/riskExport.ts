@@ -18,6 +18,7 @@ function field(key: keyof Risk, label: string, isDefault = false): ExportColumn 
 // Fixed order. Labels for importable fields match the import auto-map so an export re-imports cleanly.
 export const EXPORT_COLUMNS: ExportColumn[] = [
   field('id', 'Risk ID', true),
+  field('title', 'Title', true),
   field('logged_at', 'Date Logged', true),
   field('category', 'Category', true),
   field('description', 'Description', true),

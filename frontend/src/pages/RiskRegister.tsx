@@ -1,141 +1,165 @@
 // src/pages/RiskRegister.tsx
+// Risk Register in the Pulse layout: summary line, actions, quick views with
+// counts, filters, bulk bar, the register table and the side panel.
+// Adding and editing happen on their own page (RiskFormPage).
 
-import { useEffect, useState, useCallback, useRef } from 'react';
-import { useQueryClient, useQuery, keepPreviousData } from '@tanstack/react-query';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useRisks }        from '../hooks/useRisks';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Download, MoreHorizontal, Plus, SlidersHorizontal, Upload } from 'lucide-react';
+import { useRisks } from '../hooks/useRisks';
 import { useLookups } from '../hooks/useLookups';
-import { useCanDo }        from '../utils/permissions';
-import { getStats, listRisks, getRisk, type StatsParams, type ListRisksParams } from '../services/risks';
-import { useMatrix }   from '../hooks/useMatrix';
+import { useMatrix } from '../hooks/useMatrix';
 import { useTriagePendingCount } from '../hooks/useSubmissions';
 import { useToast } from '../hooks/useToast';
-import StatCards           from '../components/risks/StatCards';
-import RiskTable           from '../components/risks/RiskTable';
-import AddRiskModal        from '../components/risks/AddRiskModal';
-import EditRiskModal       from '../components/risks/EditRiskModal';
-import RiskDetailModal     from '../components/risks/RiskDetailModal';
-import ImportModal         from '../components/risks/ImportModal';
-import AIModal                  from '../components/risks/AIModal';
-import DeleteModal              from '../components/risks/DeleteModal';
-import PrintModal               from '../components/risks/PrintModal';
-import { buildRiskCsv, downloadCsv } from '../utils/riskExport';
-import type { ExportScope } from '../utils/riskExport';
-import RecycleBinModal          from '../components/recycle/RecycleBinModal';
-import Explain                  from '../components/help/Explain';
-import type { Risk, RiskCreate, AIInsightRequest, AIInsightResult } from '../types/risk';
-
-const PAGE_SIZE = 5;
+import { useCanDo } from '../utils/permissions';
+import { getRisk, getViewCounts, listRisks, type ListRisksParams } from '../services/risks';
+import { buildRiskCsv, downloadCsv, type ExportScope } from '../utils/riskExport';
+import { REGISTER_PAGE_SIZE, REGISTER_VIEWS, plural, type RegisterView } from '../utils/riskDisplay';
+import RiskTable from '../components/risks/RiskTable';
+import RiskPanel from '../components/risks/RiskPanel';
+import ImportModal from '../components/risks/ImportModal';
+import AIModal from '../components/risks/AIModal';
+import DeleteModal from '../components/risks/DeleteModal';
+import PrintModal from '../components/risks/PrintModal';
+import RecycleBinModal from '../components/recycle/RecycleBinModal';
+import Explain from '../components/help/Explain';
+import type { Risk, AIInsightRequest, AIInsightResult } from '../types/risk';
 
 export default function RiskRegister() {
   const canManage = useCanDo('manage_risks');
   const canAI     = useCanDo('generate_ai');
-  const canPrint  = useCanDo('print_reports');
-  const navigate = useNavigate();
-  const toast    = useToast();
-  const qc       = useQueryClient();
-  const { query: matrixQuery }    = useMatrix();
+  const canExport = useCanDo('print_reports');
+  const canAudit  = useCanDo('manage_settings');
+  const navigate  = useNavigate();
+  const toast     = useToast();
+  const qc        = useQueryClient();
+  const { lookups } = useLookups();
+  const { query: matrixQuery } = useMatrix();
+  const bandCount = matrixQuery.data?.band_count ?? 4;
   const { data: triageCountData } = useTriagePendingCount();
   const triagePending = triageCountData?.count ?? 0;
 
-  // Filters
-  const [riskId, setRiskId]         = useState('');
-  const { lookups } = useLookups();
-  const [category, setCategory]     = useState('');
-  const [owner, setOwner]           = useState('');
-  const [level, setLevel]           = useState('');
-  const [treatment, setTreatment]   = useState('');
-  const [search, setSearch]         = useState('');
-  const [page, setPage]             = useState(1);
-  const [flashId, setFlashId]           = useState<string | null>(null);
-  const [aiFlashIds, setAiFlashIds]     = useState<Set<string>>(new Set());
-  const [filterUndecided, setFilterUndecided] = useState(false);
-  const [appetite, setAppetite]               = useState('');
+  // ── Filters ───────────────────────────────────────────────────────────────
+  const [view, setView]         = useState<RegisterView>('all');
+  const [search, setSearch]     = useState('');
+  const [debounced, setDebounced] = useState('');
+  const [category, setCategory] = useState('');
+  const [owner, setOwner]       = useState('');
+  const [level, setLevel]       = useState('');
+  const [appetite, setAppetite] = useState('');
+  const [treatment, setTreatment] = useState('');
+  const [moreFilters, setMoreFilters] = useState(false);
+  const [page, setPage]         = useState(1);
 
-  const { data: undecidedData } = useQuery({
-    queryKey: ['risks', 'undecided-count'],
-    queryFn:  () => listRisks({ undecided: true, page_size: 1 }),
-    staleTime: 2 * 60 * 1000,
-  });
-  const undecidedCount = undecidedData?.meta.total ?? 0;
+  useEffect(() => {
+    const t = setTimeout(() => { setDebounced(search.trim()); setPage(1); }, 300);
+    return () => clearTimeout(t);
+  }, [search]);
 
-  // Debounced search + riskId
-  const [debouncedSearch, setDebouncedSearch]   = useState('');
-  const [debouncedRiskId, setDebouncedRiskId]   = useState('');
-
-
-  // Risk list query — params declared after all state is initialised
   const riskParams: ListRisksParams = {
-    page, page_size: PAGE_SIZE,
-    risk_id:   debouncedRiskId || undefined,
-    search:    debouncedSearch || undefined,
-    level:     level           || undefined,
-    treatment: treatment       || undefined,
-    owner:     owner           || undefined,
-    category:  category        || undefined,
-    undecided: filterUndecided || undefined,
-    appetite:  appetite        || undefined,
+    page, page_size: REGISTER_PAGE_SIZE, sort: 'residual',
+    search:    debounced || undefined,
+    category:  category  || undefined,
+    owner:     owner     || undefined,
+    level:     level     || undefined,
+    treatment: treatment || undefined,
+    appetite:  view === 'exceeds' ? 'Exceeds' : (appetite || undefined),
+    elevated:    view === 'elevated' || undefined,
+    undecided:   view === 'undecided' || undefined,
+    past_target: view === 'past_target' || undefined,
   };
-    const { risks, quota, total, loading, create, update, remove, importRisks, generateAI } = useRisks(riskParams);
+  const { risks, quota, total, loading, error, update, remove, importRisks, generateAI } = useRisks(riskParams);
 
-  // Modals
-  const [showAdd, setShowAdd]       = useState(false);
-  const [showEdit, setShowEdit]     = useState(false);
-  const [showDetail, setShowDetail] = useState(false);
-  const [showImport, setShowImport] = useState(false);
+  const viewParams = {
+    search: debounced || undefined, category: category || undefined,
+    owner: owner || undefined, level: level || undefined,
+  };
+  const counts = useQuery({
+    queryKey: ['risks', 'views', viewParams],
+    queryFn: () => getViewCounts(viewParams),
+    staleTime: 2 * 60 * 1000,
+    placeholderData: keepPreviousData,
+  });
+
+  function resetPage<T>(setter: (v: T) => void) {
+    return (v: T) => { setter(v); setPage(1); };
+  }
+
+  function clearFilters() {
+    setSearch(''); setCategory(''); setOwner(''); setLevel('');
+    setAppetite(''); setTreatment(''); setView('all'); setPage(1);
+  }
+  const filtersActive = !!(search || category || owner || level || appetite || treatment || view !== 'all');
+
+  // ── Selection, panel, modals ──────────────────────────────────────────────
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [openRisk, setOpenRisk]       = useState<Risk | null>(null);
+  const [menuOpen, setMenuOpen]       = useState(false);
+  const [showImport, setShowImport]   = useState(false);
   const [showAI, setShowAI]           = useState(false);
   const [showBin, setShowBin]         = useState(false);
-  const [showDelete, setShowDelete]   = useState(false);
+  const [showExport, setShowExport]   = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Risk | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
-  const [showPrint, setShowPrint]           = useState(false);
-  const [selected, setSelected]     = useState<Risk | null>(null);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const menuRef = useRef<HTMLDivElement>(null);
 
-  // Deep links from the dashboard:
-  //   /risks?risk=R-002            opens the risk
-  //   /risks?edit=R-002            opens the edit form (re-score, add evidence)
-  //   /risks?new=1&category=Cyber  opens Add Risk, category prefilled when it is a valid risk category
+  // Keep the open panel in step with refetched rows (after a decision is saved, for example).
+  const panelRisk = openRisk ? (risks.find(r => r.id === openRisk.id) ?? openRisk) : null;
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenuOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [menuOpen]);
+
+  // ── Deep links ────────────────────────────────────────────────────────────
+  //   /risks?risk=R-002            opens the side panel
+  //   /risks?edit=R-002            goes to the edit page
+  //   /risks?new=1&category=Cyber  goes to the add page, category prefilled when valid
   const [searchParams, setSearchParams] = useSearchParams();
   const handledLink = useRef<string | null>(null);
   const linkKey = searchParams.toString();
 
-  // Add Risk from a link is driven by the URL itself, so no state is set inside an effect.
-  // It waits for lookups, because RiskForm reads its initial category only when it mounts.
-  const linkWantsNew = searchParams.get('new') === '1';
-  const linkCategory = searchParams.get('category');
-  const linkAddOpen  = linkWantsNew && canManage && lookups != null;
-  const linkAddCategory =
-    linkAddOpen && linkCategory && lookups?.category.includes(linkCategory) ? linkCategory : undefined;
-
-  const clearLinkParams = useCallback(() => {
-    const next = new URLSearchParams(searchParams);
-    ['risk', 'edit', 'new', 'category'].forEach(k => next.delete(k));
-    setSearchParams(next, { replace: true });
-  }, [searchParams, setSearchParams]);
-
   useEffect(() => {
     const viewId = searchParams.get('risk');
     const editId = searchParams.get('edit');
-    const deniedNew = linkWantsNew && !canManage;
-    if (!viewId && !editId && !deniedNew) return;
+    const wantsNew = searchParams.get('new') === '1';
+    if (!viewId && !editId && !wantsNew) return;
     if (handledLink.current === linkKey) return;
     handledLink.current = linkKey;
 
-    clearLinkParams();
+    if (wantsNew) {
+      if (!canManage) { toast('You do not have permission to add risks.', 'error'); }
+      else {
+        const cat = searchParams.get('category');
+        navigate(`/risks/new${cat ? `?category=${encodeURIComponent(cat)}` : ''}`, { replace: true });
+        return;
+      }
+    }
+    if (editId) {
+      if (!canManage) { toast('You do not have permission to edit risks.', 'error'); }
+      else { navigate(`/risks/${encodeURIComponent(editId)}/edit`, { replace: true }); return; }
+    }
 
-    if (deniedNew) { toast('You do not have permission to add risks.', 'error'); return; }
-    if (editId && !canManage) { toast('You do not have permission to edit risks.', 'error'); return; }
-    const id = editId ?? viewId;
+    const next = new URLSearchParams(searchParams);
+    ['risk', 'edit', 'new', 'category'].forEach(k => next.delete(k));
+    setSearchParams(next, { replace: true });
+
+    const id = viewId ?? editId;
     if (!id) return;
     getRisk(id)
-      .then(r => {
-        setSelected(r);
-        if (editId) setShowEdit(true);
-        else setShowDetail(true);
-      })
+      .then(r => setOpenRisk(r))
       .catch(() => toast(`Risk ${id} could not be opened. It may have been deleted.`, 'error'));
-  }, [linkKey, searchParams, linkWantsNew, canManage, clearLinkParams, toast]);
+  }, [linkKey, searchParams, setSearchParams, canManage, navigate, toast]);
 
   const handleToggle = useCallback((id: string) => {
     setSelectedIds(prev => {
@@ -148,79 +172,39 @@ export default function RiskRegister() {
   const handleToggleAll = useCallback(() => {
     setSelectedIds(prev => {
       const pageIds = risks.map(r => r.id);
-      const allSelected = pageIds.length > 0 && pageIds.every(id => prev.has(id));
+      const all = pageIds.length > 0 && pageIds.every(id => prev.has(id));
       const next = new Set(prev);
-      if (allSelected) { pageIds.forEach(id => next.delete(id)); }
-      else             { pageIds.forEach(id => next.add(id)); }
+      pageIds.forEach(id => (all ? next.delete(id) : next.add(id)));
       return next;
     });
   }, [risks]);
-
-  // Debounce search
-  useEffect(() => {
-    const t = setTimeout(() => { setDebouncedSearch(search); setPage(1); }, 300);
-    return () => clearTimeout(t);
-  }, [search]);
-
-  // Debounce risk ID
-  useEffect(() => {
-    const t = setTimeout(() => { setDebouncedRiskId(riskId); setPage(1); }, 300);
-    return () => clearTimeout(t);
-  }, [riskId]);
-
-  // Stats query — cached by filter combination, invalidated by useRisks mutations
-  const statsParams: StatsParams = {
-    category:  category        || undefined,
-    level:     level           || undefined,
-    treatment: treatment       || undefined,
-    owner:     owner           || undefined,
-    search:    debouncedSearch || undefined,
-    risk_id:   debouncedRiskId || undefined,
-    undecided: filterUndecided || undefined,
-    appetite:  appetite        || undefined,
-  };
-  const statsQuery   = useQuery({
-    queryKey:        ['risks', 'stats', statsParams],
-    queryFn:         () => getStats(statsParams),
-    staleTime:       2 * 60 * 1000,
-    placeholderData: keepPreviousData,
-  });
-  const stats        = statsQuery.data    ?? null;
-  const statsLoading = statsQuery.isLoading;
-
-  function clearFilters() {
-    setRiskId(''); setCategory(''); setOwner('');
-    setLevel(''); setTreatment(''); setSearch('');
-    setFilterUndecided(false);
-    setPage(1);
-  }
-
-  function openDetail(r: Risk) { setSelected(r); setShowDetail(true); }
-  function openEdit(r: Risk)   { setSelected(r); setShowDetail(false); setShowEdit(true); }
-
-  function openDelete(r: Risk) {
-    setDeleteTarget(r);
-    setShowDelete(true);
-  }
 
   async function handleDelete() {
     if (!deleteTarget) return;
     setDeleteLoading(true);
     try {
       await remove(deleteTarget.id);
-      setShowDelete(false);
+      toast(`${deleteTarget.id} moved to the recycle bin.`, 'success');
+      setSelectedIds(prev => { const n = new Set(prev); n.delete(deleteTarget.id); return n; });
       setDeleteTarget(null);
-    } catch { /* handled in hook */ } finally {
+      setOpenRisk(null);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'The risk could not be deleted.', 'error');
+    } finally {
       setDeleteLoading(false);
     }
   }
 
-  const totalPages = Math.ceil(total / PAGE_SIZE);
-
   async function handleLinkDecision(decision: string) {
-    if (!selected) return;
-    await update(selected.id, { linked_decision: decision });
-    setShowDetail(false);
+    if (!panelRisk) return;
+    try {
+      const updated = await update(panelRisk.id, { linked_decision: decision });
+      if (updated) setOpenRisk(updated);
+      toast('Decision recorded.', 'success');
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'The decision could not be saved.', 'error');
+      throw e;
+    }
   }
 
   async function handleGenerateAI(opts: {
@@ -232,44 +216,19 @@ export default function RiskRegister() {
     if (opts.uiTarget === 'new') {
       payload = { target: 'empty', notes: opts.notes, overwrite: opts.overwrite };
     } else if (opts.uiTarget === 'filtered') {
-      const resp = await listRisks({
-        page: 1, page_size: 1000,
-        risk_id:   debouncedRiskId || undefined,
-        search:    debouncedSearch || undefined,
-        category:  category  || undefined,
-        level:     level     || undefined,
-        treatment: treatment || undefined,
-        owner:     owner     || undefined,
-      });
-      payload = {
-        target: 'selected',
-        risk_ids: resp.items.map(r => r.id),
-        notes: opts.notes,
-        overwrite: opts.overwrite,
-      };
+      const resp = await listRisks({ ...riskParams, page: 1, page_size: 1000 });
+      payload = { target: 'selected', risk_ids: resp.items.map(r => r.id), notes: opts.notes, overwrite: opts.overwrite };
     } else {
       if (selectedIds.size === 0) return null;
-      payload = {
-        target: 'selected',
-        risk_ids: [...selectedIds],
-        notes: opts.notes,
-        overwrite: opts.overwrite,
-      };
+      payload = { target: 'selected', risk_ids: [...selectedIds], notes: opts.notes, overwrite: opts.overwrite };
     }
-    const r = await generateAI(payload);
-    if (r) {
-      if (r.updated_ids.length > 0) {
-        setAiFlashIds(new Set(r.updated_ids));
-        setTimeout(() => setAiFlashIds(new Set()), 2400);
-      }
-    }
-    return r;
+    return generateAI(payload);
   }
 
-    async function handlePrint(scope: ExportScope, columns: string[]) {
-    setShowPrint(false);
+  async function handleExport(scope: ExportScope, columns: string[]) {
+    setShowExport(false);
     const PAGE = 1000; // backend max page_size
-    const base: ListRisksParams = scope === 'filtered' ? riskParams : {};
+    const base: ListRisksParams = scope === 'filtered' ? { ...riskParams } : { sort: 'residual' };
     const all: Risk[] = [];
     try {
       for (let p = 1; ; p++) {
@@ -286,235 +245,236 @@ export default function RiskRegister() {
     downloadCsv(buildRiskCsv(rows, columns), `risk_register_${new Date().toISOString().slice(0, 10)}.csv`);
   }
 
+  // ── Display ───────────────────────────────────────────────────────────────
+  const c = counts.data;
+  const summary = c
+    ? [
+        `${plural(c.all, 'risk')}${filtersActive ? ' match the filters' : ' on the register'}.`,
+        c.avg_residual != null ? `Average residual ${Math.round(c.avg_residual)} of ${c.residual_max}.` : '',
+        c.all > 0 ? `${c.exceeds === 0 ? 'None' : c.exceeds} outside appetite.` : '',
+      ].filter(Boolean).join(' ')
+    : '';
+  const viewCount: Record<RegisterView, number | undefined> = {
+    all: c?.all, exceeds: c?.exceeds, elevated: c?.elevated, undecided: c?.undecided, past_target: c?.past_target,
+  };
+  const totalPages = Math.max(1, Math.ceil(total / REGISTER_PAGE_SIZE));
+  const first = total === 0 ? 0 : (page - 1) * REGISTER_PAGE_SIZE + 1;
+  const last = Math.min(page * REGISTER_PAGE_SIZE, total);
+  const levelLabels = matrixQuery.data
+    ? Array.from({ length: bandCount }, (_, i) => {
+        const idx = bandCount - i;
+        return matrixQuery.data[`band_${idx}_label` as keyof typeof matrixQuery.data] as string;
+      })
+    : [];
+  const owners = Array.from(new Set([...(lookups?.risk_owner ?? []), ...(owner ? [owner] : [])]));
+  const hasMenu = canManage || canAI;
+
   return (
-    <div>
-      <StatCards stats={stats} loading={statsLoading} />
-
-      {quota?.warn && (
-        <div className="quota-warn">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
-            <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-          </svg>
-          Workspace is at {quota.pct}% capacity ({quota.current}/{quota.limit} risks).
+    <div className="pl-app pl-an-page">
+      <div className="pl-an-head">
+        <div className="pl-stack-xs">
+          <h1 className="pl-page-title">Risk Register</h1>
+          <p className="pl-intro">
+            {summary} {c && c.all > 0 && <Link to="/analytics">See the analysis</Link>}
+          </p>
         </div>
-      )}
-
-      <div className="card">
-        {/* Toolbar */}
-        <div className="card-title" style={{ justifyContent: 'flex-end' }}>
-          <div className="action-group">
-            <button className="btn btn-secondary btn-compact" onClick={clearFilters}>Clear Filters</button>
-
-            {/* External link icon — opens Token Manager */}
-            <button className="btn-icon" title="Submission Links" onClick={() => navigate('/risks/submission-links')}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/>
-              </svg>
+        <div className="pl-inline pl-rr-actions">
+          {canManage && (
+            <button type="button" className="pl-btn pl-btn-secondary" onClick={() => setShowImport(true)}>
+              <Upload size={16} aria-hidden="true" />Import
             </button>
-
-            {/* Bell — opens Triage Queue */}
-            <button className="btn-icon" title="Triage Queue" style={{ position: 'relative' }} onClick={() => navigate('/risks/triage')}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/>
-              </svg>
-              {triagePending > 0 && <span className="notif-count">{triagePending}</span>}
+          )}
+          {canExport && (
+            <button type="button" className="pl-btn pl-btn-secondary" onClick={() => setShowExport(true)}>
+              <Download size={16} aria-hidden="true" />Export
             </button>
-
-            {/* Print */}
-            {canPrint && (
-              <button className="btn-icon" title="Print Report" onClick={() => setShowPrint(true)}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/>
-                </svg>
+          )}
+          {hasMenu && (
+            <div className="pl-rr-menu-wrap" ref={menuRef}>
+              <button type="button" className="pl-btn pl-btn-secondary" aria-label="More actions"
+                aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen(o => !o)}>
+                <MoreHorizontal size={18} aria-hidden="true" />
+                {canManage && triagePending > 0 && <span className="pl-rr-dot" aria-hidden="true" />}
               </button>
-            )}
-
-            {canManage && (
-              <button className="btn btn-secondary btn-compact" onClick={() => setShowImport(true)}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 5 }}>
-                  <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
-                </svg>
-                Import Risks
-              </button>
-            )}
-
-            {canAI && (
-              <button className="btn btn-compact btn-ai" onClick={() => setShowAI(true)}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 5 }}>
-                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
-                </svg>
-                AI Insights
-              </button>
-            )}
-
-            {canManage && (
-              <button className="btn btn-primary btn-compact" onClick={() => setShowAdd(true)}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 4 }}>
-                  <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-                </svg>
-                Add Risk
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Filter bar */}
-        <div className="filters">
-          <div className="field">
-            <label>Risk ID</label>
-            <input value={riskId} onChange={e => setRiskId(e.target.value)} placeholder="e.g. R-004" style={{ width: 100 }} />
-          </div>
-          <div className="field">
-            <label>Category</label>
-            <select value={category} onChange={e => { setCategory(e.target.value); setPage(1); }}>
-              <option value="">All</option>
-              {(lookups?.category ?? ['Strategic','Operational','Financial','Compliance','Reputational','Technical']).map(c => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
-          </div>
-          <div className="field">
-            <label>Dept/Risk Owner</label>
-            <select value={owner} onChange={e => { setOwner(e.target.value); setPage(1); }}>
-              <option value="">All</option>
-              {Array.from(new Set(risks.map(r => r.owner).filter(Boolean))).map(o => (
-                <option key={o!} value={o!}>{o}</option>
-              ))}
-            </select>
-          </div>
-          <div className="field">
-            <label>Appetite</label>
-            <select value={appetite} onChange={e => { setAppetite(e.target.value); setPage(1); }}>
-              <option value="">All</option>
-              <option value="Exceeds">Exceeds</option>
-              <option value="Near">Near</option>
-              <option value="Within">Within</option>
-              <option value="unset">No threshold</option>
-            </select>
-          </div>
-          <div className="field">
-            <label>Risk Level</label>
-            <select value={level} onChange={e => { setLevel(e.target.value); setPage(1); }}>
-              <option value="">All</option>
-              {matrixQuery.data
-                ? Array.from({ length: matrixQuery.data.band_count }, (_, i) => {
-                    const idx = matrixQuery.data!.band_count - i;
-                    const label = matrixQuery.data![`band_${idx}_label` as keyof typeof matrixQuery.data] as string;
-                    return <option key={idx} value={label}>{label}</option>;
-                  })
-                : ['Critical', 'High', 'Medium', 'Low'].map(l => (
-                    <option key={l} value={l}>{l}</option>
-                  ))
-              }
-            </select>
-          </div>
-          <div className="field" style={{ minWidth: 220 }}>
-            <label>Quick Search</label>
-            <input value={search} onChange={e => setSearch(e.target.value)}
-              placeholder="Search description, impact, controls…" />
-          </div>
-          {undecidedCount > 0 && (
-            <div className="field">
-            <label>Decisions<Explain id="undecided" /></label>
-            <button
-              type="button"
-              className={`btn btn-undecided btn-compact${filterUndecided ? ' active' : ''}`}
-              onClick={() => { setFilterUndecided(f => !f); setPage(1); }}
-              title={filterUndecided ? 'Clear undecided filter' : 'Show elevated or over-appetite risks with no recorded decision'}
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
-                <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-              </svg>
-              {undecidedCount} undecided
-            </button>
+              {menuOpen && (
+                <div className="pl-menu pl-rr-menu" role="menu" aria-label="More actions">
+                  {canManage && (
+                    <button type="button" role="menuitem" className="pl-menu-item" onClick={() => navigate('/risks/submission-links')}>
+                      Share risk submission link
+                    </button>
+                  )}
+                  {canManage && (
+                    <button type="button" role="menuitem" className="pl-menu-item" onClick={() => navigate('/risks/triage')}>
+                      Submissions inbox
+                      {triagePending > 0 && <span className="pl-chip pl-sev-m">{triagePending} new</span>}
+                    </button>
+                  )}
+                  {canAI && (
+                    <button type="button" role="menuitem" className="pl-menu-item" onClick={() => { setMenuOpen(false); setShowAI(true); }}>
+                      Generate AI insights
+                    </button>
+                  )}
+                  {canManage && (
+                    <button type="button" role="menuitem" className="pl-menu-item" onClick={() => { setMenuOpen(false); setShowBin(true); }}>
+                      Recycle bin
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           )}
+          {canManage && (
+            <Link className="pl-btn pl-btn-primary" to="/risks/new">
+              <Plus size={16} aria-hidden="true" />Add risk
+            </Link>
+          )}
         </div>
+      </div>
 
-        {/* Table */}
+      {quota?.warn && (
+        <p className="pl-note pl-alert" role="status">
+          This workspace is at {quota.pct}% of its risk limit ({quota.current} of {quota.limit} risks).
+        </p>
+      )}
+
+      <div className="pl-views" role="group" aria-label="Quick views">
+        {REGISTER_VIEWS.map(v => (
+          <button key={v.key} type="button" className={`pl-view${view === v.key ? ' pl-on' : ''}`}
+            aria-pressed={view === v.key} onClick={() => { setView(v.key); setPage(1); }}>
+            {v.label(c?.elevated_label ?? 'Elevated')}
+            <span className="pl-view-n">{viewCount[v.key] ?? '…'}</span>
+          </button>
+        ))}
+        <Explain id="undecided" />
+      </div>
+
+      <section className="pl-card pl-rr-card" aria-label="Risks">
+        <div className="pl-rr-filters">
+          <div className="pl-field pl-rr-f-search">
+            <label className="pl-field-label" htmlFor="rr-q">Search</label>
+            <input id="rr-q" className="pl-input" type="search" value={search}
+              onChange={e => setSearch(e.target.value)} placeholder="Risk ID, title, owner or impact" />
+          </div>
+          <div className="pl-field pl-rr-f">
+            <label className="pl-field-label" htmlFor="rr-cat">Category</label>
+            <select id="rr-cat" className="pl-input" value={category} onChange={e => resetPage(setCategory)(e.target.value)}>
+              <option value="">All categories</option>
+              {(lookups?.category ?? []).map(x => <option key={x} value={x}>{x}</option>)}
+            </select>
+          </div>
+          <div className="pl-field pl-rr-f">
+            <label className="pl-field-label" htmlFor="rr-own">Owner</label>
+            <select id="rr-own" className="pl-input" value={owner} onChange={e => resetPage(setOwner)(e.target.value)}>
+              <option value="">All owners</option>
+              {owners.map(x => <option key={x} value={x}>{x}</option>)}
+            </select>
+          </div>
+          <div className="pl-field pl-rr-f">
+            <label className="pl-field-label" htmlFor="rr-lvl">Level</label>
+            <select id="rr-lvl" className="pl-input" value={level} onChange={e => resetPage(setLevel)(e.target.value)}>
+              <option value="">All levels</option>
+              {levelLabels.map(x => <option key={x} value={x}>{x}</option>)}
+            </select>
+          </div>
+          <button type="button" className="pl-btn pl-btn-secondary" aria-expanded={moreFilters} onClick={() => setMoreFilters(m => !m)}>
+            <SlidersHorizontal size={16} aria-hidden="true" />More filters
+          </button>
+          {filtersActive && (
+            <button type="button" className="pl-btn pl-btn-ghost" onClick={clearFilters}>Clear filters</button>
+          )}
+        </div>
+        {moreFilters && (
+          <div className="pl-rr-filters pl-rr-filters-more">
+            <div className="pl-field pl-rr-f">
+              <label className="pl-field-label" htmlFor="rr-app">Appetite</label>
+              <select id="rr-app" className="pl-input" value={view === 'exceeds' ? 'Exceeds' : appetite}
+                disabled={view === 'exceeds'} onChange={e => resetPage(setAppetite)(e.target.value)}>
+                <option value="">Any</option>
+                <option value="Exceeds">Exceeds</option>
+                <option value="Near">Near</option>
+                <option value="Within">Within</option>
+                <option value="unset">No threshold</option>
+              </select>
+            </div>
+            <div className="pl-field pl-rr-f">
+              <label className="pl-field-label" htmlFor="rr-treat">Treatment</label>
+              <select id="rr-treat" className="pl-input" value={treatment} onChange={e => resetPage(setTreatment)(e.target.value)}>
+                <option value="">Any</option>
+                {(lookups?.treatment ?? []).map(x => <option key={x} value={x}>{x}</option>)}
+              </select>
+            </div>
+          </div>
+        )}
+
+        {selectedIds.size > 0 && (
+          <div className="pl-rr-bulk" role="region" aria-label="Bulk actions">
+            <span className="pl-rr-bulk-n">{selectedIds.size} selected</span>
+            {canExport && <button type="button" className="pl-btn pl-btn-sm pl-btn-on-dark" onClick={() => setShowExport(true)}>Export selected</button>}
+            {canAI && <button type="button" className="pl-btn pl-btn-sm pl-btn-on-dark" onClick={() => setShowAI(true)}>AI insights</button>}
+            <button type="button" className="pl-btn pl-btn-sm pl-btn-on-dark pl-push" onClick={() => setSelectedIds(new Set())}>Clear</button>
+          </div>
+        )}
+
+        {error && <p className="pl-note pl-alert" role="alert">{error}</p>}
+
         <RiskTable
           risks={risks}
           loading={loading}
-          onView={openDetail}
-          onEdit={openEdit}
-          flashId={flashId}
-          aiFlashIds={aiFlashIds}
+          bandCount={bandCount}
+          openId={panelRisk?.id ?? null}
           selectedIds={selectedIds}
+          onOpen={setOpenRisk}
           onToggle={handleToggle}
           onToggleAll={handleToggleAll}
         />
 
-        {/* Recycle bin link below table */}
-        {canManage && (
-          <div style={{ marginTop: 8, textAlign: 'right' }}>
-            <button className="btn btn-secondary btn-compact" onClick={() => setShowBin(true)}>
-              Recycle Bin
-            </button>
+        {!loading && risks.length === 0 && (
+          <div className="pl-rr-empty">
+            {filtersActive ? (
+              <>
+                <p className="pl-item-title">No risks match</p>
+                <p className="pl-caption">Try another view or clear the filters.</p>
+              </>
+            ) : (
+              <>
+                <p className="pl-item-title">No risks yet</p>
+                <p className="pl-caption">
+                  {canManage ? 'Add your first risk, or import a spreadsheet.' : 'Risks appear here once someone adds them.'}
+                </p>
+              </>
+            )}
           </div>
         )}
 
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="pager">
-            <button className="btn btn-secondary" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Prev</button>
-            <span style={{ fontSize: 13, color: 'var(--muted)' }}>Page {page} of {totalPages}</span>
-            <button className="btn btn-secondary" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>Next</button>
-          </div>
-        )}
-      </div>
+        <div className="pl-rr-foot">
+          <span className="pl-caption">
+            {total > 0 ? `Showing ${first} to ${last} of ${total}, sorted by residual, highest first` : ''}
+          </span>
+          {totalPages > 1 && (
+            <span className="pl-inline">
+              <button type="button" className="pl-btn pl-btn-secondary pl-btn-sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Previous</button>
+              <span className="pl-caption">Page {page} of {totalPages}</span>
+              <button type="button" className="pl-btn pl-btn-secondary pl-btn-sm" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>Next</button>
+            </span>
+          )}
+        </div>
+      </section>
 
-      {/* Modals */}
-      <AddRiskModal
-        open={showAdd || linkAddOpen}
-        onClose={() => { setShowAdd(false); if (linkAddOpen) clearLinkParams(); }}
-        initialCategory={linkAddCategory}
-        onSubmit={async (payload: RiskCreate) => {
-          const r = await create(payload);
-          if (r) {
-            setFlashId(r.id);
-            setTimeout(() => setFlashId(null), 2400);
-          }
-          return r;
-        }}
-      />
-      <EditRiskModal
-        open={showEdit}
-        risk={selected}
-        onClose={() => setShowEdit(false)}
-        onSubmit={async (id, payload) => {
-          const r = await update(id, payload);
-          if (r) {
-            setFlashId(id);
-            setTimeout(() => setFlashId(null), 2400);
-            setLevel('');
-            setCategory('');
-            setTreatment('');
-            setOwner('');
-            setFilterUndecided(false);
-            setAppetite('');
-          }
-          return r;
-        }}
-      />
-      <RiskDetailModal
-        key={selected?.id ?? 'none'}
-        open={showDetail}
-        risk={selected}
-        onClose={() => setShowDetail(false)}
-        onEdit={() => openEdit(selected!)}
-        onDelete={() => { setShowDetail(false); if (selected) openDelete(selected); }}
-        onLinkDecision={handleLinkDecision}
-      />
-      <ImportModal
-        open={showImport}
-        onClose={() => setShowImport(false)}
-        onImport={async rows => {
-          const r = await importRisks(rows);
-          return r;
-        }}
-      />
+      {panelRisk && (
+        <RiskPanel
+          key={panelRisk.id}
+          risk={panelRisk}
+          bandCount={bandCount}
+          canManage={canManage}
+          canSeeAudit={canAudit}
+          onClose={() => setOpenRisk(null)}
+          onEdit={() => navigate(`/risks/${encodeURIComponent(panelRisk.id)}/edit`)}
+          onDelete={() => { setDeleteTarget(panelRisk); setOpenRisk(null); }}
+          onLinkDecision={handleLinkDecision}
+        />
+      )}
+
+      <ImportModal open={showImport} onClose={() => setShowImport(false)} onImport={rows => importRisks(rows)} />
       <AIModal
         open={showAI}
         onClose={() => setShowAI(false)}
@@ -523,12 +483,12 @@ export default function RiskRegister() {
         onGenerate={handleGenerateAI}
       />
       <DeleteModal
-        open={showDelete}
+        open={deleteTarget !== null}
         riskId={deleteTarget?.id ?? null}
-        desc={deleteTarget?.description ?? null}
+        desc={deleteTarget?.display_title ?? null}
         loading={deleteLoading}
         onConfirm={handleDelete}
-        onClose={() => { setShowDelete(false); setDeleteTarget(null); }}
+        onClose={() => setDeleteTarget(null)}
       />
       <RecycleBinModal
         open={showBin}
@@ -539,11 +499,11 @@ export default function RiskRegister() {
         }}
       />
       <PrintModal
-        key={showPrint ? 'open' : 'closed'}
-        open={showPrint}
+        key={showExport ? 'open' : 'closed'}
+        open={showExport}
         selectedCount={selectedIds.size}
-        onClose={() => setShowPrint(false)}
-        onGenerate={handlePrint}
+        onClose={() => setShowExport(false)}
+        onGenerate={handleExport}
       />
     </div>
   );
