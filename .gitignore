@@ -22,6 +22,3 @@ admin/.env
 # OS
 .DS_Store
 Thumbs.db
-
-apply_bran_vars.py
-apply_dark_text.py
