@@ -20,7 +20,7 @@ import VerifyPin      from './pages/VerifyPin';
 import CreateWorkspace from './pages/CreateWorkspace';
 import AcceptInvite   from './pages/AcceptInvite';
 import PlanExpired    from './pages/PlanExpired';
-import Dashboard      from './pages/Dashboard';
+import Home           from './pages/Home';
 import RiskRegister   from './pages/RiskRegister';
 import Incidents      from './pages/Incidents';
 
@@ -122,7 +122,7 @@ export default function App() {
               <PageShell>
                 <Suspense fallback={<PageLoader />}>
                   <Routes>
-                    <Route path="/"          element={<Dashboard />} />
+                    <Route path="/"          element={<Home />} />
                     <Route path="/analytics" element={<Analytics />} />
                     <Route path="/risks"     element={<RequireModule module="risk"><RiskRegister /></RequireModule>} />
                     <Route path="/incidents" element={<RequireModule module="incident"><Incidents /></RequireModule>} />

@@ -12,9 +12,9 @@ interface StepDef {
 }
 
 const STEPS: StepDef[] = [
-  { id: 1, title: 'Explore your Dashboard',
-    desc: 'Get familiar with your live risk exposure index, residual trends, top risk drivers, and operational intelligence feed.',
-    goLabel: 'Go to Dashboard →', goTo: '/' },
+  { id: 1, title: 'Explore your Home',
+    desc: 'Get familiar with your verdict, the four key figures, what to do next and the executive brief. Take the 60-second tour.',
+    goLabel: 'Go to Home →', goTo: '/' },
 
   { id: 2, title: 'Set up your Risk Config',
     desc: 'Define your departments and risk owners, risk categories, and treatment options. This is the foundation everything else builds on.',

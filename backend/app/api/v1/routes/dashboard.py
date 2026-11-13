@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.dependencies import get_active_tenant, get_db, require_permission
 from app.schemas.dashboard import DashboardResponse
 from app.services.dashboard import get_dashboard
+from app.services.home import get_home
 from app.services.snapshot import write_monthly_snapshot
 from app.services.ai_executive import generate_exec_insight
 from app.services.ai_unified import generate_unified_brief
@@ -35,6 +36,26 @@ async def dashboard_endpoint(
     tenant_id = UUID(claims["active_tenant_id"])
     data = await get_dashboard(db, tenant_id, days=days)
     return {"data": data.model_dump(), "error": None, "meta": {"days": days}}
+
+
+@router.get(
+    "/home",
+    response_model=None,
+    summary="Home: verdict, four tiles, next actions, top risks and incidents, setup flags",
+)
+@limiter.limit("60/minute")
+async def home_endpoint(
+    request: Request,
+    claims: dict = Depends(get_active_tenant),
+    db: AsyncSession = Depends(get_db),
+):
+    tenant_id = UUID(claims["active_tenant_id"])
+    try:
+        account_id: UUID | None = UUID(str(claims.get("sub")))
+    except ValueError:
+        account_id = None
+    data = await get_home(db, tenant_id, account_id, list(claims.get("modules") or []))
+    return {"data": data.model_dump(), "error": None, "meta": {}}
 
 
 @router.post(
