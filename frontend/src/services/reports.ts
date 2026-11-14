@@ -1,12 +1,13 @@
 // src/services/reports.ts
 
-import { apiGet, apiPost, apiDelete } from './api';
+import { apiGet, apiPost, apiPut, apiDelete } from './api';
 import type {
   BlockKey,
   BlockDataMap,
   ReportSettings,
   DateRange,
   ReportTemplate,
+  ReportDraft,
   ExportFormat,
 } from '../types/report';
 
@@ -110,6 +111,22 @@ export async function getReportSettings(): Promise<Partial<ReportSettings>> {
 
 export async function saveReportSettings(settings: ReportSettings): Promise<void> {
   await apiPost('/api/v1/reports/settings', { settings });
+}
+
+// ── Draft (one per person per workspace) ───────────────────────────────────────
+
+export async function getDraft(): Promise<ReportDraft | null> {
+  const res = await apiGet<{ draft: ReportDraft | null }>('/api/v1/reports/draft');
+  return res.draft;
+}
+
+export async function saveDraft(draft: ReportDraft): Promise<ReportDraft> {
+  const res = await apiPut<{ draft: ReportDraft }>('/api/v1/reports/draft', { draft });
+  return res.draft;
+}
+
+export async function deleteDraft(): Promise<void> {
+  await apiDelete('/api/v1/reports/draft');
 }
 
 // ── Download helper ────────────────────────────────────────────────────────────

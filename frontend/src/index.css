@@ -5727,6 +5727,72 @@ textarea.pl-input.pl-rr-short { min-height: 64px; }
   .pl-in-choices { grid-template-columns: 1fr 1fr; }
 }
 
+/* ── Report Builder (UI step 7) ───────────────────────────────────────────── */
+.pl-rb-page { max-width: 1320px; }
+.pl-rb-toolbar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
+.pl-rb-tool { min-width: 170px; }
+.pl-rb-export { min-width: 280px; }
+.pl-rb-export .pl-note { margin: 4px 6px 8px; }
+.pl-rb-custom { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; }
+.pl-rb-custom .pl-field { flex: 0 1 190px; }
+.pl-rb-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; padding: 12px 16px; border-radius: var(--pl-r-panel); background: var(--pl-bg-card); border: 1px solid var(--pl-border); font-size: var(--pl-fs-body-s); color: var(--pl-text-secondary); }
+.pl-rb-strong { color: var(--pl-navy-text); font-variant-numeric: tabular-nums; }
+.pl-rb-layout { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 20px; }
+.pl-rb-lib { flex: 1 1 230px; max-width: 270px; padding: 16px; display: flex; flex-direction: column; }
+.pl-rb-lib-g { display: flex; flex-direction: column; gap: 2px; padding: 10px 0; border-top: 1px solid var(--pl-divider); }
+.pl-rb-lib-g:first-of-type { border-top: 0; }
+.pl-rb-lib-h { font-size: var(--pl-fs-caption); font-weight: 700; color: var(--pl-text-muted); padding: 4px 10px; }
+.pl-rb-lib-i { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 4px 6px 4px 10px; border-radius: 8px; font-size: var(--pl-fs-body); color: var(--pl-text-body); }
+.pl-rb-lib-i:hover { background: var(--pl-bg-subtle); }
+.pl-rb-add { min-height: 32px; padding: 4px 10px; border-radius: 8px; border: 1px solid var(--pl-border-control); background: var(--pl-bg-card); font-family: inherit; font-weight: 700; font-size: 12px; color: var(--pl-navy-text); cursor: pointer; }
+.pl-rb-add:hover:not(:disabled) { border-color: var(--pl-navy-text); }
+.pl-rb-add:disabled { border-color: transparent; background: transparent; color: var(--pl-success-text); cursor: default; }
+.pl-rb-outline { flex: 999 1 460px; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+.pl-rb-cover { padding: 22px 24px; border-radius: var(--pl-r-panel); background: var(--pl-navy); border: 1px solid var(--pl-navy); color: var(--pl-on-navy); }
+.pl-rb-cover-k { margin: 0; font-size: var(--pl-fs-label); font-weight: 800; letter-spacing: var(--pl-ls-label); text-transform: uppercase; color: #A7DCCB; }
+.pl-rb-cover-t { margin: 4px 0 0; font-size: 18px; font-weight: 800; color: #fff; overflow-wrap: anywhere; }
+.pl-rb-cover-m { margin: 4px 0 0; font-size: var(--pl-fs-meta); color: #CBD5E1; }
+.pl-rb-empty { padding: 40px 20px; text-align: center; border: 2px dashed var(--pl-border-control); border-radius: var(--pl-r-panel); color: var(--pl-text-muted); font-size: var(--pl-fs-body); }
+.pl-rb-blk { border: 1px solid var(--pl-border); border-radius: var(--pl-r-panel); background: var(--pl-bg-card); min-width: 0; }
+.pl-rb-blk-h { display: flex; align-items: center; gap: 8px; padding: 10px 12px 10px 16px; border-bottom: 1px solid var(--pl-divider); }
+.pl-rb-blk-b { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; min-width: 0; overflow-x: auto; }
+.pl-rb-ic { width: 36px; height: 36px; border-radius: 8px; border: 1px solid transparent; background: transparent; display: grid; place-items: center; cursor: pointer; color: var(--pl-text-secondary); flex: none; }
+.pl-rb-ic:hover:not(:disabled) { border-color: var(--pl-border-control); color: var(--pl-navy-text); background: var(--pl-bg-card); }
+.pl-rb-ic:disabled { opacity: .35; cursor: default; }
+.pl-rb-ai { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-top: 10px; border-top: 1px solid var(--pl-divider); }
+.pl-rb-mini { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 7px 0; border-top: 1px solid var(--pl-divider); font-size: var(--pl-fs-body-s); color: var(--pl-text-body); }
+.pl-rb-mini:first-child { border-top: 0; }
+.pl-rb-heat { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
+.pl-rb-hm { display: grid; grid-template-columns: repeat(var(--pl-rb-cols, 5), minmax(0, 1fr)); gap: 3px; width: 100%; max-width: 240px; }
+.pl-rb-hm span { aspect-ratio: 1.4; border-radius: 4px; display: grid; place-items: center; font-size: 11px; font-weight: 800; }
+.pl-rb-hm-b1 { background: #eef2f7; color: #334155; }
+.pl-rb-hm-b2 { background: #fef3c7; color: #854d0e; }
+.pl-rb-hm-b3 { background: #ffedd5; color: #9a3412; }
+.pl-rb-hm-b4 { background: #ffe4e6; color: #9f1239; }
+.pl-rb-hm-b5 { background: #fecdd3; color: #881337; }
+.pl-rb-details { flex: 1 1 250px; max-width: 300px; padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+.pl-rb-details-sub { margin-top: 6px; padding-top: 14px; border-top: 1px solid var(--pl-divider); }
+.pl-rb-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.pl-rb-check { display: flex; align-items: center; gap: 10px; min-height: var(--pl-tap-min); font-size: var(--pl-fs-body); color: var(--pl-text-body); cursor: pointer; }
+.pl-rb-check input { width: 18px; height: 18px; accent-color: var(--pl-navy); cursor: pointer; }
+.pl-rb-modal-s { max-width: 480px; }
+.pl-rb-modal-l { max-width: 820px; }
+.pl-rb-tpl-table { min-width: 600px; }
+.pl-rb-chip-gap { margin-left: 8px; }
+.pl-rb-confirm-msg { margin: 8px 0 14px; }
+.pl-rb-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+[data-theme="dark"] .pl-rb-cover { background: var(--pl-bg-muted); border-color: var(--pl-border); }
+[data-theme="dark"] .pl-rb-check input { accent-color: var(--pl-teal); }
+@media (max-width: 1100px) {
+  .pl-rb-lib, .pl-rb-details { max-width: none; }
+}
+@media (max-width: 767px) {
+  .pl-rb-toolbar { width: 100%; }
+  .pl-rb-tool { flex: 1 1 100%; }
+  .pl-rb-pair { grid-template-columns: 1fr; }
+  .pl-rb-cover { padding: 18px; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .pl-kpi, .pl-kpi:hover { transition: none; transform: none; }
   .pl-sky-sunrise, .pl-sky-halo, .pl-sky-drift, .pl-sky-sunpath, .pl-sky-rays, .pl-sky-float, .pl-sky-glow, .pl-sky-tw, .pl-sky-tw2, .pl-sky-tw3 { animation: none; }

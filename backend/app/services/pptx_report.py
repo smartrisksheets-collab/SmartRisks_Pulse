@@ -77,6 +77,8 @@ LABELS: dict[str, str] = {
     "risk-ownership": "Risk Ownership", "incident-analytics": "Incident Analytics",
     "executive-dashboard": "Executive Dashboard", "methodology": "Methodology",
     "risk-heat-map": "Risk Heat Map", "risk-incident-correlation": "Risk & Incident Correlation",
+    "appetite-breaches": "Risks Outside Appetite", "decisions-needed": "Decisions Needed",
+    "control-evidence": "Control Evidence",
 }
 
 
@@ -927,6 +929,82 @@ def r_methodology(d: Deck, data, ai, label):
     return None   # None = handled, no headline slide
 
 
+# ── Pulse UI sections (UI step 7) ─────────────────────────────────────────────
+
+def _section_slide(d: Deck, data, ai, label, kicker: str, kpis: list[dict], hdr: list[str],
+                   rows: list[dict], row_fn: Callable, widths: list[float], level_col: int | None,
+                   hdr2: list[str], row2_fn: Callable, widths2: list[float]) -> bool:
+    """Headline: KPI tiles and the first five rows. Appendix: every row."""
+    s = d.content_slide(label, kicker, _notes(data.get("narrative"), ai))
+    _kpis_row(s, kpis, CONTENT_TOP, 1.5)
+    top = rows[:5]
+    if top:
+        colours = ({(i, level_col): _level_colour(r.get("level"), r.get("level_index")) for i, r in enumerate(top)}
+                   if level_col is not None else None)
+        _table(s, MX, CONTENT_TOP + 1.8, CONTENT_W, hdr, [row_fn(r) for r in top], widths,
+               size=13, cell_colors=colours, row_h=0.5)
+    else:
+        _callout(s, MX, CONTENT_TOP + 1.8, CONTENT_W, 1.6, "Finding", _strip_tags(data.get("narrative")))
+    if len(rows) > 5:
+        def appendix(d: Deck):
+            for page, chunk in _pages(rows):
+                sl = d.content_slide(f"{label}{page}", "Appendix")
+                _table(sl, MX, CONTENT_TOP, CONTENT_W, hdr2, [row2_fn(r) for r in chunk], widths2, size=11)
+        d.appendix.append((label, appendix))
+    return True
+
+
+def r_appetite_breaches(d: Deck, data, ai, label):
+    rows = data.get("risks") or []
+    kpis = [
+        {"label": "Outside appetite", "value": data.get("count", 0), "color": RED},
+        {"label": "Near the threshold", "value": data.get("near_count", 0), "color": AMBER},
+        {"label": "Active risks", "value": data.get("risks_total", 0), "color": NAVY},
+    ]
+    def row(r):
+        return [r.get("id"), r.get("title"), r.get("level"), r.get("residual"), r.get("threshold"), f"+{r.get('over_by', 0)}"]
+    def row2(r):
+        return [r.get("id"), r.get("title"), r.get("owner") or "Unassigned", r.get("level"),
+                r.get("residual"), r.get("threshold")]
+    return _section_slide(d, data, ai, label, "Residual above the category threshold", kpis,
+                          ["ID", "Risk", "Level", "Residual", "Appetite", "Over by"], rows, row,
+                          [1.1, 4.6, 1.4, 1.2, 1.2, 1.1], 2,
+                          ["ID", "Risk", "Owner", "Level", "Residual", "Appetite"], row2,
+                          [0.9, 4.4, 2.0, 1.2, 1.0, 1.0])
+
+
+def r_decisions_needed(d: Deck, data, ai, label):
+    rows = data.get("risks") or []
+    kpis = [
+        {"label": "Need a decision", "value": data.get("count", 0), "color": AMBER},
+        {"label": "Active risks", "value": data.get("risks_total", 0), "color": NAVY},
+    ]
+    def row(r):
+        return [r.get("id"), r.get("title"), r.get("owner") or "Unassigned", r.get("level"), r.get("reason")]
+    return _section_slide(d, data, ai, label, "Elevated or outside appetite, no decision recorded", kpis,
+                          ["ID", "Risk", "Owner", "Level", "Why"], rows, row,
+                          [1.1, 4.4, 2.0, 1.4, 2.2], 3,
+                          ["ID", "Risk", "Owner", "Level", "Why"], row, [0.9, 4.4, 2.0, 1.2, 2.0])
+
+
+def r_control_evidence(d: Deck, data, ai, label):
+    if not data.get("rated"):
+        s = d.content_slide(label, "Control assurance", _notes(data.get("narrative"), ai))
+        _callout(s, MX, CONTENT_TOP, CONTENT_W, 1.6, "Finding", _strip_tags(data.get("narrative")))
+        return True
+    rows = data.get("gaps") or []
+    kpis = [
+        {"label": "Rated controls", "value": data.get("rated", 0), "color": NAVY},
+        {"label": "Evidenced", "value": data.get("evidenced", 0), "color": GREEN},
+        {"label": "Contradicted", "value": data.get("contradicted", 0), "color": RED},
+    ]
+    def row(r):
+        return [r.get("id"), r.get("title"), r.get("rating"), ", ".join(r.get("reasons") or [])]
+    return _section_slide(d, data, ai, label, "Tested in 12 months and independently asserted", kpis,
+                          ["ID", "Risk", "Rating", "Gap"], rows, row, [1.1, 4.4, 1.6, 4.0], None,
+                          ["ID", "Risk", "Rating", "Gap"], row, [0.9, 4.4, 1.6, 4.0])
+
+
 RENDERERS: dict[str, Callable] = {
     "executive-dashboard": r_executive_dashboard,
     "exposure-index": r_exposure_index,
@@ -950,6 +1028,9 @@ RENDERERS: dict[str, Callable] = {
     "findings": r_findings,
     "recommendations": r_recommendations,
     "conclusion": r_conclusion,
+    "appetite-breaches": r_appetite_breaches,
+    "decisions-needed": r_decisions_needed,
+    "control-evidence": r_control_evidence,
 }
 
 

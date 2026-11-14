@@ -25,3 +25,4 @@ from app.models.admin_audit_log import AdminAuditLog
 from app.models.api_error_log import ApiErrorLog
 from app.models.payment import Payment
 from app.models.dashboard_brief import DashboardBrief
+from app.models.report_draft import ReportDraft

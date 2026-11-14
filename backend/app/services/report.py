@@ -160,6 +160,10 @@ class RiskRow:
     mitigation_plan:          str
     # ── Correlation (matches the dashboard's category keys exactly) ──────────
     raw_category:             str = ""
+    # ── Pulse UI report sections (UI step 7) ─────────────────────────────────
+    title:                    str = ""          # migration 063, blank on older risks
+    mitigation_status:        str = "Open"
+    threshold:                float | None = None  # appetite threshold for this risk's category
 
 
 @dataclass
@@ -213,6 +217,7 @@ async def _fetch_risks(db: AsyncSession, tenant_id: UUID) -> list[RiskRow]:
     for r in result.scalars():
         _category = _normalize_category(str(r.category or "") or None)
         _residual  = _to_float(r.residual)  # type: ignore[arg-type]
+        _threshold = threshold_for(str(r.category) if r.category is not None else None, _thresholds)
         rows.append(RiskRow(
             id=str(r.id or ""),
             category=_category,
@@ -236,7 +241,7 @@ async def _fetch_risks(db: AsyncSession, tenant_id: UUID) -> list[RiskRow]:
             # governance
             appetite_status=_compute_appetite_status(
                 float(r.residual) if r.residual is not None else None,  # type: ignore[arg-type]
-                threshold_for(str(r.category) if r.category is not None else None, _thresholds),
+                _threshold,
             ),
             linked_decision=str(r.linked_decision or ""),
             linked_decision_at=_parse_date(r.linked_decision_at),         # type: ignore[arg-type]
@@ -246,6 +251,9 @@ async def _fetch_risks(db: AsyncSession, tenant_id: UUID) -> list[RiskRow]:
             control_assertion_source=str(r.control_assertion_source or ""),
             mitigation_plan=str(r.mitigation_plan or ""),
             raw_category=str(r.category or "Uncategorised"),
+            title=str(r.title or "").strip(),
+            mitigation_status=str(r.mitigation_status or "Open"),
+            threshold=_threshold,
         ))
     return rows
 
@@ -1683,6 +1691,197 @@ def compute_risk_incident_correlation(ctx: ReportContext) -> dict:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# PULSE UI SECTIONS (UI step 7): appetite breaches, decisions needed, control evidence
+# Each reads the single definitions in services/risk_status.py, the same ones the
+# register, Home and the brief use, so a report cannot disagree with them.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+SECTION_ROW_CAP = 25
+
+
+def _whole(v: float) -> int:
+    """Whole-number display, half away from zero (Python round() rounds half to even)."""
+    return int(v + 0.5) if v >= 0 else -int(-v + 0.5)
+
+
+def _risk_name(r: RiskRow) -> str:
+    """Short title, or the start of the description for risks logged before titles existed."""
+    return r.title or r.desc[:80]
+
+
+def _plural(n: int, one: str, many: str) -> str:
+    return f"{n} {one if n == 1 else many}"
+
+
+def compute_appetite_breaches(ctx: ReportContext) -> dict:
+    """Risks whose residual is above their category's appetite threshold, largest gap first."""
+    risks = ctx.all_risks
+    thresholds_configured = any(r.threshold is not None for r in risks)
+    breaches = sorted(
+        (r for r in risks if r.appetite_status == "Exceeds" and r.threshold is not None),
+        key=lambda r: (-(r.residual - (r.threshold or 0.0)), -r.residual, r.id),
+    )
+    near = sum(1 for r in risks if r.appetite_status == "Near")
+    rows = [
+        {
+            "id":          r.id,
+            "title":       _risk_name(r),
+            "category":    r.category,
+            "owner":       r.owner or None,
+            "level":       r.level,
+            "level_index": r.level_index,
+            "residual":    _whole(r.residual),
+            "threshold":   _whole(r.threshold or 0.0),
+            "over_by":     _whole(r.residual - (r.threshold or 0.0)),
+        }
+        for r in breaches[:SECTION_ROW_CAP]
+    ]
+    if not risks:
+        narrative = "The register holds no active risks."
+    elif not thresholds_configured:
+        narrative = ("No appetite thresholds are set, so no risk can be measured against appetite. "
+                     "Set them in Settings, Risk Appetite.")
+    elif not breaches:
+        narrative = "No risk is outside appetite."
+        if near:
+            narrative += f" {_plural(near, 'risk is', 'risks are')} near its threshold."
+    else:
+        narrative = (f"{_plural(len(breaches), 'risk sits', 'risks sit')} above the appetite threshold "
+                     f"for its category.")
+        if near:
+            narrative += f" {_plural(near, 'more is', 'more are')} near the threshold."
+    return {
+        "thresholds_configured": thresholds_configured,
+        "count":          len(breaches),
+        "near_count":     near,
+        "risks_total":    len(risks),
+        "risks":          rows,
+        "rows_truncated": len(breaches) > SECTION_ROW_CAP,
+        "narrative":      narrative,
+    }
+
+
+def compute_decisions_needed(ctx: ReportContext) -> dict:
+    """Risks that matter (elevated or outside appetite) with no recorded decision."""
+    from app.services.risk_status import is_undecided
+
+    undecided = [
+        r for r in ctx.all_risks
+        if is_undecided(
+            is_elevated=r.is_elevated,
+            appetite=(r.appetite_status or "").lower() or None,
+            linked_decision=r.linked_decision,
+            mitigation_status=r.mitigation_status,
+        )
+    ]
+    undecided.sort(key=lambda r: (r.appetite_status != "Exceeds", -r.level_index, -r.residual, r.id))
+    rows = [
+        {
+            "id":          r.id,
+            "title":       _risk_name(r),
+            "owner":       r.owner or None,
+            "level":       r.level,
+            "level_index": r.level_index,
+            "residual":    _whole(r.residual),
+            "reason":      "Outside appetite" if r.appetite_status == "Exceeds" else f"{r.level or 'Elevated'} band",
+        }
+        for r in undecided[:SECTION_ROW_CAP]
+    ]
+    if not ctx.all_risks:
+        narrative = "The register holds no active risks."
+    elif not undecided:
+        narrative = "Every elevated or out-of-appetite risk has a recorded decision."
+    else:
+        narrative = (f"{_plural(len(undecided), 'risk that is', 'risks that are')} elevated or outside appetite "
+                     f"{'has' if len(undecided) == 1 else 'have'} no recorded decision: no linked decision "
+                     f"and not accepted.")
+    return {
+        "count":          len(undecided),
+        "risks_total":    len(ctx.all_risks),
+        "risks":          rows,
+        "rows_truncated": len(undecided) > SECTION_ROW_CAP,
+        "narrative":      narrative,
+    }
+
+
+def compute_control_evidence(ctx: ReportContext) -> dict:
+    """How many rated controls are evidenced, and which are not and why."""
+    from app.services.risk_status import (
+        ce_label, has_recent_test, is_contradicted, is_evidenced, is_independent,
+    )
+
+    today    = date.today()
+    mc       = ctx.matrix_config
+    ce_scale = int(mc.ce_scale) if mc is not None else 5  # type: ignore[arg-type]
+    labels: dict[str, str] = dict(mc.ce_labels or {}) if mc is not None else {}  # type: ignore[arg-type]
+
+    # Materialised: linked to an incident reported in the period (same rule as the correlation block).
+    latest_inc: dict[str, IncidentRow] = {}
+    if ctx.incidents_enabled:
+        for inc in ctx.incidents:
+            link = (inc.linked_risk_id or "").strip()
+            if not link:
+                continue
+            prev = latest_inc.get(link)
+            if prev is None or (inc.reported_at or date.min) > (prev.reported_at or date.min):
+                latest_inc[link] = inc
+
+    rated = [r for r in ctx.all_risks if r.control_effectiveness is not None]
+    evidenced = 0
+    contradicted = 0
+    gaps: list[dict] = []
+    for r in rated:
+        ok  = is_evidenced(control_last_tested=r.control_last_tested,
+                           control_assertion_source=r.control_assertion_source, today=today)
+        inc = latest_inc.get(r.id)
+        bad = is_contradicted(r.control_effectiveness, ce_scale, inc is not None)
+        evidenced += 1 if ok else 0
+        contradicted += 1 if bad else 0
+        if ok and not bad:
+            continue
+        reasons: list[str] = []
+        if bad and inc is not None:
+            reasons.append(f"Contradicted by {inc.id}")
+        if not has_recent_test(r.control_last_tested, today):
+            reasons.append("No test date" if r.control_last_tested is None else "Not tested in the last 12 months")
+        if not is_independent(r.control_assertion_source):
+            reasons.append("Self-assessed" if r.control_assertion_source.strip() else "No assertion source")
+        gaps.append({
+            "id":           r.id,
+            "title":        _risk_name(r),
+            "owner":        r.owner or None,
+            "rating":       ce_label(r.control_effectiveness, labels),
+            "rating_level": r.control_effectiveness,
+            "residual":     _whole(r.residual),
+            "contradicted": bad,
+            "reasons":      reasons,
+        })
+    gaps.sort(key=lambda g: (not g["contradicted"], -g["residual"], g["id"]))
+
+    n = len(rated)
+    if not ctx.all_risks:
+        narrative = "The register holds no active risks."
+    elif not n:
+        narrative = "No control has been rated yet, so there is no control evidence to report."
+    else:
+        narrative = (f"{evidenced} of {n} rated controls are evidenced: tested in the last 12 months "
+                     f"and asserted by someone other than the risk owner.")
+        if contradicted:
+            narrative += (f" {_plural(contradicted, 'rating was', 'ratings were')} contradicted by an incident "
+                          f"in the period.")
+    return {
+        "rated":          n,
+        "unrated":        len(ctx.all_risks) - n,
+        "evidenced":      evidenced,
+        "contradicted":   contradicted,
+        "ce_scale":       ce_scale,
+        "gaps":           gaps[:SECTION_ROW_CAP],
+        "rows_truncated": len(gaps) > SECTION_ROW_CAP,
+        "narrative":      narrative,
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # BLOCK REGISTRY
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -1709,6 +1908,9 @@ BLOCK_REGISTRY: dict[str, Any] = {
     "methodology":         compute_methodology,
     "risk-heat-map":       compute_risk_heat_map,
     "risk-incident-correlation": compute_risk_incident_correlation,
+    "appetite-breaches":   compute_appetite_breaches,
+    "decisions-needed":    compute_decisions_needed,
+    "control-evidence":    compute_control_evidence,
 }
 
 
@@ -1903,3 +2105,64 @@ async def save_report_settings(db: AsyncSession, tenant_id: UUID, settings: dict
     )
     await db.execute(stmt)
     await db.flush()
+
+
+# ── Draft helpers (UI step 7, migration 065) ──────────────────────────────────
+
+def _clean_draft(payload: dict) -> dict:
+    """Keep only known sections, once each, and AI text and review marks for those sections."""
+    blocks = list(dict.fromkeys(b for b in payload.get("blocks", []) if b in BLOCK_REGISTRY))
+    kept = set(blocks)
+    ai_data = {k: v for k, v in (payload.get("ai_data") or {}).items() if k in kept and v}
+    reviewed = [k for k in dict.fromkeys(payload.get("ai_reviewed") or []) if k in ai_data]
+    return {**payload, "blocks": blocks, "ai_data": ai_data, "ai_reviewed": reviewed}
+
+
+async def get_draft(db: AsyncSession, tenant_id: UUID, account_id: UUID) -> dict | None:
+    from app.models.report_draft import ReportDraft
+    result = await db.execute(
+        select(ReportDraft).where(
+            ReportDraft.tenant_id == tenant_id,
+            ReportDraft.account_id == account_id,
+        )
+    )
+    row = result.scalar_one_or_none()
+    if row is None:
+        return None
+    return {
+        **_clean_draft(dict(row.payload or {})),  # type: ignore[arg-type]
+        "updated_at": row.updated_at.isoformat() if row.updated_at is not None else "",  # type: ignore[union-attr]
+    }
+
+
+async def save_draft(db: AsyncSession, tenant_id: UUID, account_id: UUID, payload: dict) -> dict:
+    """Upsert the caller's draft. A repeat save overwrites; it never creates a second row."""
+    from app.models.report_draft import ReportDraft
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+    clean = _clean_draft(payload)
+    now = datetime.now(timezone.utc)
+    stmt = (
+        pg_insert(ReportDraft)
+        .values(tenant_id=tenant_id, account_id=account_id, payload=clean, updated_at=now)
+        .on_conflict_do_update(
+            constraint="uq_report_drafts_tenant_account",
+            set_={"payload": clean, "updated_at": now},
+        )
+    )
+    await db.execute(stmt)
+    await db.flush()
+    return {**clean, "updated_at": now.isoformat()}
+
+
+async def delete_draft(db: AsyncSession, tenant_id: UUID, account_id: UUID) -> bool:
+    from app.models.report_draft import ReportDraft
+    from sqlalchemy import delete
+    result = await db.execute(
+        delete(ReportDraft).where(
+            ReportDraft.tenant_id == tenant_id,
+            ReportDraft.account_id == account_id,
+        )
+    )
+    await db.flush()
+    return bool(result.rowcount)  # type: ignore[attr-defined]

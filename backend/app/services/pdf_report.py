@@ -2075,6 +2075,111 @@ def _render_risk_heat_map(data: dict, _ai: str | None) -> list:
     return out
 
 
+# ── Pulse UI sections (UI step 7) ──────────────────────────────────────────────
+
+def _section_table(header: list[str], rows: list[list[Any]], widths_mm: list[float],
+                   center_cols: tuple[int, ...] = ()) -> Table:
+    """Navy-header zebra table shared by the three UI step 7 sections."""
+    tbl = Table([header] + rows, colWidths=[w * mm for w in widths_mm], repeatRows=1)
+    style = [
+        ("BACKGROUND",    (0, 0), (-1, 0), NAVY),
+        ("TEXTCOLOR",     (0, 0), (-1, 0), WHITE),
+        ("FONTNAME",      (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE",      (0, 0), (-1, -1), 8),
+        ("ROWBACKGROUNDS",(0, 1), (-1, -1), [WHITE, LIGHT]),
+        ("GRID",          (0, 0), (-1, -1), 0.25, BORDER),
+        ("TOPPADDING",    (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 6),
+        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+    ]
+    for c in center_cols:
+        style.append(("ALIGN", (c, 0), (c, -1), "CENTER"))
+    tbl.setStyle(TableStyle(style))
+    return tbl
+
+
+def _truncated_note(data: dict) -> list:
+    if not data.get("rows_truncated"):
+        return []
+    return [Spacer(1, 2 * mm), Paragraph(
+        "Showing the first 25. The full list is in the Risk Register.", _S["narrative"])]
+
+
+def _risk_cell(r: dict) -> Paragraph:
+    return Paragraph(f"<b>{_esc(r.get('id'))}</b>  {_esc(r.get('title'))}", _S["body"])
+
+
+def _render_appetite_breaches(data: dict, ai_text: str | None) -> list:
+    out = _block_header(_LABELS["appetite-breaches"])
+    risks = data.get("risks") or []
+    if risks:
+        rows = [
+            [
+                _risk_cell(r),
+                Paragraph(_esc(r.get("owner") or "Unassigned"), _S["body"]),
+                _level_badge_cell(str(r.get("level") or ""), r.get("level_index"), 22 * mm),
+                str(r.get("residual", "")),
+                str(r.get("threshold", "")),
+                f"+{r.get('over_by', 0)}",
+            ]
+            for r in risks
+        ]
+        out.append(_section_table(["Risk", "Owner", "Level", "Residual", "Appetite", "Over by"],
+                                  rows, [70, 34, 24, 16, 16, 14], center_cols=(3, 4, 5)))
+        out.extend(_truncated_note(data))
+    out.extend(_narrative(ai_text or _esc(data.get("narrative"))))
+    return out
+
+
+def _render_decisions_needed(data: dict, ai_text: str | None) -> list:
+    out = _block_header(_LABELS["decisions-needed"])
+    risks = data.get("risks") or []
+    if risks:
+        rows = [
+            [
+                _risk_cell(r),
+                Paragraph(_esc(r.get("owner") or "Unassigned"), _S["body"]),
+                _level_badge_cell(str(r.get("level") or ""), r.get("level_index"), 22 * mm),
+                str(r.get("residual", "")),
+                Paragraph(_esc(r.get("reason")), _S["body"]),
+            ]
+            for r in risks
+        ]
+        out.append(_section_table(["Risk", "Owner", "Level", "Residual", "Why it needs a decision"],
+                                  rows, [68, 34, 24, 16, 32], center_cols=(3,)))
+        out.extend(_truncated_note(data))
+    out.extend(_narrative(ai_text or _esc(data.get("narrative"))))
+    return out
+
+
+def _render_control_evidence(data: dict, ai_text: str | None) -> list:
+    out = _block_header(_LABELS["control-evidence"])
+    if data.get("rated"):
+        kpis = [
+            {"label": "Rated controls", "value": data.get("rated", 0),        "color": "#1F2854"},
+            {"label": "Evidenced",      "value": data.get("evidenced", 0),    "color": "#10b981"},
+            {"label": "Contradicted",   "value": data.get("contradicted", 0), "color": "#ef4444"},
+        ]
+        out.append(_kpi_table(kpis, col_width=56 * mm))
+        gaps = data.get("gaps") or []
+        if gaps:
+            out.append(Spacer(1, 3 * mm))
+            rows = [
+                [
+                    _risk_cell(g),
+                    Paragraph(_esc(g.get("owner") or "Unassigned"), _S["body"]),
+                    Paragraph(_esc(g.get("rating")), _S["body"]),
+                    Paragraph(_esc(", ".join(g.get("reasons") or [])), _S["body"]),
+                ]
+                for g in gaps
+            ]
+            out.append(_section_table(["Risk", "Owner", "Rating", "Gap"], rows, [66, 32, 24, 52]))
+            out.extend(_truncated_note(data))
+    out.extend(_narrative(ai_text or _esc(data.get("narrative"))))
+    return out
+
+
 _RENDERERS: dict[str, Any] = {
     "exposure-index":       _render_exposure_index,
     "risk-snapshot":        _render_risk_snapshot,
@@ -2098,6 +2203,9 @@ _RENDERERS: dict[str, Any] = {
     "methodology":          _render_methodology,
     "risk-heat-map":        _render_risk_heat_map,
     "risk-incident-correlation": _render_risk_incident_correlation,
+    "appetite-breaches":    _render_appetite_breaches,
+    "decisions-needed":     _render_decisions_needed,
+    "control-evidence":     _render_control_evidence,
 }
 
 _LABELS: dict[str, str] = {
@@ -2124,6 +2232,9 @@ _LABELS: dict[str, str] = {
     "methodology":          "Methodology",
     "risk-heat-map":        "Risk Heat Map",
     "risk-incident-correlation": "Risk &amp; Incident Correlation",
+    "appetite-breaches":    "Risks Outside Appetite",
+    "decisions-needed":     "Decisions Needed",
+    "control-evidence":     "Control Evidence",
 }
 
 
