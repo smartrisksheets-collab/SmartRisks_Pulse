@@ -3,6 +3,34 @@
 Plain English record of every significant decision made during the build, who raised it, what the options were, and what was chosen and why.
  
 ---
+
+## DECISION INDEX
+
+One line per decision, newest first. Started November 16, 2026. Decisions before Session 29 are in the log below, by session.
+
+- 2026-11-16: Changes are delivered as patches only. Claude does not commit or push.
+- 2026-11-16: Ask Pulse keeps action words (add, new, change, edit, update, set) as search terms.
+- 2026-11-16: On 5-band matrices the top two bands (Critical, Extreme) escalate in AI status.
+- 2026-11-16: AI insight status follows the workspace matrix by band position, never band names.
+- 2026-11-16: HELP_REPORT_EMAIL defaults to info@smartrisksheets.com in every environment, blanked in tests.
+- 2026-11-16: The email address is not shown in the profile menus.
+- 2026-11-15: The Home greeting names the organisation in bold, falling back to the workspace name.
+- 2026-11-15: PRO is a display label for the PAID plan, with no migration.
+- 2026-11-14: Report export, email and template writes need print_reports.
+- 2026-11-14: One saved report draft per user per workspace (migration 065).
+- 2026-11-14: Report Builder built as the full pack.
+- 2026-11-14: Incidents keep 3 impact confidence values, and suggested risks are category based.
+- 2026-11-14: Recycle bin restore and purge need manage_risks or manage_incidents.
+- 2026-11-13: Residual and appetite are shown as whole numbers, rounded in the backend.
+- 2026-11-13: Risks get a title column (migration 063).
+- 2026-11-13: Control outcome is one merged list with Held and Not known.
+- 2026-11-13: One incident status line, New to Closed (migration 064).
+- 2026-11-13: Treatment words keep their stored values.
+- 2026-11-13: Home takes /, the dashboard moves to /analytics.
+- 2026-11-13: The Home greeting sky fade is the only allowed gradient.
+- 2026-11-13: Pulse UI tokens go into index.css, not a separate stylesheet.
+
+---
  
 ## Session 1 and 2: Scaffold and Migrations
  
@@ -1996,3 +2024,103 @@ Why: The brief tells readers where attention is needed now, which is the exposur
 Raised by: The brief matched the literal words "High" and "Critical", so workspaces that renamed their bands, or used the fifth band, got wrong or zero counts.
 Chosen: Elevated means the top 2 bands (`max(band_count - 1, 2)`, the existing `is_elevated` rule) and Critical means the top band. Display text uses the workspace labels. Email badge colours come from a backend `tone` field. Snapshot band crossings compare band positions recomputed from stored residuals.
 Why: Band names are user-configurable in the matrix settings. In a 5-band workspace band 3 is not elevated; kept as is pending partner review, with `elevated_min_index` as the single place to change it.
+
+---
+
+## Session 29: November 13 to 14, 2026: Pulse UI Redesign Rollout
+
+**Decision: Pulse UI tokens go into index.css, not a separate stylesheet (November 13, 2026)**
+Raised by: The partner's `pulse-tokens.css` redefines `--navy`, `--text` and `--text-secondary` on `:root`.
+Chosen: The pl- tokens and components are added to `index.css` as a new section, mapped onto the workspace theme variables.
+Why: Loading the file as is would break dark mode and workspace theming. `index.css` stays the single CSS source.
+
+**Decision: The Home greeting sky fade is the only allowed gradient (November 13, 2026)**
+Chosen: The Home greeting may use the sky fade from the pack. Solid colors everywhere else.
+Why: It is a deliberate part of the Home design, and keeping it as a named exception stops gradients spreading elsewhere.
+
+**Decision: Home takes `/`, the dashboard moves to `/analytics` (November 11 and 13, 2026)**
+Chosen: Home is the landing page with next actions. The unified dashboard becomes the Analytics page with five tabs.
+Why: Users need a page that tells them what to do first, with the analysis one click away.
+
+**Decision: Treatment words keep their stored values (November 13, 2026)**
+Chosen: Treatment stays a per-workspace lookup (`services/lookup.py`). The redesign shows the stored values.
+Why: Workspaces already configure their own treatments, and renaming them would change existing data.
+
+**Decision: One incident status line (November 13, 2026)**
+Chosen: New, Triaged, Investigating, Remediating, Resolved, Closed. Migration 064 maps Open to Triaged, In Progress to Investigating and Under Review to Remediating.
+Why: `review_status` was stored but never read by the backend. One status line removes the second, unused state.
+
+**Decision: Control outcome is one merged list with Held and Not known (November 13, 2026)**
+Chosen: The existing outcomes plus Held and Not known.
+Why: The pack uses both values. `control_outcome` is not used in backend logic, so merging changes no behaviour.
+
+**Decision: Risks get a title column (November 13, 2026)**
+Chosen: Migration 063 adds `risks.title`.
+Why: The register and panel show a short title, and there was no column for it.
+
+**Decision: Residual and appetite are shown as whole numbers (November 13, 2026)**
+Chosen: The backend rounds half up with `int(v + 0.5)` for display.
+Why: Derived values are formatted in the backend, so every surface shows the same number.
+
+**Decision: Recycle bin restore and purge need a manage permission (November 13 to 14, 2026)**
+Raised by: Security gap found while building the Incidents step.
+Chosen: Restore and purge need `manage_risks` or `manage_incidents`.
+Why: Restoring or permanently deleting records must need the same rights as editing them.
+
+**Decision: Incidents keep 3 impact confidence values, and suggested risks are category based (November 13 to 14, 2026)**
+Chosen: The 3 existing `impact_confidence` values stay. The suggested linked risk comes from matching categories, with no AI call.
+Why: Existing data stays valid, and a rule-based suggestion is predictable and free.
+
+**Decision: Report Builder built as the full pack (November 14, 2026)**
+Raised by: User choice between a partial and a full rebuild.
+Chosen: Full pack: one screen, three new sections (appetite-breaches, decisions-needed, control-evidence) in PDF and PPTX, and saved drafts.
+Why: The user wanted the complete screen in one step.
+
+**Decision: One saved report draft per user per workspace (November 14, 2026)**
+Chosen: Migration 065 `report_drafts`, unique on tenant and account, with `GET`, `PUT` and `DELETE /reports/draft`.
+Why: A single draft is simple to resume and cannot pile up.
+
+**Decision: Report export, email and template writes need print_reports (November 14, 2026)**
+Raised by: Security gap found while building the Report Builder step.
+Chosen: Those routes now check `print_reports`.
+Why: Exporting and emailing reports must follow the print_reports permission on every route.
+
+---
+
+## Session 30: November 15 to 16, 2026: Partner UI Fixes, Ask Pulse, AI Status
+
+**Decision: PRO is a display label only (November 15, 2026)**
+Chosen: The plan value `PAID` is shown as PRO through `planLabel()` in `src/utils/constants.ts`. The stored value is unchanged, with no migration.
+Why: Partner request. A label change carries no data risk.
+
+**Decision: The Home greeting names the organisation in bold (November 15, 2026)**
+Chosen: "<org>'s risk posture is <status>", from `workspace_settings.organization`, falling back to the workspace name.
+Why: Partner request. The fallback means the greeting is never empty.
+
+**Decision: The email address is not shown in the profile menus (November 16, 2026)**
+Chosen: The sidebar profile and topbar menu show `first_name`, or "My account".
+Why: Partner request.
+
+**Decision: HELP_REPORT_EMAIL defaults to info@smartrisksheets.com in every environment (November 16, 2026)**
+Raised by: The Ask Pulse patch sends a weekly help report email.
+Chosen: Keep the default in all environments. Tests blank it in `backend/conftest.py`.
+Why: Only the partner uses staging, so staging emails are not a problem. Tests never send real email.
+
+**Decision: AI insight status follows the workspace matrix (November 16, 2026)**
+Chosen: `risk_status.ai_status` decides Escalate, Monitor, Review and Stable from band position and the matrix's own band minimums. Band names are never matched.
+Why: The old rule used fixed thresholds (17 and 10) and the words "Critical" and "High", so it was wrong on other matrix sizes and renamed bands. The default 4-band 5x5 result is unchanged.
+
+**Decision: On 5-band matrices the top two bands escalate (November 16, 2026)**
+Raised by: With "top band only", Critical (17 to 20) dropped to Monitor on 5-band workspaces.
+Options: Top band only (Extreme), or top two bands (Critical and Extreme).
+Chosen: Top two bands. High monitors and Medium reviews. Set in `ai_escalate_index` only.
+Why: Critical risks escalated before the change, so the other option would have been a silent downgrade.
+
+**Decision: Ask Pulse keeps action words in searches (November 16, 2026)**
+Raised by: The user found that "add" returned nothing and that short questions did not work.
+Chosen: add, new, change, edit, update and set are search terms with synonyms, not filler.
+Why: The action is often the whole question, and it lifts the right entry above general ones.
+
+**Decision: Changes are delivered as patches only (November 16, 2026)**
+Chosen: Claude builds patches on staging and does not commit or push. The user applies, tests and pushes.
+Why: User rule. The user keeps control of what reaches staging.

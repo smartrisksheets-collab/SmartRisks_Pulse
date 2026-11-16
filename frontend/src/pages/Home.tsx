@@ -7,6 +7,7 @@ import { Link } from 'react-router-dom';
 import { Compass } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import { useHome } from '../hooks/useHome';
+import { useSettings } from '../hooks/useSettings';
 import { useCanDo } from '../utils/permissions';
 import { healthChip } from '../components/analytics/format';
 import type { HealthStatus } from '../types/dashboard';
@@ -17,12 +18,20 @@ import Tour from '../components/home/Tour';
 import SetupView from '../components/home/SetupView';
 import { TOUR_STEPS, dayPart, incidentPath, initialsOf, riskPath, setupProgress } from '../components/home/links';
 
-function Verdict({ verdict, workspace, status }: { verdict: string; workspace: string; status: string }) {
+// The verdict sentence comes from the backend as "<workspace name> is <status>. ...".
+// The hero reads it as "<organization>'s risk posture is <status>." with the opening in bold.
+// Organization comes from Settings and falls back to the workspace name when it is blank.
+function Verdict({ verdict, workspace, org, status }: { verdict: string; workspace: string; org: string; status: string }) {
   const head = `${workspace} is ${status}.`;
-  if (!status || !verdict.startsWith(head)) return <p className="pl-hero-text">{verdict}</p>;
+  if (!status || !verdict.startsWith(head)) {
+    const text = workspace && verdict.startsWith(workspace) ? org + verdict.slice(workspace.length) : verdict;
+    return <p className="pl-hero-text">{text}</p>;
+  }
   return (
     <p className="pl-hero-text">
-      {workspace} is <span className={`pl-chip ${healthChip(status as HealthStatus)} pl-hero-chip`}>{status}</span>.
+      <strong>
+        {org}'s risk posture is <span className={`pl-chip ${healthChip(status as HealthStatus)} pl-hero-chip`}>{status}</span>.
+      </strong>
       {verdict.slice(head.length)}
     </p>
   );
@@ -40,6 +49,7 @@ export default function Home() {
     users: useCanDo('manage_users'),
   };
   const { data, isLoading, isError, refetch } = useHome();
+  const { query: settingsQuery } = useSettings();
 
   // Re-reads the clock once a minute so the greeting and sky follow the time of day.
   const [now, setNow] = useState(() => new Date());
@@ -111,7 +121,12 @@ export default function Home() {
   return (
     <div className="pl-app pl-an-page">
       <SkyHero part={part} initials={initials} dateLine={dateLine} greeting={greeting} tourOn={onStep('sec-verdict')}>
-        <Verdict verdict={data.verdict} workspace={data.workspace} status={data.status} />
+        <Verdict
+          verdict={data.verdict}
+          workspace={data.workspace}
+          org={settingsQuery.data?.organization?.trim() || data.workspace}
+          status={data.status}
+        />
         <div className="pl-inline">
           <button type="button" className="pl-btn pl-btn-primary" onClick={() => setTour(0)}>
             <Compass size={16} aria-hidden="true" />Take the 60-second tour

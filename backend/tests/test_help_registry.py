@@ -16,7 +16,8 @@ def _entries(**over: object) -> dict[str, str]:
 
 def test_ids_are_unique() -> None:
     ids = [e.id for e in build_help(MatrixConfigResponse(**_BASE))]
-    assert len(ids) == len(set(ids)) == 18
+    assert len(ids) == len(set(ids))
+    assert len(ids) >= 45  # floor: catches entries removed by accident
 
 
 def test_control_steps_follow_scale() -> None:

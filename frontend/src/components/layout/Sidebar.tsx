@@ -3,6 +3,9 @@ import { useUIStore } from '../../store/uiStore';
 import { useAuthStore } from '../../store/authStore';
 import { useAuth } from '../../hooks/useAuth';
 import { useSettings } from '../../hooks/useSettings';
+import { useHome } from '../../hooks/useHome';
+import { planLabel, PROFILE_NAME_FALLBACK } from '../../utils/constants';
+import { initialsOf } from '../home/links';
 import { useSettingsStore } from '../../store/settingsStore';
 import { roleLabel } from '../../utils/roles';
 // useCanDo not needed here — claims used directly in nav filter
@@ -47,8 +50,10 @@ export default function Sidebar() {
   const workNav  = visibleNav.filter(({ path }) => !ADMIN_PATHS.has(path));
   const adminNav = visibleNav.filter(({ path }) => ADMIN_PATHS.has(path));
   const { logout } = useAuth();
-  const email    = claims?.email ?? '';
-  const initials = email ? email.slice(0, 2).toUpperCase() : '??';
+  // The profile shows the account name only. The email is never rendered on screen.
+  const { data: home } = useHome();
+  const profileName = home?.first_name || PROFILE_NAME_FALLBACK;
+  const initials    = initialsOf(home?.first_name ?? claims?.email);
 
   const workspaceName = useAuthStore((s) =>
     s.workspaces.find((w) => w.tenant_id === s.claims?.active_tenant_id)?.name ?? 'SmartRisk'
@@ -135,12 +140,12 @@ export default function Sidebar() {
         </div>
 
         <div className="sidebar-foot">
-          <div className="sidebar-profile" title={email}>
+          <div className="sidebar-profile" title={profileName}>
             <span className="pl-avatar" aria-hidden="true">{initials}</span>
             <div className="sidebar-profile-text">
-              <span className="sidebar-profile-name">{email}</span>
+              <span className="sidebar-profile-name">{profileName}</span>
               <span className="sidebar-profile-meta">
-                {roleLabel(claims?.role) || 'Analyst'} · {claims?.plan ?? 'Trial'}
+                {roleLabel(claims?.role) || 'Analyst'} · {planLabel(claims?.plan)}
               </span>
             </div>
           </div>

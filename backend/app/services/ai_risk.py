@@ -16,7 +16,8 @@ from app.models.audit_log import AuditLog
 from app.schemas.risk import AIInsightRequest, AIInsightResponse
 from app.services.settings import get_ai_config
 from app.services.matrix_config import get_config as get_matrix_config
-from app.services.risk_status import ce_label
+from app.schemas.matrix_config import MatrixConfigResponse
+from app.services.risk_status import ai_status, ce_label
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,7 @@ _CONFIDENCE_LINES = {
     'balanced':     'Be practical. Recommend realistic, achievable corrective actions.',
     'assertive':    'Be direct. Recommend bold, decisive corrective actions.',
 }
+AI_CONFIDENCE_LEVELS: tuple[str, ...] = tuple(_CONFIDENCE_LINES)
 
 _BASE_SYSTEM = (
     'You are SmartRisk AI. Write a single corrective action insight for a risk '
@@ -44,17 +46,6 @@ def _build_system(policy: str) -> str:
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
-
-def _derive_status(level: str | None, residual: float) -> str:
-    lvl = (level or '').lower()
-    if lvl == 'critical' or residual >= 17:
-        return 'Escalate'
-    if lvl == 'high' or residual >= 10:
-        return 'Monitor'
-    if lvl == 'medium':
-        return 'Review'
-    return 'Stable'
-
 
 def _enforce_word_count(text: str) -> str:
     # Strip markdown artifacts
@@ -122,6 +113,7 @@ async def _call_api(
     system: str,
     ce_scale: int,
     ce_labels: dict[str, str],
+    matrix: MatrixConfigResponse | None,
 ) -> tuple[str, str | None]:
     """Returns (risk_id, insight_text | None). None means the call failed."""
     async with sem:
@@ -134,7 +126,8 @@ async def _call_api(
             )
             raw     = message.content[0].text.strip()
             insight = _enforce_word_count(raw)
-            status  = _derive_status(risk.level, float(risk.residual or 0)) # type: ignore
+            residual = float(risk.residual) if risk.residual is not None else None  # type: ignore[arg-type]
+            status  = ai_status(risk.level_index, residual, matrix, risk.level)  # type: ignore[arg-type]
             conf_label = confidence.capitalize()
             return risk.id, f'{insight}\nConfidence: {conf_label}\nStatus: {status}'
         except Exception as exc:
@@ -197,7 +190,7 @@ async def generate_insights(
     sem    = asyncio.Semaphore(_CONCURRENCY)
 
     api_results: list[tuple[str, str | None]] = await asyncio.gather(
-        *[_call_api(client, sem, r, confidence, payload.notes, model, system, matrix.ce_scale, matrix.ce_labels)
+        *[_call_api(client, sem, r, confidence, payload.notes, model, system, matrix.ce_scale, matrix.ce_labels, matrix)
           for r in to_process]
     )
 

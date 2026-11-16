@@ -14,6 +14,7 @@ import MatrixSettings from "../components/settings/MatrixSettings";
 import ControlEffectivenessSettings from "../components/settings/ControlEffectivenessSettings";
 import AppetiteSettings from "../components/settings/AppetiteSettings";
 import IncidentSeveritySettings from "../components/settings/IncidentSeveritySettings";
+import { planLabel } from "../utils/constants";
 
 // ── AI Policy Builder — module-scope constants ───────────────────────────
 
@@ -783,7 +784,7 @@ function BillingTab() {
       <div className="row2">
         <div className="field">
           <label>Plan</label>
-          <input type="text" value={s.plan} disabled />
+          <input type="text" value={planLabel(s.plan)} disabled />
         </div>
         <div className="field">
           <label>Expires</label>

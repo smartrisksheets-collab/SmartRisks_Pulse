@@ -42,7 +42,7 @@ async def get_overview_stats(db: AsyncSession) -> AdminOverviewStats:
             func.count().filter(
                 and_(
                     Tenant.plan == "PAID",
-                    Tenant.payment_active == True,  # type: ignore[arg-type]
+                    Tenant.payment_active.is_(True),
                     Tenant.status == "ACTIVE",
                     or_(
                         Tenant.plan_expires_at.is_(None),

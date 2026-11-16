@@ -57,7 +57,7 @@ export default function TrendsTab({ data, hasRisk, hasIncident, goCorrelation }:
 
       <div className="pl-kpi-grid">
         {tiles.map(t => (
-          <div key={t.label} className="pl-stat">
+          <div key={t.label} className="pl-stat pl-stat-solid">
             <span className="pl-label">{t.label}</span>
             <span className="pl-metric-s">{t.value ?? '—'}</span>
             <Sparkline values={t.spark} label={`${t.label} over ${plural(pts.length, 'month')}`} />

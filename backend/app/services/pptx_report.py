@@ -899,7 +899,10 @@ def r_risk_incident_correlation(d: Deck, data, ai, label):
                    cell_colors={(i, 3): RED for i, m in enumerate(mrows[:TABLE_ROWS_PER_SLIDE]) if m.get("contradicted")})
         if urows:
             sl = d.content_slide("Incidents with no matching risk", f"Appendix · {label}")
-            cov = lambda c: "—" if c is None else ("Covered category, not linked" if c else "No covering risk")
+
+            def cov(c: bool | None) -> str:
+                return "—" if c is None else ("Covered category, not linked" if c else "No covering risk")
+
             rows = urows[:TABLE_ROWS_PER_SLIDE]
             _table(sl, MX, CONTENT_TOP, CONTENT_W, ["Incident", "Title", "Category", "Severity", "Reported", "Coverage"],
                    [[u.get("incident_id"), u.get("title"), u.get("category"), u.get("severity"),

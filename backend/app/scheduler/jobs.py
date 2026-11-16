@@ -97,6 +97,28 @@ async def job_recycle_purge() -> None:
         logger.exception("job_recycle_purge: help events purge failed")
 
 
+# ── job: Ask Pulse unanswered questions report ──────────────────────────────
+
+async def job_help_gaps_report() -> None:
+    """
+    Email the questions Ask Pulse could not answer in the last week.
+    Runs Mondays at 07:30 UTC. Skipped when no recipient is set or nothing went unanswered.
+    """
+    from app.core.config import settings
+    from app.services.ask_pulse import unanswered_questions
+    from app.services.email import send_help_gaps_email
+
+    if not settings.HELP_REPORT_EMAIL:
+        return
+    try:
+        async with AsyncSessionLocal() as db:
+            gaps = await unanswered_questions(db, settings.HELP_REPORT_DAYS)
+        if gaps:
+            send_help_gaps_email(settings.HELP_REPORT_EMAIL, gaps, settings.HELP_REPORT_DAYS)
+    except Exception:
+        logger.exception("job_help_gaps_report failed")
+
+
 # ── job: orphaned logo sweep ───────────────────────────────────────────────
 
 _ORPHAN_LOGO_SQL = text(

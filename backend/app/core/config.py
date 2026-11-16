@@ -61,6 +61,10 @@ class Settings(BaseSettings):
     # Recycle bin
     RECYCLE_BIN_TTL_DAYS: int = 30
 
+    # Ask Pulse: weekly email of questions help could not answer. Empty disables it.
+    HELP_REPORT_EMAIL: str = "info@smartrisksheets.com"
+    HELP_REPORT_DAYS: int = 7
+
     # Heartbeat
     PRESENCE_WINDOW_SECONDS: int = 110
 

@@ -1062,3 +1062,41 @@ def send_trial_expiry_reminder(
         "Trial expiry reminder sent | to=%s | workspace=%s | reminder=%d | days_remaining=%d",
         to, workspace_name, reminder_num, days_remaining,
     )
+
+# ── Ask Pulse content backlog ─────────────────────────────────────────────────
+
+def build_help_gaps_html(gaps: list, days: int) -> str:
+    """Weekly list of questions Ask Pulse could not answer. Query text is escaped."""
+    rows = "".join(
+        f'<tr><td style="padding:8px 10px;border-top:1px solid #e5e7eb;font-size:13px;color:#1e293b;">{_esc(g.query)}</td>'
+        f'<td style="padding:8px 10px;border-top:1px solid #e5e7eb;font-size:13px;text-align:right;">{g.searches}</td>'
+        f'<td style="padding:8px 10px;border-top:1px solid #e5e7eb;font-size:13px;text-align:right;">{g.emailed}</td>'
+        f'<td style="padding:8px 10px;border-top:1px solid #e5e7eb;font-size:13px;text-align:right;">{g.workspaces}</td></tr>'
+        for g in gaps
+    )
+    head = "".join(
+        f'<th style="padding:8px 10px;background:#1F2854;color:#fff;font-size:12px;text-align:{a};">{t}</th>'
+        for t, a in (("Question", "left"), ("Searches", "right"), ("Emailed", "right"), ("Workspaces", "right"))
+    )
+    return (
+        '<tr><td style="padding:32px 36px;">'
+        '<p style="font-size:15px;font-weight:700;color:#1e293b;margin:0 0 8px;">What users asked that Ask Pulse could not answer</p>'
+        f'<p style="font-size:13px;color:#475569;line-height:1.6;margin:0 0 18px;">The last {days} days, all workspaces, '
+        'most asked first. Each line is a help entry to write, or a keyword to add to an existing one.</p>'
+        f'<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;"><tr>{head}</tr>{rows}</table>'
+        '</td></tr>'
+    )
+
+
+def send_help_gaps_email(to: str, gaps: list, days: int) -> None:
+    _init()
+    if not settings.RESEND_FROM_EMAIL:
+        raise ValueError("RESEND_FROM_EMAIL is not configured")
+    params: resend.Emails.SendParams = {
+        "from":    settings.RESEND_FROM_EMAIL,
+        "to":      [to],
+        "subject": f"Ask Pulse: {len(gaps)} unanswered question{'s' if len(gaps) != 1 else ''} this week",
+        "html":    _ext_wrap("SmartRisk Pulse", build_help_gaps_html(gaps, days)),
+    }
+    resend.Emails.send(params)
+    logger.info("Help gaps email sent | to=%s | gaps=%d", to, len(gaps))

@@ -1085,7 +1085,7 @@ def compute_recommendations(ctx: ReportContext) -> dict:
                     "Assign owners and define control actions for each newly identified elevated risk. "
                     "Early intervention reduces the likelihood of further escalation."
                 ),
-                "completion_criterion": f"Each new elevated risk has an assigned owner and a documented treatment action.",
+                "completion_criterion": "Each new elevated risk has an assigned owner and a documented treatment action.",
             })
 
     # Open incidents

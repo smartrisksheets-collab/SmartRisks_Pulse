@@ -40,24 +40,24 @@ export default function IncidentsTab({ stats, isLoading, uncovered, currency, go
       </p>
 
       <div className="pl-kpi-grid">
-        <div className="pl-stat">
+        <div className="pl-stat pl-stat-solid">
           <span className="pl-label">Incident health</span>
           <span><span className="pl-metric-s">{totals.count > 0 ? health.score : '—'}</span> <span className="pl-meta">/ 100 · {health.label}</span></span>
           {health.flag && <span className="pl-caption">{health.flag}</span>}
         </div>
-        <div className="pl-stat">
+        <div className="pl-stat pl-stat-solid">
           <span className="pl-label">Met their target</span>
           <span><span className="pl-metric-s">{met}</span> <span className="pl-meta">of {res.breach_total}{metPct != null ? ` · ${metPct}%` : ''}</span></span>
           {res.flag && <span className="pl-caption">{res.flag}</span>}
         </div>
-        <div className="pl-stat">
+        <div className="pl-stat pl-stat-solid">
           <span className="pl-label">Time to resolve</span>
           <span><span className="pl-metric-s">{res.median_days ?? '—'}</span> <span className="pl-meta">days, median</span></span>
           <span className="pl-caption">
             {res.oldest_open_id ? `Oldest open: ${res.oldest_open_id}, ${plural(res.oldest_open_days ?? 0, 'day')}.` : 'No open incidents.'}
           </span>
         </div>
-        <div className="pl-stat">
+        <div className="pl-stat pl-stat-solid">
           <span className="pl-label">Estimated cost</span>
           <span className="pl-metric-s">{res.impact_count > 0 ? formatMoneyCompact(res.impact_total, currency) : '—'}</span>
           <span className="pl-caption">{res.impact_count} of {plural(res.impact_total_count, 'incident')} have a figure.</span>

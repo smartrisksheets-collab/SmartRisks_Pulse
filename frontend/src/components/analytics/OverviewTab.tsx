@@ -77,17 +77,17 @@ export default function OverviewTab({ data, currency, tabs, go }: Props) {
             </p>
           )}
           <div className="pl-an-stats">
-            <div className="pl-stat">
+            <div className="pl-stat pl-stat-solid">
               <span className="pl-label">Residual risk</span>
               <span className="pl-metric-s">{p.active_risks > 0 ? h.avg_residual : '—'}</span>
               <span className="pl-caption">average of {plural(p.active_risks, 'risk')}</span>
             </div>
-            <div className="pl-stat">
+            <div className="pl-stat pl-stat-solid">
               <span className="pl-label">Incident health</span>
               <span className="pl-metric-s">{h.incident_health_score ?? '—'}</span>
               <span className="pl-caption">{plural(p.open_incidents, 'open incident')}</span>
             </div>
-            <div className="pl-stat">
+            <div className="pl-stat pl-stat-solid">
               <span className="pl-label">Financial exposure</span>
               <span className="pl-metric-s">{h.financial_exposure > 0 ? formatMoneyCompact(h.financial_exposure, currency) : '—'}</span>
               <span className="pl-caption">{h.financial_quantified} of {plural(p.active_risks, 'risk')} quantified</span>

@@ -37,6 +37,7 @@ os.environ.setdefault("RESEND_FROM_EMAIL", "noreply@test.com")
 os.environ.setdefault("SUPABASE_URL", "https://test.supabase.co")
 os.environ.setdefault("SUPABASE_SERVICE_KEY", "test-service-key")
 os.environ.setdefault("SUPABASE_ANON_KEY", "test-anon-key")
+os.environ["HELP_REPORT_EMAIL"] = ""  # never send the weekly help-gaps email from tests
 
 import pytest
 import pytest_asyncio

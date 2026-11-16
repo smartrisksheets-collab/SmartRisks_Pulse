@@ -39,12 +39,16 @@ function AskPulsePalette({ entries, loading, perms, onClose, onNavigate }: Palet
     return () => clearTimeout(t);
   }, [query, loading, results.length]);
 
+  // First choice opens the answer, so the steps can be read in place.
+  // Choosing an open answer that has a page goes to that page.
   function choose(entry: HelpEntry) {
-    if (entry.route && canAct(entry, perms)) {
-      onNavigate(entry.route);
+    if (expanded === entry.id) {
+      if (entry.route && canAct(entry, perms)) onNavigate(entry.route);
+      else setExpanded(null);
       return;
     }
-    setExpanded(cur => (cur === entry.id ? null : entry.id));
+    setExpanded(entry.id);
+    logHelpEvent({ event: 'open', entry_id: entry.id });
   }
 
   function onKeyDown(e: ReactKeyboardEvent<HTMLInputElement>) {
@@ -101,11 +105,18 @@ function AskPulsePalette({ entries, loading, perms, onClose, onNavigate }: Palet
                     <span className="ask-row-group">{entry.group}</span>
                   </span>
                   <span className="ask-row-what">{entry.what}</span>
+                  {isOpen && (entry.steps ?? []).length > 0 && (
+                    <ol className="ask-row-steps">
+                      {(entry.steps ?? []).map((s, k) => <li key={k}>{withBold(s)}</li>)}
+                    </ol>
+                  )}
                   {isOpen && entry.how && <span className="ask-row-how">{withBold(entry.how)}</span>}
                   {isOpen && entry.where && <span className="ask-row-where">{entry.where}</span>}
                   {isOpen && entry.route && !allowed && note && <span className="ask-row-locked">{note}</span>}
                 </button>
-                {entry.route && allowed && <span className="ask-row-go" aria-hidden="true">↵</span>}
+                {entry.route && allowed && (
+                  <span className="ask-row-go" aria-hidden="true">{isOpen ? 'Go ↵' : '↵'}</span>
+                )}
               </div>
             );
           })}
@@ -113,7 +124,7 @@ function AskPulsePalette({ entries, loading, perms, onClose, onNavigate }: Palet
           {!loading && query && results.length === 0 && (
             <div className="ask-empty">
               <p className="ask-empty-h">Nothing matched “{query}”.</p>
-              <p className="ask-empty-b">Try the word as it appears on screen, such as appetite, residual, submission or SLA.</p>
+              <p className="ask-empty-b">Try fewer words, or the word as it appears on screen, such as appetite, residual, import or SLA.</p>
               <a
                 className="ask-empty-a"
                 href={`mailto:${HELP_SUPPORT_EMAIL}?subject=${encodeURIComponent(`Pulse question: ${query}`)}`}
