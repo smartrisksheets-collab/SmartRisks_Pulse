@@ -174,13 +174,13 @@ def test_control_evidence_gaps_and_contradiction():
     old = TODAY - timedelta(days=400)
     risks = [
         _risk("R-1", control_effectiveness=4, control_last_tested=recent,
-              control_assertion_source="Independently tested", residual=3.0),        # evidenced
+              control_assertion_source="Independently tested", residual=3.0, has_evidence_doc=True),  # evidenced
         _risk("R-2", control_effectiveness=3, control_last_tested=recent,
-              control_assertion_source="Self-assessed", residual=6.0),               # self-assessed
+              control_assertion_source="Self-assessed", residual=6.0, has_evidence_doc=True),  # self-assessed
         _risk("R-3", control_effectiveness=2, control_last_tested=old,
-              control_assertion_source="External audit", residual=8.0),              # stale test
+              control_assertion_source="External audit", residual=8.0, has_evidence_doc=True),  # stale test
         _risk("R-4", control_effectiveness=5, control_last_tested=recent,
-              control_assertion_source="External audit", residual=2.0),              # evidenced, contradicted
+              control_assertion_source="External audit", residual=2.0, has_evidence_doc=True),  # evidenced, contradicted
         _risk("R-5", control_effectiveness=None),                                    # unrated
     ]
     incidents = [_inc("INC-1", "R-4", TODAY - timedelta(days=5)), _inc("INC-2", "R-4", TODAY - timedelta(days=2))]
@@ -198,14 +198,26 @@ def test_control_evidence_gaps_and_contradiction():
 
 def test_control_evidence_ignores_incidents_when_module_off():
     risks = [_risk("R-4", control_effectiveness=5, control_last_tested=TODAY,
-                   control_assertion_source="External audit")]
+                   control_assertion_source="External audit", has_evidence_doc=True)]
     d = compute_control_evidence(_ctx(risks, [_inc("INC-1", "R-4", TODAY)], enabled=False))
     assert d["contradicted"] == 0 and d["gaps"] == []
 
 
+def test_control_evidence_needs_a_document():
+    """Recent independent test without a document on file is not evidenced (2026-11-16)."""
+    r = _risk("R-1", control_effectiveness=4, control_last_tested=TODAY - timedelta(days=10),
+              control_assertion_source="External audit")
+    d = compute_control_evidence(_ctx([r]))
+    assert d["evidenced"] == 0
+    assert d["gaps"][0]["reasons"] == ["No evidence document"]
+    d = compute_control_evidence(_ctx([_risk("R-1", control_effectiveness=4, control_last_tested=TODAY,
+                                             control_assertion_source="External audit", has_evidence_doc=True)]))
+    assert d["evidenced"] == 1 and d["gaps"] == []
+
+
 def test_control_evidence_missing_test_and_source():
     d = compute_control_evidence(_ctx([_risk("R-1", control_effectiveness=1)]))
-    assert d["gaps"][0]["reasons"] == ["No test date", "No assertion source"]
+    assert d["gaps"][0]["reasons"] == ["No test date", "No assertion source", "No evidence document"]
 
 
 # ── Export renderers ────────────────────────────────────────────────────────

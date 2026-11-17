@@ -30,6 +30,7 @@ from app.schemas.home import (
     HomeTile,
     HomeTiles,
 )
+from app.services.clock import day_part, local_now, zone_name
 from app.services.dashboard import get_dashboard
 from app.services.incident_severity import (
     _OPEN_STATUSES as OPEN_STATUSES,
@@ -124,7 +125,9 @@ async def get_home(
     data = await get_dashboard(db, tenant_id)
     health, pressure, corr = data.enterprise_health, data.pressure, data.correlation
 
-    workspace = (await db.execute(select(Tenant.name).where(Tenant.id == tenant_id))).scalar_one_or_none() or ""
+    tenant = (await db.execute(select(Tenant).where(Tenant.id == tenant_id))).scalar_one_or_none()
+    workspace = str(tenant.name or "") if tenant is not None else ""
+    local = local_now(tenant)
     first_name: str | None = None
     if account_id is not None:
         full = (await db.execute(select(Account.name).where(Account.id == account_id))).scalar_one_or_none()
@@ -315,6 +318,9 @@ async def get_home(
     return HomeResponse(
         first_name=first_name,
         workspace=workspace,
+        timezone=zone_name(tenant),
+        local_date=local.date(),
+        day_part=day_part(local.hour),
         status=status,
         confidence=health.confidence if has_risk else "",
         verdict=verdict,

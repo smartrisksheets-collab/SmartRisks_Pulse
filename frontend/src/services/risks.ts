@@ -8,7 +8,7 @@ import type {
   BulkImportRow, BulkImportResult,
   AIInsightRequest, AIInsightResult,
   RecycleBinItem, RiskViewCounts,
-  ScorePreviewRequest, ScoreBreakdown, RiskContext,
+  ScorePreviewRequest, ScoreBreakdown, RiskContext, EvidenceLink,
 } from '../types/risk';
 
 export interface ListRisksParams {
@@ -73,6 +73,22 @@ export async function updateRisk(id: string, payload: RiskUpdate): Promise<Risk>
 
 export async function deleteRisk(id: string): Promise<void> {
   await apiDelete(`/api/v1/risks/${id}`);
+}
+
+// Evidence document (migration 066). Upload and remove need manage_risks;
+// the view link is open to every member and expires after about a minute.
+export async function uploadEvidence(id: string, file: File): Promise<Risk> {
+  const form = new FormData();
+  form.append('file', file);
+  return apiPost<Risk>(`/api/v1/risks/${encodeURIComponent(id)}/evidence`, form);
+}
+
+export async function removeEvidence(id: string): Promise<Risk> {
+  return apiDelete<Risk>(`/api/v1/risks/${encodeURIComponent(id)}/evidence`);
+}
+
+export async function getEvidenceLink(id: string): Promise<EvidenceLink> {
+  return apiGet<EvidenceLink>(`/api/v1/risks/${encodeURIComponent(id)}/evidence/link`);
 }
 
 export async function bulkImport(rows: BulkImportRow[]): Promise<BulkImportResult> {

@@ -4,7 +4,7 @@ from uuid import UUID
 
 import logging
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Query, Request, UploadFile
 from app.core.rate_limit import limiter
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,6 +17,7 @@ from app.schemas.risk import (
 )
 from app.services import risk as risk_service
 from app.services import ai_risk as ai_risk_service
+from app.services import evidence as evidence_service
 
 router = APIRouter(prefix="/risks", tags=["risks"])
 
@@ -233,3 +234,52 @@ async def delete_risk(
         "error": None,
         "meta": {},
     }
+
+
+# ── Evidence document (migration 066) ─────────────────────────────────────────
+
+@router.post("/{risk_id}/evidence")
+@limiter.limit("20/minute")
+async def upload_evidence(
+    request: Request,
+    risk_id: str,
+    file:    UploadFile   = File(...),
+    db:      AsyncSession = Depends(get_db),
+    claims:  dict         = Depends(require_permission("manage_risks")),
+    _:       dict         = Depends(require_module("risk")),
+):
+    tenant_id = UUID(claims["active_tenant_id"])
+    # Read one byte past the limit so an oversized file is refused without reading it all.
+    content = await file.read(evidence_service.EVIDENCE_MAX_BYTES + 1)
+    await evidence_service.upload_evidence(db, tenant_id, risk_id, content, file.filename, claims["email"])
+    risk = await risk_service.get_risk(db, tenant_id, risk_id)
+    return {"data": risk, "error": None, "meta": {}}
+
+
+@router.delete("/{risk_id}/evidence")
+@limiter.limit("20/minute")
+async def remove_evidence(
+    request: Request,
+    risk_id: str,
+    db:      AsyncSession = Depends(get_db),
+    claims:  dict         = Depends(require_permission("manage_risks")),
+    _:       dict         = Depends(require_module("risk")),
+):
+    tenant_id = UUID(claims["active_tenant_id"])
+    await evidence_service.remove_evidence(db, tenant_id, risk_id, claims["email"])
+    risk = await risk_service.get_risk(db, tenant_id, risk_id)
+    return {"data": risk, "error": None, "meta": {}}
+
+
+@router.get("/{risk_id}/evidence/link")
+@limiter.limit("60/minute")
+async def evidence_link(
+    request: Request,
+    risk_id: str,
+    db:      AsyncSession = Depends(get_db),
+    claims:  dict         = Depends(require_module("risk")),
+):
+    """Any member who can see the risk can view its evidence, for example an auditor."""
+    tenant_id = UUID(claims["active_tenant_id"])
+    link = await evidence_service.evidence_link(db, tenant_id, risk_id)
+    return {"data": link, "error": None, "meta": {}}

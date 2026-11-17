@@ -17,7 +17,7 @@ from uuid import UUID
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import ResourceNotFoundError
+from app.core.exceptions import ResourceNotFoundError, ValidationError
 from app.models.external_submission import ExternalSubmission
 from app.models.tenant import Tenant
 from app.schemas.external import (
@@ -33,6 +33,8 @@ from app.schemas.incident import IncidentCreate
 from app.models.audit_log import AuditLog
 from app.services import risk as risk_svc
 from app.services import incident as incident_svc
+from app.services.clock import latest_today
+from app.services.incident_severity import public_levels
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +93,10 @@ async def submit_incident(
     """Store an external incident submission in the pending queue. No auth required."""
     tenant = await _get_tenant(db, tenant_id)
 
+    labels = [lv["label"] for lv in await public_levels(db, tenant_id)]
+    if payload.severity not in labels:
+        raise ValidationError("Choose one of the listed severity levels.")
+
     sub = ExternalSubmission(
         id=uuid.uuid4(),
         tenant_id=tenant_id,
@@ -119,6 +125,33 @@ async def submit_incident(
             logger.warning("Submission confirmation email failed: %s", exc)
 
     return ExternalSubmitResponse(id=str(sub.id), status="PENDING")
+
+
+async def get_public_severity(db: AsyncSession, tenant_id: UUID) -> list[dict[str, str]]:
+    """Severity choices for the public incident form. 404 for an unknown workspace."""
+    await _get_tenant(db, tenant_id)
+    return await public_levels(db, tenant_id)
+
+
+def _incident_dt(day: str, at: str) -> datetime | None:
+    """When the incident happened, from the form's date and optional time.
+
+    Stored the way the internal incident form stores it: the wall time as entered,
+    marked UTC, so it reads back unchanged. Unreadable or future values give None.
+    """
+    try:
+        d = date.fromisoformat(day.strip())
+    except ValueError:
+        return None
+    if d > latest_today():
+        return None
+    hh, mm = 0, 0
+    parts = at.strip().split(":")
+    if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit():
+        h, m = int(parts[0]), int(parts[1])
+        if 0 <= h < 24 and 0 <= m < 60:
+            hh, mm = h, m
+    return datetime(d.year, d.month, d.day, hh, mm, tzinfo=timezone.utc)
 
 
 async def list_pending(
@@ -220,6 +253,9 @@ async def approve_submission(
             reported_at = date.fromisoformat(reported_at_raw)
         except ValueError:
             reported_at = date.today()
+        # Submissions queued before the future-date check may still hold one.
+        if reported_at > latest_today():
+            reported_at = datetime.now(timezone.utc).date()
 
         raw_fi = str(p.get("financial_impact") or "")
         financial_impact: Decimal | None = None
@@ -232,6 +268,7 @@ async def approve_submission(
                 financial_impact = None
 
         inc_payload = IncidentCreate(
+            title=str(p.get("title") or "") or None,
             description=str(p.get("description") or ""),
             category=str(p.get("category") or "Other"),
             severity=str(p.get("severity") or "Medium"),
@@ -244,6 +281,8 @@ async def approve_submission(
             business_unit=str(p.get("business_unit") or "") or None,
             immediate_actions=str(p.get("actions_taken") or "") or None,
             financial_impact=financial_impact,
+            impact_confidence=str(p.get("impact_confidence") or "") or None,
+            incident_dt=_incident_dt(str(p.get("incident_date") or ""), str(p.get("incident_time") or "")),
         )
         incident = await incident_svc.create_incident(db, tenant_id, inc_payload, reviewer_email)
         created_id = str(incident.id)

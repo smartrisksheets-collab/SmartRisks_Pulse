@@ -297,10 +297,16 @@ def is_evidenced(
     *,
     control_last_tested: date | None,
     control_assertion_source: str | None,
+    has_document: bool,
     today: date,
 ) -> bool:
-    """Tested within the evidence window, and asserted independently of the risk owner."""
-    return has_recent_test(control_last_tested, today) and is_independent(control_assertion_source)
+    """Tested within the evidence window, asserted independently of the risk owner,
+    and backed by an evidence document on file (decision 2026-11-16, migration 066)."""
+    return (
+        has_recent_test(control_last_tested, today)
+        and is_independent(control_assertion_source)
+        and has_document
+    )
 
 
 def is_contradicted(control_effectiveness: int | None, scale: int, materialised: bool) -> bool:

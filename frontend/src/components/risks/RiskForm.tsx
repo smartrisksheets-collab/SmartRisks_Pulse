@@ -5,27 +5,31 @@
 
 import { useRef, useState, type FormEvent } from 'react';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
-import type { MitigationStatus, RiskCreate, RiskTreatment } from '../../types/risk';
+import type { EvidenceChange, MitigationStatus, RiskCreate, RiskTreatment } from '../../types/risk';
 import { RISK_TITLE_MAX } from '../../types/risk';
 import { FIELD_ORDER, validateRiskForm, type RiskFieldErrors, type RiskFieldKey, type RiskFormValues } from '../../utils/riskForm';
 import { useLookups } from '../../hooks/useLookups';
 import { useMatrix } from '../../hooks/useMatrix';
 import { scorePreview } from '../../services/risks';
 import { ASSERTION_SOURCES, MITIGATION_STATUSES, appetiteChip, levelChipClass, pctOf, scoreText } from '../../utils/riskDisplay';
+import { todayIso } from '../../utils/incidentDisplay';
 import Explain from '../help/Explain';
+import EvidenceField, { type SavedEvidence } from './EvidenceField';
 
 
 interface Props {
   initial:      RiskFormValues;
+  savedEvidence: SavedEvidence | null;
   isEdit:       boolean;
   saving:       boolean;
   error:        string | null;
-  onSubmit:     (payload: RiskCreate, addAnother: boolean) => void;
+  onSubmit:     (payload: RiskCreate, addAnother: boolean, evidence: EvidenceChange) => void;
   onCancel:     () => void;
 }
 
-export default function RiskForm({ initial, isEdit, saving, error, onSubmit, onCancel }: Props) {
+export default function RiskForm({ initial, savedEvidence, isEdit, saving, error, onSubmit, onCancel }: Props) {
   const [v, setV] = useState<RiskFormValues>(initial);
+  const [evidence, setEvidence] = useState<EvidenceChange>({ file: null, remove: false });
   const [errors, setErrors] = useState<RiskFieldErrors>({});
   const formRef = useRef<HTMLFormElement>(null);
   const { lookups } = useLookups();
@@ -95,7 +99,7 @@ export default function RiskForm({ initial, isEdit, saving, error, onSubmit, onC
       linked_decision:       v.linked_decision.trim()    || null,
       control_last_tested:   v.control_last_tested       || null,
       control_assertion_source: v.control_assertion_source || null,
-    }, addAnother);
+    }, addAnother, evidence);
   }
 
   function handleSubmit(e: FormEvent) {
@@ -103,6 +107,7 @@ export default function RiskForm({ initial, isEdit, saving, error, onSubmit, onC
     submit(false);
   }
 
+  const today = todayIso();
   const inputCls = (k: RiskFieldKey) => `pl-input${errors[k] ? ' invalid' : ''}`;
   const req = <span className="pl-req" aria-hidden="true">*</span>;
   const opt = <span className="pl-opt">optional</span>;
@@ -152,7 +157,9 @@ export default function RiskForm({ initial, isEdit, saving, error, onSubmit, onC
                 </div>
                 <div className="pl-field">
                   <label className="pl-field-label" htmlFor="rf-date">Date logged</label>
-                  <input id="rf-date" type="date" className="pl-input" value={v.logged_at} onChange={e => set('logged_at', e.target.value)} />
+                  <input id="rf-date" data-field="logged_at" type="date" max={today} className={inputCls('logged_at')} value={v.logged_at}
+                    onChange={e => set('logged_at', e.target.value)} onBlur={() => blur('logged_at')} aria-invalid={!!errors.logged_at} />
+                  {errors.logged_at && <p className="pl-field-error">{errors.logged_at}</p>}
                 </div>
               </div>
               <div className="pl-field">
@@ -216,7 +223,7 @@ export default function RiskForm({ initial, isEdit, saving, error, onSubmit, onC
             <div className="pl-form-sec-h"><span className="pl-sec-n">4</span><h2 id="rf-s4" className="pl-section">What controls are in place?</h2></div>
             <p className="pl-hint">
               Control strength reduces the inherent score to the residual. A rating counts as evidenced only if it was
-              independently tested or audited in the last 12 months.<Explain id="control-effectiveness" />
+              independently tested or audited in the last 12 months and an evidence document is attached.<Explain id="control-effectiveness" />
             </p>
             <div className="pl-stack">
               <div className="pl-field">
@@ -241,16 +248,20 @@ export default function RiskForm({ initial, isEdit, saving, error, onSubmit, onC
               </div>
               <div className="pl-row2">
                 <div className="pl-field">
-                  <label className="pl-field-label" htmlFor="rf-src">Evidence</label>
+                  <label className="pl-field-label" htmlFor="rf-src">Evidence source</label>
                   <select id="rf-src" className="pl-input" value={v.control_assertion_source} onChange={e => set('control_assertion_source', e.target.value)}>
                     {ASSERTION_SOURCES.map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>
                 <div className="pl-field">
                   <label className="pl-field-label" htmlFor="rf-tested">Last tested {opt}</label>
-                  <input id="rf-tested" type="date" className="pl-input" value={v.control_last_tested} onChange={e => set('control_last_tested', e.target.value)} />
+                  <input id="rf-tested" data-field="control_last_tested" type="date" max={today} className={inputCls('control_last_tested')}
+                    value={v.control_last_tested} onChange={e => set('control_last_tested', e.target.value)}
+                    onBlur={() => blur('control_last_tested')} aria-invalid={!!errors.control_last_tested} />
+                  {errors.control_last_tested && <p className="pl-field-error">{errors.control_last_tested}</p>}
                 </div>
               </div>
+              <EvidenceField saved={savedEvidence} value={evidence} disabled={saving} onChange={setEvidence} />
             </div>
           </section>
 

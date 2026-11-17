@@ -260,11 +260,14 @@ async def resolve_token_for_form(
     ws: dict = dict(tenant.workspace_settings or {}) if tenant else {}  # type: ignore[union-attr]
     org_name = ws.get("organization") or (str(tenant.name) if tenant else "") or "the organization"
     logo_url = str(tenant.logo_url) if tenant and tenant.logo_url else None  # type: ignore[union-attr]
+    modules = list(tenant.modules or []) if tenant else []  # type: ignore[union-attr]
+    incident_form_path = f"/external/incident?workspace_id={tenant.id}" if tenant and "incident" in modules else None
     return TokenResolveResponse(
         label=str(row.label or ''),
         department=str(row.department or ''),
         org_name=org_name,
         logo_url=logo_url,
+        incident_form_path=incident_form_path,
     )
 
 

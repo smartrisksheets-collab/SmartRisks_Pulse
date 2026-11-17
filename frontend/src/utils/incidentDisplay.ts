@@ -81,6 +81,11 @@ export function confidenceLabel(value: string | null | undefined): string {
 
 export const REPORT_CHANNELS = ['Phone or in person', 'Email', 'Reporting link', 'System alert', 'Customer complaint'] as const;
 
+/** Public incident form categories, used only until the workspace's own list loads or when it is empty. */
+export const PUBLIC_INCIDENT_CATEGORIES: string[] = [
+  'Cybersecurity', 'IT Operations', 'Physical Security', 'Data Protection', 'Compliance', 'Other',
+];
+
 // ── Form ─────────────────────────────────────────────────────────────────────
 
 export interface IncidentFormValues {

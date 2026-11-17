@@ -1,5 +1,7 @@
 """Response shape for GET /api/v1/home: everything the Home page shows."""
 
+from datetime import date
+
 from pydantic import BaseModel, Field
 
 from app.schemas.dashboard import (
@@ -62,6 +64,10 @@ class HomeSetup(BaseModel):
 class HomeResponse(BaseModel):
     first_name: str | None = None
     workspace: str = ""
+    # Workspace clock (Settings time zone): drives the greeting, the sky and the date line.
+    timezone: str = "UTC"
+    local_date: date | None = None
+    day_part: str = "morning"
     status: str = ""
     confidence: str = ""
     verdict: str = ""

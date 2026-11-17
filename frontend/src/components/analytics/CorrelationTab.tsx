@@ -4,7 +4,8 @@
 import type { DashboardData, EvidenceStatus } from '../../types/dashboard';
 import { formatDate } from '../../utils/format';
 import Explain from '../help/Explain';
-import { ActionList, Card } from './shared';
+import { usePaged } from '../../hooks/usePaged';
+import { ActionList, Card, Pager } from './shared';
 import { plural, severityChip } from './format';
 
 interface Props {
@@ -27,6 +28,9 @@ function jump(id: string) {
 export default function CorrelationTab({ data, canManageRisks, canLinkIncidents, open }: Props) {
   const { correlation: c, control_evidence: ev } = data;
   const unevidenced = ev.rated - ev.evidenced;
+  const unlinkedPage = usePaged(c.unlinked);
+  const materialisedPage = usePaged(c.materialised);
+  const controlsPage = usePaged(ev.rows);
 
   return (
     <>
@@ -74,7 +78,7 @@ export default function CorrelationTab({ data, canManageRisks, canLinkIncidents,
                   </tr>
                 </thead>
                 <tbody>
-                  {c.unlinked.map(u => (
+                  {unlinkedPage.rows.map(u => (
                     <tr key={u.incident_id}>
                       <td>{u.incident_id}{u.title ? ` ${u.title}` : ''}</td>
                       <td>{u.category ?? '—'}</td>
@@ -95,6 +99,7 @@ export default function CorrelationTab({ data, canManageRisks, canLinkIncidents,
               </table>
             </div>
           )}
+          <Pager p={unlinkedPage} />
           {c.uncovered_categories.length > 0 && (
             <p className="pl-note pl-alert">
               <b>{c.uncovered_categories.join(', ')} {c.uncovered_categories.length === 1 ? 'has' : 'have'} no risk line on the register.</b>{' '}
@@ -120,7 +125,7 @@ export default function CorrelationTab({ data, canManageRisks, canLinkIncidents,
                   </tr>
                 </thead>
                 <tbody>
-                  {c.materialised.map(m => (
+                  {materialisedPage.rows.map(m => (
                     <tr key={m.risk_id}>
                       <td>{m.risk_id}</td>
                       <td>{m.category ?? '—'}</td>
@@ -145,13 +150,14 @@ export default function CorrelationTab({ data, canManageRisks, canLinkIncidents,
               </table>
             </div>
           )}
+          <Pager p={materialisedPage} />
           <h3 className="pl-item-title">Recommended actions</h3>
           <ActionList actions={c.materialised_actions} emptyText="Nothing to do here right now." />
         </Card>
       </div>
 
       <div id="controls">
-        <Card title="Control ratings vs reality" intro="A rating counts as evidenced only when it was tested recently, by an independent test or an external audit. Self-assessment does not count.">
+        <Card title="Control ratings vs reality" intro="A rating counts as evidenced only when it was tested recently, by an independent test or an external audit, and an evidence document is attached. Self-assessment does not count.">
           {ev.rows.length === 0 ? (
             <p className="pl-caption">No control ratings recorded yet.</p>
           ) : (
@@ -164,7 +170,7 @@ export default function CorrelationTab({ data, canManageRisks, canLinkIncidents,
                   </tr>
                 </thead>
                 <tbody>
-                  {ev.rows.map(r => (
+                  {controlsPage.rows.map(r => (
                     <tr key={r.risk_id}>
                       <td>{r.risk_id}</td>
                       <td>{r.category ?? '—'}</td>
@@ -178,6 +184,7 @@ export default function CorrelationTab({ data, canManageRisks, canLinkIncidents,
               </table>
             </div>
           )}
+          <Pager p={controlsPage} />
           <h3 className="pl-item-title">Recommended actions</h3>
           <ActionList actions={ev.actions} emptyText="Nothing to do here right now." />
         </Card>

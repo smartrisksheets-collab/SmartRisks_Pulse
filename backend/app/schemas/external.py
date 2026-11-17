@@ -1,8 +1,12 @@
 # app/schemas/external.py
 from __future__ import annotations
-from datetime import datetime
+from datetime import date, datetime
 import re
 from pydantic import BaseModel, Field, field_validator
+
+from app.schemas.risk import TITLE_MAX
+from app.services.clock import ensure_not_future
+from app.services.incident_status import IMPACT_CONFIDENCE
 
 _EMAIL_RE = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
 
@@ -45,6 +49,7 @@ class ExternalIncidentSubmit(BaseModel):
         return _validate_optional_email(v)
     date_reported:    str = ""
     channel:          str = ""
+    title:            str = Field("", max_length=TITLE_MAX)
     description:      str = Field(..., min_length=1)
     category:         str = Field(..., min_length=1)
     incident_type:    str = ""
@@ -54,7 +59,32 @@ class ExternalIncidentSubmit(BaseModel):
     incident_time:    str = ""
     affected_asset:   str = ""
     financial_impact: str = ""
+    impact_confidence: str = ""
     actions_taken:    str = ""
+
+    @field_validator("title")
+    @classmethod
+    def _title(cls, v: str) -> str:
+        return " ".join(v.split())
+
+    @field_validator("impact_confidence")
+    @classmethod
+    def _confidence(cls, v: str) -> str:
+        v = v.strip()
+        if v and v not in IMPACT_CONFIDENCE:
+            raise ValueError(f"impact_confidence must be one of {list(IMPACT_CONFIDENCE)}")
+        return v
+
+    # Past-only dates. Blank or unreadable values are left as they are (handled on approval).
+    @field_validator("date_reported", "incident_date")
+    @classmethod
+    def _not_future(cls, v: str) -> str:
+        try:
+            d = date.fromisoformat(v.strip())
+        except ValueError:
+            return v
+        ensure_not_future(d, "Dates")
+        return v
 
 
 class ExternalSubmitResponse(BaseModel):

@@ -8,6 +8,16 @@ Plain English record of every significant decision made during the build, who ra
 
 One line per decision, newest first. Started November 16, 2026. Decisions before Session 29 are in the log below, by session.
 
+- 2026-11-17: The public incident form shows the workspace's own severity levels and rejects others.
+- 2026-11-17: Public incident cost confidence keeps the 3 stored values; the incident date and time are stored as entered, marked UTC.
+- 2026-11-17: On the department link, "already happened" shows a button to the incident form. The forms are not merged.
+- 2026-11-17: Past-only dates (date logged, last tested, incident dates) cannot be in the future, checked in the backend against UTC+14.
+- 2026-11-17: The Home greeting, sky and date follow the workspace time zone, computed in the backend (morning from midnight).
+- 2026-11-16: A control is evidenced only with a recent independent test and an evidence document on file.
+- 2026-11-16: Evidence documents: one per risk, private bucket, backend upload, 60-second signed links, preview for every risk-module member.
+- 2026-11-16: Incident owner is picked from Taxonomy only, and owner removal is blocked while risks or incidents use it.
+- 2026-11-16: Open lists are drawn by the app (PickList) so they use the app font.
+- 2026-11-16: Analytics tables page at 10 rows.
 - 2026-11-16: Changes are delivered as patches only. Claude does not commit or push.
 - 2026-11-16: Ask Pulse keeps action words (add, new, change, edit, update, set) as search terms.
 - 2026-11-16: On 5-band matrices the top two bands (Critical, Extreme) escalate in AI status.
@@ -2124,3 +2134,57 @@ Why: The action is often the whole question, and it lifts the right entry above 
 **Decision: Changes are delivered as patches only (November 16, 2026)**
 Chosen: Claude builds patches on staging and does not commit or push. The user applies, tests and pushes.
 Why: User rule. The user keeps control of what reaches staging.
+
+---
+
+## Session 31: November 16 to 17, 2026: Analytics Paging, Risk Evidence, Workspace Clock, Public Incident Form
+
+**Decision: Analytics tables page at 10 rows (November 16, 2026)**
+Raised by: Partner. Correlation tables and the Activity feed grew without limit.
+Chosen: One `usePaged` hook and a `Pager` with the Risk Register's wording, 10 rows per page.
+Why: One paging rule for every table, matching the register.
+
+**Decision: Open lists are drawn by the app (November 16, 2026)**
+Raised by: Partner. Open dropdown lists showed the system font.
+Chosen: `components/ui/PickList.tsx`, a searchable list drawn by the app, for incident Related risk and Owner.
+Why: A native select's open list is drawn by the browser in a popup that cannot load Inter. CSS cannot fix that.
+
+**Decision: Incident owner comes from Taxonomy only (November 16, 2026)**
+Chosen: Owner is picked from "Dept/Risk Owner". Removing an owner is blocked while active risks or incidents use it, and `patch_lookups` enforces this (422).
+Why: It matches the risk form, and a browser-only check could be bypassed through the API.
+
+**Decision: Evidenced needs a document on file (November 16, 2026)**
+Raised by: Partner asked for evidence upload tied to the Unevidenced flag.
+Options: Keep the test date and source rule, or also require an uploaded document.
+Chosen (user): Evidenced means tested within 12 months, an independent source and a document attached. Changed only in `risk_status.is_evidenced`.
+Why: An auditor can see the evidence. Existing evidenced controls show as Unevidenced until a file is attached.
+
+**Decision: How evidence documents are stored (November 16, 2026)**
+Chosen: One document per risk in the private Supabase bucket `risk-evidence`, uploaded through the backend with the service key. PDF, PNG, JPEG or WebP up to 10 MB, checked by content. Upload and remove need `manage_risks`. Preview uses 60-second signed links for every risk-module member. The file stays through the recycle bin and is deleted on permanent delete or purge.
+Why: The same pattern as the logo decision of August 7. Auditors without edit rights can view, and no public URLs exist.
+
+**Decision: The Home greeting follows the workspace time zone (November 17, 2026)**
+Raised by: Partner. At 3:13 AM Chicago time Home said "Good evening", because it used the device clock and treated 00:00 to 04:59 as evening.
+Options: Device clock with fixed bands, or the workspace time zone computed in the backend.
+Chosen (user): Morning 00:00 to 11:59, afternoon 12:00 to 16:59, evening 17:00 to 23:59, in the Settings time zone, from `services/clock.py`. `GET /home` returns `day_part` and `local_date`, and the brief email greeting uses the same function.
+Why: The rule that derived values are computed in the backend by one function. Demos show the workspace's time.
+
+**Decision: Past-only dates cannot be in the future (November 17, 2026)**
+Raised by: User. A last tested date in the future makes no sense.
+Chosen: Date logged, last tested, incident date reported and date it happened, and both public incident dates are blocked on screen and rejected by the backend. The backend compares against the latest calendar date anywhere on Earth (UTC+14). Target dates and link expiry stay future-allowed.
+Why: UTC+14 never rejects a genuine "today" from any time zone and still stops real future dates. Existing rows with a future date must be fixed on their next edit.
+
+**Decision: The department link sends incidents to the incident form (November 17, 2026)**
+Raised by: User, after considering one merged form.
+Options: Merge the risk and incident forms, redirect automatically, or show a button.
+Chosen (user): No merge. "Something that already happened" keeps the warning banner, hides the risk questions and shows an "Open the incident form" button. The path comes from the backend and is hidden when the incident module is off.
+Why: The department link carries a label, a department and an expiry that the incident form does not need. A button lets a mis-click be undone.
+
+**Decision: The public incident form uses workspace severity levels (November 17, 2026)**
+Raised by: The partner's mockup hardcoded Critical, High, Medium and Low, and the old form hardcoded a different list.
+Chosen: New read-only `GET /external/severity/{id}`. A submit with any other severity is rejected.
+Why: The incident register uses the workspace's levels, so a public report must match them.
+
+**Decision: Public incident form fields follow stored values (November 17, 2026)**
+Chosen: "How sure is that figure?" keeps the 3 stored values (Unknown, Estimated, Confirmed), because the mockup's "Low, a rough guess" has nowhere to be stored. The incident date and time are stored the way the internal form stores them (the time as entered, marked UTC). The mockup's "New" badges and sample values are not shipped.
+Why: Both forms must store data the same way, and no value is shown that has no source.

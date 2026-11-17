@@ -19,6 +19,7 @@ import {
   type IncidentFieldErrors, type IncidentFieldKey, type IncidentFormValues,
 } from '../../utils/incidentDisplay';
 import Explain from '../help/Explain';
+import PickList, { type PickOption } from '../ui/PickList';
 
 interface Props {
   initial:    IncidentFormValues;
@@ -47,7 +48,15 @@ export default function IncidentForm({ initial, isEdit, levels, canAddRisk, savi
     queryFn:  () => listRisks({ page_size: 1000, sort: 'residual' }),
     staleTime: 2 * 60 * 1000,
   });
-  const riskOptions = risks.data?.items ?? [];
+  const riskList = risks.data?.items ?? [];
+  const riskOptions: PickOption[] = riskList.map(r => ({ value: r.id, label: `${r.id} ${r.display_title}` }));
+  if (v.linked_risk_id && !riskList.some(r => r.id === v.linked_risk_id)) {
+    riskOptions.push({ value: v.linked_risk_id, label: v.linked_risk_id });
+  }
+  const ownerOptions: PickOption[] = people.map(o => ({ value: o, label: o }));
+  if (v.assigned_to && !people.includes(v.assigned_to)) {
+    ownerOptions.push({ value: v.assigned_to, label: `${v.assigned_to} (not in Taxonomy)` });
+  }
 
   const preview = useQuery({
     queryKey: ['incidents', 'target-preview', v.severity, v.reported_at, v.category, v.linked_risk_id],
@@ -237,13 +246,9 @@ export default function IncidentForm({ initial, isEdit, levels, canAddRisk, savi
               )}
               <div className="pl-field">
                 <label className="pl-field-label" htmlFor="if-risk">Related risk {opt}</label>
-                <select id="if-risk" className="pl-input" value={v.linked_risk_id} onChange={e => set('linked_risk_id', e.target.value)}>
-                  <option value="">No related risk yet</option>
-                  {riskOptions.map(r => <option key={r.id} value={r.id}>{r.id} {r.display_title}</option>)}
-                  {v.linked_risk_id && !riskOptions.some(r => r.id === v.linked_risk_id) && (
-                    <option value={v.linked_risk_id}>{v.linked_risk_id}</option>
-                  )}
-                </select>
+                <PickList id="if-risk" value={v.linked_risk_id} options={riskOptions}
+                  placeholder="No related risk yet" emptyLabel="No related risk yet"
+                  onChange={val => set('linked_risk_id', val)} />
                 {risks.isError && <span className="pl-help">The risk list could not be loaded.</span>}
               </div>
               {v.linked_risk_id && (
@@ -275,11 +280,18 @@ export default function IncidentForm({ initial, isEdit, levels, canAddRisk, savi
               <div className="pl-row2">
                 <div className="pl-field">
                   <label className="pl-field-label" htmlFor="if-own">Owner {req}</label>
-                  <input id="if-own" data-field="assigned_to" list="if-people" className={inputCls('assigned_to')}
-                    value={v.assigned_to} onChange={e => set('assigned_to', e.target.value)} onBlur={() => blur('assigned_to')}
-                    placeholder="Choose or type a name" aria-invalid={!!errors.assigned_to} />
+                  {people.length > 0 ? (
+                    <PickList id="if-own" dataField="assigned_to" value={v.assigned_to} options={ownerOptions}
+                      placeholder="Choose an owner" invalid={!!errors.assigned_to}
+                      onChange={val => { set('assigned_to', val); setErrors(prev => ({ ...prev, assigned_to: undefined })); }}
+                      onClose={() => blur('assigned_to')} />
+                  ) : (
+                    <input id="if-own" data-field="assigned_to" className={inputCls('assigned_to')}
+                      value={v.assigned_to} onChange={e => set('assigned_to', e.target.value)} onBlur={() => blur('assigned_to')}
+                      placeholder="Type a name" aria-invalid={!!errors.assigned_to} />
+                  )}
                   {errors.assigned_to ? fieldError('assigned_to')
-                    : people.length === 0 && <span className="pl-help">Add owners in Settings, Lookups, to pick from a list.</span>}
+                    : people.length === 0 && <span className="pl-help">Add owners in Settings, Taxonomy, Dept/Risk Owner, to pick from a list.</span>}
                 </div>
                 <div className="pl-field">
                   <label className="pl-field-label" htmlFor="if-money">Financial impact {opt}</label>

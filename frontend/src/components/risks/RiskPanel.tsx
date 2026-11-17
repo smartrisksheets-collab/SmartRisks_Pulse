@@ -13,6 +13,7 @@ import { formatDate, formatExposure } from '../../utils/format';
 import { useSettingsStore } from '../../store/settingsStore';
 import { severityChip } from '../analytics/format';
 import { appetiteChip, decisionChip, levelChipClass, pctOf, scoreText } from '../../utils/riskDisplay';
+import { SavedEvidencePreview } from './EvidencePreviewModal';
 
 interface Props {
   risk:           Risk;
@@ -33,6 +34,7 @@ export default function RiskPanel({
   const [deciding, setDeciding] = useState(false);
   const [decision, setDecision] = useState('');
   const [saving, setSaving] = useState(false);
+  const [viewing, setViewing] = useState(false);
 
   const ctx = useQuery({
     queryKey: ['risks', 'context', risk.id, risk.updated_at],
@@ -128,6 +130,13 @@ export default function RiskPanel({
             <dl className="pl-dl">
               <div><dt>Controls in place</dt><dd>{risk.controls || 'None recorded'}</dd></div>
               <div><dt>Evidence</dt><dd>{evidence}</dd></div>
+              <div><dt>Evidence document</dt><dd>
+                {risk.has_evidence ? (
+                  <button type="button" className="pl-evd-link" onClick={() => setViewing(true)}>
+                    {risk.evidence_name ?? 'View document'}
+                  </button>
+                ) : 'None on file'}
+              </dd></div>
             </dl>
           </section>
 
@@ -216,6 +225,10 @@ export default function RiskPanel({
           </div>
         )}
       </aside>
+      {viewing && risk.has_evidence && (
+        <SavedEvidencePreview riskId={risk.id} version={risk.updated_at} name={risk.evidence_name ?? 'Evidence'}
+          mime={risk.evidence_mime ?? ''} onClose={() => setViewing(false)} />
+      )}
     </>
   );
 }

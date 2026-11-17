@@ -4,9 +4,10 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
 from app.schemas.risk import TITLE_MAX
+from app.services.clock import ensure_not_future
 from app.services.incident_status import (
     CONTROL_OUTCOMES,
     IMPACT_CONFIDENCE,
@@ -65,6 +66,14 @@ class IncidentCreate(BaseModel):
     channel: str | None = None
     incident_type: str | None = None
     incident_dt: datetime | None = None
+
+    # Past-only dates: an incident cannot be reported, or happen, in the future.
+    @field_validator('reported_at', 'incident_dt')
+    @classmethod
+    def _not_future(cls, v: date | datetime | None, info: ValidationInfo) -> date | datetime | None:
+        label = 'The date it happened' if info.field_name == 'incident_dt' else 'The date reported'
+        return ensure_not_future(v, label)
+
     location: str | None = None
     impact_summary: str | None = None
     affected_asset: str | None = None
@@ -137,6 +146,14 @@ class IncidentUpdate(BaseModel):
     channel: str | None = None
     incident_type: str | None = None
     incident_dt: datetime | None = None
+
+    # Past-only dates: an incident cannot be reported, or happen, in the future.
+    @field_validator('reported_at', 'incident_dt')
+    @classmethod
+    def _not_future(cls, v: date | datetime | None, info: ValidationInfo) -> date | datetime | None:
+        label = 'The date it happened' if info.field_name == 'incident_dt' else 'The date reported'
+        return ensure_not_future(v, label)
+
     location: str | None = None
     impact_summary: str | None = None
     affected_asset: str | None = None

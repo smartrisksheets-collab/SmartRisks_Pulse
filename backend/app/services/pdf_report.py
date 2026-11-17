@@ -1722,7 +1722,7 @@ def _render_risk_incident_correlation(data: dict, _ai: str | None) -> list:
         (_corr_card_cells(
             "Control ratings vs reality", f"{n_con} CONTRADICTED" if n_con else "", "#dc2626",
             n_con, f"of {n_mat} materialised" if n_mat else "contradicted", ctl_accent, ctl_explain,
-            f"{ctl.get('evidenced', 0)} of {ctl.get('rated', 0)} control ratings carry a recent independent test",
+            f"{ctl.get('evidenced', 0)} of {ctl.get('rated', 0)} control ratings carry a recent independent test and a document",
         ), ctl_accent),
     ], card_w=56 * mm, gap=3 * mm)
     out.append(cards)

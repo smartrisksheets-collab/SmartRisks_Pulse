@@ -134,20 +134,34 @@ _USAGE_MAP: dict[str, tuple[type, str]] = {
 }
 
 
-async def check_lookup_usage(
-    db: AsyncSession, tenant_id: UUID, field: str, value: str
-) -> int:
-    if field not in _USAGE_MAP:
-        return 0
-    Model, col = _USAGE_MAP[field]
-    col_attr = getattr(Model, col)
+async def _count_active(db: AsyncSession, tenant_id: UUID, Model: type, col: str, value: str) -> int:
     result = await db.execute(
         select(func.count())
-        .where(Model.tenant_id == tenant_id)  # type: ignore[arg-type]
-        .where(col_attr == value)
-        .where(Model.deleted_at.is_(None))  # type: ignore[union-attr]
+        .where(Model.tenant_id == tenant_id)  # type: ignore[attr-defined]
+        .where(getattr(Model, col) == value)
+        .where(Model.deleted_at.is_(None))  # type: ignore[attr-defined]
     )
     return result.scalar() or 0
+
+
+async def lookup_usage(
+    db: AsyncSession, tenant_id: UUID, field: str, value: str
+) -> dict[str, int]:
+    """Active risks and incidents using a lookup value. An owner counts on
+    risks (owner) and on incidents (assigned_to), since both lists read
+    Dept/Risk Owner."""
+    risks = 0
+    incidents = 0
+    if field in _USAGE_MAP:
+        Model, col = _USAGE_MAP[field]
+        n = await _count_active(db, tenant_id, Model, col, value)
+        if Model is Incident:
+            incidents = n
+        else:
+            risks = n
+    if field == "risk_owner":
+        incidents = await _count_active(db, tenant_id, Incident, "assigned_to", value)
+    return {"count": risks + incidents, "risks": risks, "incidents": incidents}
 
 
 async def ensure_category(db: AsyncSession, tenant_id: UUID, category: str) -> str:
@@ -188,6 +202,20 @@ async def patch_lookups(
     final_risk = _effective_list('category', patch_data.get('category', row.category))
     if map_patch is not None:
         _validate_map(map_patch, final_inc, final_risk)
+
+    # An owner still on an active risk or incident cannot be removed (hard
+    # block). Enforced here as well as in Settings, so the API cannot bypass it.
+    if 'risk_owner' in patch_data:
+        kept = set(patch_data['risk_owner'])
+        in_use: list[str] = []
+        for val in sorted(set(row.risk_owner or []) - kept):
+            usage = await lookup_usage(db, tenant_id, 'risk_owner', val)
+            if usage['count'] > 0:
+                in_use.append(f"{val} ({usage['risks']} risks, {usage['incidents']} incidents)")
+        if in_use:
+            raise ValidationError(
+                "Reassign these owners before removing them: " + "; ".join(in_use) + "."
+            )
 
     # Capture old values before overwriting
     old: dict[str, set[str]] = {

@@ -4,6 +4,45 @@ Older session summaries moved out of `SMARTRISK_V2_BUILD.md`, which keeps only t
 
 ---
 
+### Session 28: November 9, 2026, AI Brief Residual Bands
+
+**Completed:**
+
+**AI brief (daily, weekly, monthly, quarterly email)**
+- Root cause confirmed: `services_brief.py` `_risk_to_dict` read `Risk.level`, which `services_risk.py` `_score` bands from inherent severity (likelihood x impact) before controls. Every High/Critical count, table, outreach line, preheader and subject used the inherent band.
+- The brief now bands each risk from its residual score.
+- High/Critical and Critical are decided by band position (`is_elevated_index`, top 2 bands, and the top band), not by the literal names. Renamed bands and the fifth band are now counted. Email text, the High/Critical heading and the subject use the workspace band names.
+- Email badge colours come from a backend `tone` field (high, medium, low) on `BriefTableRow`. `BriefPayload` gained `elevated_label` and `top_band_label`.
+- Daily snapshot band crossings compare band positions recomputed from the stored residuals on the current matrix, so old snapshots that stored the inherent label do not raise false crossings.
+
+**One band rule (`services_risk_status.py`)**
+- Added `band_for_score`, `band_labels`, `band_count`, `elevated_min_index`, `is_elevated_index`, `elevated_phrase`, `residual_max`.
+- `services_risk.py` `_score` and the `_band_labels`, `_elevated_phrase`, `_residual_max` helpers in `services_report.py` now delegate to them. Inherent levels are unchanged.
+
+**Other brief flaws fixed**
+- Weekly overdue reviews, biweekly accountability and outreach used a hardcoded 30 days instead of `brief_stale_threshold`.
+- Four copies of the overdue action check replaced by `risk_status.is_past_target`.
+- Brief health score divided by a fixed 25. It now uses `likelihood_scale x impact_scale`.
+
+**Verification:** ruff shows no new warnings on the changed files, all files compile, and a smoke test with renamed 4-band and 5-band configs gave the expected bands, counts, heading and subject. `git apply --check` passes on staging 76c57b2. pytest (needs PostgreSQL) and `tsc --noEmit` were not run.
+
+**Migrations:** none.
+
+**Files changed this session (in `brief-residual-band.patch`):**
+
+Backend: `services_risk_status.py`, `services_risk.py`, `services_report.py`, `services_brief.py`, `services_snapshot.py`, `services_email.py`, `schemas_brief.py`
+
+Frontend: `types_brief.ts`
+
+**Status:** Applied and pushed to staging in commit 2f3f294 (November 9, 2026).
+
+**Incomplete (first tasks next session):**
+1. Done: the patch is in staging 2f3f294. Still to do: send a test brief and confirm risks with strong controls no longer show as High/Critical.
+2. Partner review: in a 5-band workspace "elevated" is the top 2 bands (band 3 is not flagged). If the partner wants band 3 included, change `elevated_min_index` only; it also changes the register `is_elevated` flag and reports.
+3. Residual formula confirmation with partner is still open. The brief bands now depend on it.
+
+---
+
 ### Session 27: October 14 to 19, 2026, Unified Product, Report Export, Access Security, Theming
 
 **Completed:**

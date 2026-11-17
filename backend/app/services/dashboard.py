@@ -857,7 +857,7 @@ async def _intel(
             Risk.control_effectiveness, Risk.is_elevated, Risk.linked_decision,
             Risk.mitigation_status, Risk.target_date, Risk.last_reviewed_at,
             Risk.logged_at, Risk.control_last_tested, Risk.control_assertion_source,
-            Risk.financial_exposure,
+            Risk.financial_exposure, Risk.evidence_path,
         ).where(Risk.tenant_id == tenant_id, Risk.deleted_at.is_(None))
     )).all()
 
@@ -1014,6 +1014,7 @@ async def _intel(
         ev = is_evidenced(
             control_last_tested=r.control_last_tested,
             control_assertion_source=r.control_assertion_source,
+            has_document=r.evidence_path is not None,
             today=today,
         )
         contra = is_contradicted(rating, ce_scale, rid in linked_by_risk)
@@ -1230,12 +1231,12 @@ async def _intel(
             title=f"Evidence the {n} highest control {_plural(n, 'rating', 'ratings')}",
             detail=(
                 f"{_ids_text(ids)} {_plural(n, 'carries', 'carry')} a rating of {hc_text} without a recent independent "
-                "test. A high rating removes most of a risk's severity from its residual score, so these are the "
+                "test backed by a document on file. A high rating removes most of a risk's severity from its residual score, so these are the "
                 "largest unverified assumptions on the register."
             ),
             done_when=(
                 "Each carries a test dated within 12 months that was independently tested or externally audited, "
-                "or the rating is revised."
+                "with the evidence document attached to the risk, or the rating is revised."
             ),
             owner=_owners_text([r.owner for r in unev_high], "Risk owners"),
             refs=ids,

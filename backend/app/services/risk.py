@@ -126,6 +126,8 @@ def _serialize(risk: Risk) -> dict:
     sid = risk.source_submission_id
     data['linked_decision_at']   = str(lda) if lda is not None else None
     data['source_submission_id'] = str(sid) if sid is not None else None
+    # Kept in the bin so a restore reattaches the file and a purge can delete it.
+    data['evidence_path']        = str(risk.evidence_path) if risk.evidence_path is not None else None
     return data
 
 def _apply_risk_filters(

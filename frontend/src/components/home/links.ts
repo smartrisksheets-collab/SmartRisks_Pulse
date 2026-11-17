@@ -22,13 +22,12 @@ export function initialsOf(text: string | null | undefined): string {
   return s.toUpperCase();
 }
 
-export type DayPart = 'morning' | 'afternoon' | 'evening';
-
-export function dayPart(d: Date): DayPart {
-  const h = d.getHours();
-  if (h >= 5 && h < 12) return 'morning';
-  if (h >= 12 && h < 17) return 'afternoon';
-  return 'evening';
+// The workspace's local date (YYYY-MM-DD from the backend) as "Tuesday, 17 November 2026".
+export function localDateLine(iso: string | null): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso ?? '');
+  if (!m) return '';
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+  return d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
 }
 
 // Share of first-time setup steps done, for the hero progress bar.

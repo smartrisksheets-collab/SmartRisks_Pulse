@@ -33,6 +33,13 @@ const LOOKUP_LABELS: Record<string, string> = {
 type LocalLookups = Record<string, string[]>;
 type CategoryMap = Record<string, string[]>;
 
+function usageText(risks: number, incidents: number): string {
+  const parts: string[] = [];
+  if (risks > 0) parts.push(`${risks} risk${risks !== 1 ? "s" : ""}`);
+  if (incidents > 0) parts.push(`${incidents} incident${incidents !== 1 ? "s" : ""}`);
+  return parts.join(" and ");
+}
+
 function copyMap(map: CategoryMap): CategoryMap {
   return Object.fromEntries(Object.entries(map).map(([k, v]) => [k, [...v]]));
 }
@@ -153,7 +160,7 @@ function LookupEditorContent({ lookups, patch, visibleKeys }: {
   });
   const isDirty = listsDirty || (showMap && !mapsEqual(localMap, lookups.incident_category_map ?? {}));
   const [checking, setChecking]     = useState<string | null>(null);
-  const [blockModal, setBlockModal] = useState<{ value: string; count: number } | null>(null);
+  const [blockModal, setBlockModal] = useState<{ value: string; risks: number; incidents: number } | null>(null);
   const [warnModal, setWarnModal]   = useState<{ key: string; index: number; value: string; count: number } | null>(null);
 
   function removeChip(key: string, index: number) {
@@ -172,7 +179,7 @@ function LookupEditorContent({ lookups, patch, visibleKeys }: {
       if (result.count === 0) {
         removeChip(key, index);
       } else if (HARD_BLOCK.has(key)) {
-        setBlockModal({ value: val, count: result.count });
+        setBlockModal({ value: val, risks: result.risks, incidents: result.incidents });
       } else {
         setWarnModal({ key, index, value: val, count: result.count });
       }
@@ -308,14 +315,14 @@ function LookupEditorContent({ lookups, patch, visibleKeys }: {
         </p>
       )}
 
-      {/* Hard block modal — risk_owner tied to risks */}
+      {/* Hard block modal — risk_owner tied to risks or incidents */}
       {blockModal && (
         <div className="srs-confirm-backdrop" onClick={() => setBlockModal(null)}>
           <div className="srs-confirm" onClick={(e) => e.stopPropagation()}>
             <div className="srs-confirm-hd">Cannot delete "{blockModal.value}"</div>
             <div className="srs-confirm-bd">
-              This owner is assigned to <strong>{blockModal.count} risk{blockModal.count !== 1 ? "s" : ""}</strong> in the register.
-              Reassign or remove those risks first, then delete this owner.
+              This owner is assigned to <strong>{usageText(blockModal.risks, blockModal.incidents)}</strong>.
+              Reassign or remove those first, then delete this owner.
             </div>
             <div className="srs-confirm-ft">
               <button className="btn btn-primary btn-compact" type="button" onClick={() => setBlockModal(null)}>

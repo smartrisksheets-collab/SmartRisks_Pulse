@@ -871,7 +871,7 @@ def r_risk_incident_correlation(d: Deck, data, ai, label):
          RED if n_con else GREEN,
          "Rated highly, yet an incident was still linked to the risk. The first ratings to test."
          if n_mat else "No risks materialised, so no rating was contradicted.",
-         f"{ctl.get('evidenced', 0)} of {ctl.get('rated', 0)} ratings carry a recent independent test"),
+         f"{ctl.get('evidenced', 0)} of {ctl.get('rated', 0)} ratings carry a recent independent test and a document"),
     ]
     gap = 0.3
     w = (CONTENT_W - 2 * gap) / 3
@@ -1003,7 +1003,7 @@ def r_control_evidence(d: Deck, data, ai, label):
     ]
     def row(r):
         return [r.get("id"), r.get("title"), r.get("rating"), ", ".join(r.get("reasons") or [])]
-    return _section_slide(d, data, ai, label, "Tested in 12 months and independently asserted", kpis,
+    return _section_slide(d, data, ai, label, "Tested in 12 months, independently asserted, document on file", kpis,
                           ["ID", "Risk", "Rating", "Gap"], rows, row, [1.1, 4.4, 1.6, 4.0], None,
                           ["ID", "Risk", "Rating", "Gap"], row, [0.9, 4.4, 1.6, 4.0])
 

@@ -27,6 +27,7 @@ from app.schemas.brief import (
     SignalRow,
     WeeklyDigest,
 )
+from app.services.clock import greeting, local_now
 from app.services.matrix_config import _get_or_create as _get_matrix
 from app.services.risk_status import (
     band_count,
@@ -169,7 +170,7 @@ async def build_brief_payload(
             is_warming_up=is_warming_up,
             generated_at=today.isoformat(),
         ),
-        greeting=_get_greeting(today),
+        greeting=greeting(local_now(tenant, today).hour),
         residual_change_summary=_build_preheader(daily_section, risks, bands),
         critical_count=sum(1 for r in risks if r["is_top"]),
         elevated_label=bands["elevated"],
@@ -829,15 +830,6 @@ def _days_since(val: object) -> int:
         return (date.today() - parsed).days
     except (ValueError, TypeError):
         return 9999
-
-
-def _get_greeting(now: datetime) -> str:
-    hour = now.hour
-    if hour < 12:
-        return "Good morning"
-    if hour < 17:
-        return "Good afternoon"
-    return "Good evening"
 
 
 def _first_name_from_email(email: str) -> str:

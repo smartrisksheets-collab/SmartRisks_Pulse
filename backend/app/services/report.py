@@ -164,6 +164,7 @@ class RiskRow:
     title:                    str = ""          # migration 063, blank on older risks
     mitigation_status:        str = "Open"
     threshold:                float | None = None  # appetite threshold for this risk's category
+    has_evidence_doc:         bool = False         # evidence document on file (migration 066)
 
 
 @dataclass
@@ -254,6 +255,7 @@ async def _fetch_risks(db: AsyncSession, tenant_id: UUID) -> list[RiskRow]:
             title=str(r.title or "").strip(),
             mitigation_status=str(r.mitigation_status or "Open"),
             threshold=_threshold,
+            has_evidence_doc=r.evidence_path is not None,
         ))
     return rows
 
@@ -1640,6 +1642,7 @@ def compute_risk_incident_correlation(ctx: ReportContext) -> dict:
         if is_evidenced(
             control_last_tested=r.control_last_tested,
             control_assertion_source=r.control_assertion_source,
+            has_document=r.has_evidence_doc,
             today=today,
         )
     )
@@ -1832,7 +1835,8 @@ def compute_control_evidence(ctx: ReportContext) -> dict:
     gaps: list[dict] = []
     for r in rated:
         ok  = is_evidenced(control_last_tested=r.control_last_tested,
-                           control_assertion_source=r.control_assertion_source, today=today)
+                           control_assertion_source=r.control_assertion_source,
+                           has_document=r.has_evidence_doc, today=today)
         inc = latest_inc.get(r.id)
         bad = is_contradicted(r.control_effectiveness, ce_scale, inc is not None)
         evidenced += 1 if ok else 0
@@ -1846,6 +1850,8 @@ def compute_control_evidence(ctx: ReportContext) -> dict:
             reasons.append("No test date" if r.control_last_tested is None else "Not tested in the last 12 months")
         if not is_independent(r.control_assertion_source):
             reasons.append("Self-assessed" if r.control_assertion_source.strip() else "No assertion source")
+        if not r.has_evidence_doc:
+            reasons.append("No evidence document")
         gaps.append({
             "id":           r.id,
             "title":        _risk_name(r),
@@ -1864,8 +1870,8 @@ def compute_control_evidence(ctx: ReportContext) -> dict:
     elif not n:
         narrative = "No control has been rated yet, so there is no control evidence to report."
     else:
-        narrative = (f"{evidenced} of {n} rated controls are evidenced: tested in the last 12 months "
-                     f"and asserted by someone other than the risk owner.")
+        narrative = (f"{evidenced} of {n} rated controls are evidenced: tested in the last 12 months, "
+                     f"asserted by someone other than the risk owner, and backed by a document on file.")
         if contradicted:
             narrative += (f" {_plural(contradicted, 'rating was', 'ratings were')} contradicted by an incident "
                           f"in the period.")

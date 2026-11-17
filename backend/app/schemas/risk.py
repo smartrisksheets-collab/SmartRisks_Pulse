@@ -3,7 +3,9 @@
 from __future__ import annotations
 from datetime import date, datetime
 from uuid import UUID
-from pydantic import BaseModel, Field, field_validator, computed_field
+from pydantic import BaseModel, Field, ValidationInfo, computed_field, field_validator
+
+from app.services.clock import ensure_not_future
 
 
 TITLE_MAX = 80
@@ -45,6 +47,14 @@ class RiskCreate(BaseModel):
     mitigation_status: str | None        = 'Open'
     logged_at: date | None               = None
     control_last_tested: date | None     = None
+
+    # Past-only dates: a control cannot have been tested, or a risk logged, in the future.
+    @field_validator('logged_at', 'control_last_tested')
+    @classmethod
+    def _not_future(cls, v: date | None, info: ValidationInfo) -> date | None:
+        label = 'Last tested' if info.field_name == 'control_last_tested' else 'Date logged'
+        return ensure_not_future(v, label)  # type: ignore[return-value]
+
     control_test_result:      str | None = None
     control_assertion_source: str | None = None
     root_cause:               str | None = None
@@ -98,6 +108,14 @@ class RiskUpdate(BaseModel):
     mitigation_status: str | None        = None
     logged_at: date | None               = None
     control_last_tested: date | None     = None
+
+    # Past-only dates: a control cannot have been tested, or a risk logged, in the future.
+    @field_validator('logged_at', 'control_last_tested')
+    @classmethod
+    def _not_future(cls, v: date | None, info: ValidationInfo) -> date | None:
+        label = 'Last tested' if info.field_name == 'control_last_tested' else 'Date logged'
+        return ensure_not_future(v, label)  # type: ignore[return-value]
+
     control_test_result:      str | None = None
     control_assertion_source: str | None = None
     root_cause:               str | None = None
@@ -165,8 +183,20 @@ class RiskResponse(BaseModel):
     appetite_status:          str | None = None
     is_undecided:             bool = False
     is_past_target:           bool = False
+    # Evidence document (migration 066). The storage path is never exposed.
+    evidence_name:            str | None = None
+    evidence_mime:            str | None = None
+    evidence_size:            int | None = None
+    evidence_uploaded_at:     datetime | None = None
+    evidence_uploaded_by:     str | None = None
 
     model_config = {'from_attributes': True}
+
+    @computed_field
+    @property
+    def has_evidence(self) -> bool:
+        """A document is on file. Name and path are always set and cleared together."""
+        return self.evidence_name is not None
 
     @computed_field
     @property

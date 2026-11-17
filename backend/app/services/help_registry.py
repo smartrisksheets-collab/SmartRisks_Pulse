@@ -196,7 +196,8 @@ def build_help(m: MatrixConfigResponse) -> list[HelpEntry]:
                 f"Rated 0 to {ce} on this workspace's scale, or Not assessed. Each level removes a fixed "
                 f"share of severity: {_ce_steps(ce, dict(m.ce_labels))}. A rating of {ce} removes all of it, "
                 "so it is the largest assumption on any risk record. A rating counts as **evidenced** only "
-                f"when it was tested within the last {months} months and asserted as {sources}."
+                f"when it was tested within the last {months} months, asserted as {sources}, "
+                "and an evidence document is attached to the risk."
             ),
             where="Scale and level names: Settings › Control Effectiveness",
             route="/settings?tab=ce", requires=MANAGE_SETTINGS,

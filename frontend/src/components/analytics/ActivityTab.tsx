@@ -15,7 +15,8 @@ import {
   type FeedTier,
 } from '../../utils/feedEvents';
 import Explain from '../help/Explain';
-import { Card } from './shared';
+import { usePaged } from '../../hooks/usePaged';
+import { Card, Pager } from './shared';
 
 type Filter = 'all' | 'risk' | 'incident';
 
@@ -41,6 +42,7 @@ export default function ActivityTab({ data, hasRisk, hasIncident, showAuditLink,
   const riskN = items.filter(i => i.kind === 'risk').length;
   const incN = items.length - riskN;
   const shown = filter === 'all' ? items : items.filter(i => i.kind === filter);
+  const paged = usePaged(shown);
   const options: { key: Filter; label: string; n: number }[] = [
     { key: 'all', label: 'All', n: items.length },
     ...(hasRisk ? [{ key: 'risk' as const, label: 'Risk', n: riskN }] : []),
@@ -61,7 +63,7 @@ export default function ActivityTab({ data, hasRisk, hasIncident, showAuditLink,
               type="button"
               className={`pl-seg-btn${filter === o.key ? ' pl-on' : ''}`}
               aria-pressed={filter === o.key}
-              onClick={() => setFilter(o.key)}
+              onClick={() => { setFilter(o.key); paged.setPage(1); }}
             >
               {o.label} {o.n}
             </button>
@@ -72,7 +74,7 @@ export default function ActivityTab({ data, hasRisk, hasIncident, showAuditLink,
         <p className="pl-caption">No changes recorded yet.</p>
       ) : (
         <div className="pl-stack-0">
-          {shown.map(it => {
+          {paged.rows.map(it => {
             const cfg = it.kind === 'risk' ? riskEventConfig(it.entry) : incidentEventConfig(it.entry);
             const nar = it.kind === 'risk' ? riskNarrative(it.entry) : incidentNarrative(it.entry);
             const flag = it.kind === 'incident' ? incidentFlag(it.entry) : null;
@@ -96,6 +98,7 @@ export default function ActivityTab({ data, hasRisk, hasIncident, showAuditLink,
           })}
         </div>
       )}
+      <Pager p={paged} />
       <p className="pl-caption">
         Logins, settings and user changes are not shown here.
         {showAuditLink && <> They are in the <Link to="/audit">Audit Log</Link>.</>}

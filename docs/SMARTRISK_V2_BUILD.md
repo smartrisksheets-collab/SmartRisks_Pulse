@@ -3,7 +3,7 @@
 **Product:** SmartRisk Pulse v2
 **Stack:** FastAPI + React + Supabase + Render + Vercel
 **Setup document:** SMARTRISK_V2_SETUP.md
-**Last updated:** November 16, 2026
+**Last updated:** November 17, 2026
  
 ---
  
@@ -16,8 +16,65 @@ At the end of every session Claude outputs a fresh version of this file with all
 ---
  
 **Phase:** Product polish and hardening. Pulse UI redesign rolled out (Home, Analytics, Register, Incidents, Report Builder). Ask Pulse help live. Control effectiveness scale switch still locked pending staging tests.
-**Status:** Session 30, November 15 to 16, 2026: partner UI fixes, Ask Pulse stage 1, AI status from the workspace matrix (5-band top two escalate), Ask Pulse short queries. All delivered as patches. Previous: Session 29, November 13 to 14, 2026: Pulse UI redesign steps 1 to 7 (migrations 062 to 065), pushed to staging 0354ca2. Sessions 27 and older are in `docs/session_archive.md`.
-**Next action:** Begin next session by reading SMARTRISK_V2_SETUP.md, SMARTRISK_V2_DECISIONS.md, then this file. First task: the Session 30 incomplete list. Then confirm migrations 057, 058, 059 and 062 to 065 have run on every database (including Supabase), then the open Session 28 partner items, then the carried-over lists in `docs/session_archive.md` (Sessions 26 and 27).
+**Status:** Session 31, November 16 to 17, 2026: Analytics paging and pick lists, risk evidence upload (migration 066), workspace clock for the Home greeting, no future dates, department link to the incident form, public incident form in the Pulse skin. All delivered as 4 patches on staging 532eea3. Previous: Session 30, November 15 to 16, 2026 (partner UI fixes, Ask Pulse stage 1, AI status from the matrix), pushed in 532eea3. Sessions 28 and older are in `docs/session_archive.md`.
+**Next action:** Begin next session by reading SMARTRISK_V2_SETUP.md, SMARTRISK_V2_DECISIONS.md, then this file. First task: the Session 31 incomplete list. Then confirm migrations 057, 058, 059 and 062 to 066 have run on every database (including Supabase), then the open Session 28 partner items (in `docs/session_archive.md`), then the carried-over lists there (Sessions 26 and 27).
+
+---
+
+### Session 31: November 16 to 17, 2026, Analytics Paging, Risk Evidence Upload, Workspace Clock, Public Incident Form
+
+Built on staging 532eea3. Delivered as 4 patches, applied in this order. Claude did not commit or push.
+
+**Completed:**
+
+**1. Analytics paging, app-font pick lists, incident owner from Taxonomy (`analytics-paging-picklist.patch`)**
+- The Correlation tables and the Activity feed page at 10 rows (`hooks/usePaged.ts`, `Pager` in `analytics/shared.tsx`, `ANALYTICS_PAGE_SIZE`).
+- New `components/ui/PickList.tsx`, a searchable list drawn by the app, because a native select popup cannot load Inter. It is used for incident Related risk and Owner.
+- The incident Owner comes from Taxonomy "Dept/Risk Owner" only. A legacy value is kept and shown as "(not in Taxonomy)".
+- The owner delete check counts active incidents (`assigned_to`) as well as risks, and `patch_lookups` now enforces it (422). `GET /lookups/usage` returns `count`, `risks` and `incidents`.
+- Checks: 117 pytest pass (6 new), ruff clean, lint (0 errors) and build pass, PickList and Pager checked in Playwright.
+
+**2. Risk evidence upload and preview (`risk-evidence-upload.patch`, migration 066)**
+- `066_risk_evidence` adds 6 nullable `evidence_*` columns to `risks`. `066_risk_evidence_bucket_supabase.sql` (Supabase only) creates the private bucket `risk-evidence` (10 MB, PDF, PNG, JPEG and WebP).
+- `POST` and `DELETE /risks/{id}/evidence` need `manage_risks`. `GET /risks/{id}/evidence/link` gives any risk-module member a 60-second signed link. The file type is checked from its first bytes, and there is one document per risk.
+- `risk_status.is_evidenced` now also needs a document on file. Existing evidenced controls show as Unevidenced until a file is attached.
+- The recycle bin keeps the file, restore reattaches it, and delete forever and the 30-day purge remove it. Each upload and removal writes an audit entry.
+- Frontend: `EvidenceField`, `EvidencePreviewModal`, a document line in the risk panel, and `pl-evd-` CSS.
+- Checks: 123 pytest pass (11 new), migration round trip 065 to 066 passes, the SQL is safe to rerun, ruff clean, lint and build pass. Real Supabase Storage was not tested.
+
+**3. Form scroll, workspace clock, incident link, no future dates (`form-scroll-greeting-tz-dates.patch`)**
+- The risk form no longer scrolls into a blank area. Cause: the evidence field's hidden `sr-only` input (absolutely positioned) was placed against the page, because `.content` had no `position`. `.content` now has `position: relative`.
+- New `services/clock.py` is the one workspace clock. `GET /home` returns `timezone`, `local_date` and `day_part`. Home uses them instead of the device clock, and the brief email greeting uses the same function. The bands are morning 00:00 to 11:59, afternoon 12:00 to 16:59 and evening 17:00 to 23:59. Saving Settings refreshes Home.
+- The public incident link header is solid Navy.
+- On the department link (`/submit/:token`), "Something that already happened" keeps the warning banner, hides the risk questions and shows an "Open the incident form" button. `incident_form_path` comes from the backend and is null when the incident module is off.
+- Future dates are blocked on screen and in the backend: risk `logged_at` and `control_last_tested`, incident `reported_at` and `incident_dt`, and the public incident `date_reported` and `incident_date`. The backend compares against the latest date anywhere on Earth (UTC+14). Target dates and token expiry stay open. The risk form's default "Date logged" now uses the device's local date.
+- Checks: 150 pytest pass (21 new), lint (0 errors) and build pass. The department link and the scroll fix were checked in a headless browser.
+
+**4. Public incident form in the Pulse skin (`public-incident-form-skin.patch`)**
+- `/external/incident` was rebuilt from the partner's mockup with pl- classes and a new `pl-ext-` section in `index.css`.
+- New `GET /external/severity/{id}` returns the workspace's severity levels with criteria text. It is read-only and falls back to the defaults without seeding. A submit with a severity outside that list gets a 422.
+- Public submissions take `title` and `impact_confidence`. On approval they carry over `title`, `impact_confidence` and `incident_dt` (date and time). The date and time were dropped before.
+- Checks: 157 pytest pass (7 new), lint (0 errors) and build pass. The page was checked at desktop and phone width in a headless browser.
+
+**Migrations:** 066 (`066_risk_evidence`), so the alembic head is 066. Supabase also needs `066_risk_evidence_bucket_supabase.sql`.
+
+**Files changed this session:**
+
+Backend: `alembic/versions/066_risk_evidence.py` (new), `alembic/versions/sql/066_risk_evidence.sql`, `066_risk_evidence_down.sql`, `066_risk_evidence_bucket_supabase.sql` (new), `app/api/v1/routes/external.py`, `app/api/v1/routes/lookup.py`, `app/api/v1/routes/risks.py`, `app/models/risk.py`, `app/schemas/external.py`, `app/schemas/home.py`, `app/schemas/incident.py`, `app/schemas/risk.py`, `app/schemas/submission.py`, `app/services/brief.py`, `app/services/clock.py` (new), `app/services/dashboard.py`, `app/services/evidence.py` (new), `app/services/external.py`, `app/services/help_registry.py`, `app/services/home.py`, `app/services/incident_severity.py`, `app/services/lookup.py`, `app/services/pdf_report.py`, `app/services/pptx_report.py`, `app/services/recycle.py`, `app/services/report.py`, `app/services/risk.py`, `app/services/risk_status.py`, `app/services/submission.py`, `tests/test_external_incident_form.py` (new), `tests/test_lookup_owner_usage.py` (new), `tests/test_risk_evidence.py` (new), `tests/test_submit_incident_link.py` (new), `tests/test_ui_step7_reports.py`, `tests/test_workspace_clock.py` (new)
+
+Frontend: `src/components/analytics/ActivityTab.tsx`, `src/components/analytics/CorrelationTab.tsx`, `src/components/analytics/shared.tsx`, `src/components/home/SkyHero.tsx`, `src/components/home/links.ts`, `src/components/incidents/IncidentForm.tsx`, `src/components/risks/EvidenceField.tsx` (new), `src/components/risks/EvidencePreviewModal.tsx` (new), `src/components/risks/RiskForm.tsx`, `src/components/risks/RiskPanel.tsx`, `src/components/settings/LookupEditor.tsx`, `src/components/ui/PickList.tsx` (new), `src/hooks/usePaged.ts` (new), `src/hooks/useSettings.ts`, `src/index.css`, `src/pages/ExternalIncident.tsx`, `src/pages/ExternalSubmit.tsx`, `src/pages/Home.tsx`, `src/pages/RiskFormPage.tsx`, `src/services/lookups.ts`, `src/services/risks.ts`, `src/types/home.ts`, `src/types/risk.ts`, `src/utils/constants.ts`, `src/utils/evidence.ts` (new), `src/utils/incidentDisplay.ts`, `src/utils/riskForm.ts`
+
+Docs: `docs/SMARTRISK_V2_BUILD.md`, `docs/SMARTRISK_V2_DECISIONS.md`, `docs/session_archive.md`
+
+**Status:** All 4 patches delivered and checked together on a fresh checkout of 532eea3 (157 pytest pass, lint 0 errors, build passes). The user is applying them and pushing to staging.
+
+**Incomplete (first tasks next session):**
+1. On Supabase staging, run `066_risk_evidence.sql`, then `066_risk_evidence_bucket_supabase.sql`, and check that the `risk-evidence` bucket is private. Then run the real upload test in `risk-evidence-upload.md` (add, preview, replace, remove, bin restore, purge, Analyst preview).
+2. On staging, set a workspace to America/Chicago and check the Home greeting and date, then send a test brief and check its greeting.
+3. Run the future-date query in `form-scroll-greeting-tz-dates.md` on staging and production data. Fix any rows it lists, or tell their owners, because editing them now asks for a valid date.
+4. Test the public incident link end to end: workspace severity levels show, submit with a title, time and confidence, approve, then check the incident.
+5. Reskin the public risk form (`/external/risk`) when the partner sends its design. It still uses the old `ext-` styles.
+6. Carried from Session 30 and not confirmed this session: the Ask Pulse checks ("add", "add a risk", "export"), the 5-band AI status check, and adding `ADMIN_JWT_SECRET` to `.github/workflows/ci.yml` (still missing).
 
 ---
 
@@ -97,45 +154,6 @@ The partner's UI pack (pl- tokens and 13 screens) was built in 7 steps, each del
 **Deferred from the pack:** Register: bulk owner and decision, action owner, AI accept and dismiss, suggested incident link, next-ID tag, likelihood and impact word labels. Incidents: draft, next-ID tag, AI accept and dismiss, owner-notified line. The old rb- CSS is still in `index.css` and can be removed.
 
 **Status:** Complete and pushed to staging (0354ca2).
-
----
-
-### Session 28: November 9, 2026, AI Brief Residual Bands
-
-**Completed:**
-
-**AI brief (daily, weekly, monthly, quarterly email)**
-- Root cause confirmed: `services_brief.py` `_risk_to_dict` read `Risk.level`, which `services_risk.py` `_score` bands from inherent severity (likelihood x impact) before controls. Every High/Critical count, table, outreach line, preheader and subject used the inherent band.
-- The brief now bands each risk from its residual score.
-- High/Critical and Critical are decided by band position (`is_elevated_index`, top 2 bands, and the top band), not by the literal names. Renamed bands and the fifth band are now counted. Email text, the High/Critical heading and the subject use the workspace band names.
-- Email badge colours come from a backend `tone` field (high, medium, low) on `BriefTableRow`. `BriefPayload` gained `elevated_label` and `top_band_label`.
-- Daily snapshot band crossings compare band positions recomputed from the stored residuals on the current matrix, so old snapshots that stored the inherent label do not raise false crossings.
-
-**One band rule (`services_risk_status.py`)**
-- Added `band_for_score`, `band_labels`, `band_count`, `elevated_min_index`, `is_elevated_index`, `elevated_phrase`, `residual_max`.
-- `services_risk.py` `_score` and the `_band_labels`, `_elevated_phrase`, `_residual_max` helpers in `services_report.py` now delegate to them. Inherent levels are unchanged.
-
-**Other brief flaws fixed**
-- Weekly overdue reviews, biweekly accountability and outreach used a hardcoded 30 days instead of `brief_stale_threshold`.
-- Four copies of the overdue action check replaced by `risk_status.is_past_target`.
-- Brief health score divided by a fixed 25. It now uses `likelihood_scale x impact_scale`.
-
-**Verification:** ruff shows no new warnings on the changed files, all files compile, and a smoke test with renamed 4-band and 5-band configs gave the expected bands, counts, heading and subject. `git apply --check` passes on staging 76c57b2. pytest (needs PostgreSQL) and `tsc --noEmit` were not run.
-
-**Migrations:** none.
-
-**Files changed this session (in `brief-residual-band.patch`):**
-
-Backend: `services_risk_status.py`, `services_risk.py`, `services_report.py`, `services_brief.py`, `services_snapshot.py`, `services_email.py`, `schemas_brief.py`
-
-Frontend: `types_brief.ts`
-
-**Status:** Applied and pushed to staging in commit 2f3f294 (November 9, 2026).
-
-**Incomplete (first tasks next session):**
-1. Done: the patch is in staging 2f3f294. Still to do: send a test brief and confirm risks with strong controls no longer show as High/Critical.
-2. Partner review: in a 5-band workspace "elevated" is the top 2 bands (band 3 is not flagged). If the partner wants band 3 included, change `elevated_min_index` only; it also changes the register `is_elevated` flag and reports.
-3. Residual formula confirmation with partner is still open. The brief bands now depend on it.
 
 ---
 

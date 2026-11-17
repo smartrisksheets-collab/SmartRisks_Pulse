@@ -2,7 +2,7 @@
 // The 60-second view: verdict, four tiles, what to do next, where the risk sits,
 // the executive brief and recent activity. A new workspace sees the setup view instead.
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Compass } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
@@ -16,7 +16,7 @@ import { NextActions, RecentActivity, Tiles, WhereLists } from '../components/ho
 import BriefCard from '../components/home/BriefCard';
 import Tour from '../components/home/Tour';
 import SetupView from '../components/home/SetupView';
-import { TOUR_STEPS, dayPart, incidentPath, initialsOf, riskPath, setupProgress } from '../components/home/links';
+import { TOUR_STEPS, incidentPath, initialsOf, localDateLine, riskPath, setupProgress } from '../components/home/links';
 
 // The verdict sentence comes from the backend as "<workspace name> is <status>. ...".
 // The hero reads it as "<organization>'s risk posture is <status>." with the opening in bold.
@@ -51,13 +51,6 @@ export default function Home() {
   const { data, isLoading, isError, refetch } = useHome();
   const { query: settingsQuery } = useSettings();
 
-  // Re-reads the clock once a minute so the greeting and sky follow the time of day.
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 60000);
-    return () => clearInterval(t);
-  }, []);
-
   const [tour, setTour] = useState(-1);
   const closeTour = () => setTour(-1);
 
@@ -75,9 +68,11 @@ export default function Home() {
     );
   }
 
-  const part = dayPart(now);
+  // Part of day and date come from the backend in the workspace time zone (Settings),
+  // not the viewer's device clock. Home refetches every 5 minutes, so they stay current.
+  const part = data.day_part;
   const greeting = data.first_name ? `Good ${part}, ${data.first_name}` : `Good ${part}`;
-  const dateLine = now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  const dateLine = localDateLine(data.local_date);
   const initials = initialsOf(data.first_name ?? claims?.email);
 
   if (data.setup.first_run) {

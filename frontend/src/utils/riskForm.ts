@@ -3,6 +3,7 @@
 
 import type { MitigationStatus, Risk, RiskTreatment } from '../types/risk';
 import { RISK_TITLE_MAX } from '../types/risk';
+import { todayIso } from './incidentDisplay';
 
 export interface RiskFormValues {
   title:                    string;
@@ -30,7 +31,7 @@ export interface RiskFormValues {
 
 export const EMPTY_RISK_FORM: RiskFormValues = {
   title: '', category: '', description: '', owner: '', primary_impact: '',
-  logged_at: new Date().toISOString().slice(0, 10),
+  logged_at: todayIso(),
   likelihood: 3, impact_score: 3, treatment: '',
   controls: '', control_effectiveness: null,
   mitigation_plan: '', comments: '',
@@ -39,7 +40,7 @@ export const EMPTY_RISK_FORM: RiskFormValues = {
   control_last_tested: '', control_assertion_source: 'Self-assessed',
 };
 
-export type RiskFieldKey = 'title' | 'category' | 'owner' | 'description' | 'treatment';
+export type RiskFieldKey = 'title' | 'category' | 'owner' | 'logged_at' | 'description' | 'control_last_tested' | 'treatment';
 export type RiskFieldErrors = Partial<Record<RiskFieldKey, string>>;
 
 export function validateRiskForm(v: RiskFormValues): RiskFieldErrors {
@@ -51,10 +52,14 @@ export function validateRiskForm(v: RiskFormValues): RiskFieldErrors {
   if (!v.owner.trim()) e.owner = 'Choose a risk owner.';
   if (!v.description.trim()) e.description = 'Describe what could happen.';
   if (!v.treatment) e.treatment = 'Choose how the risk will be treated.';
+  // Past-only dates (the backend rejects future ones too). ISO strings compare as dates.
+  const today = todayIso();
+  if (v.logged_at && v.logged_at > today) e.logged_at = 'The date logged cannot be in the future.';
+  if (v.control_last_tested && v.control_last_tested > today) e.control_last_tested = 'The last test date cannot be in the future.';
   return e;
 }
 
-export const FIELD_ORDER: RiskFieldKey[] = ['title', 'category', 'owner', 'description', 'treatment'];
+export const FIELD_ORDER: RiskFieldKey[] = ['title', 'category', 'owner', 'logged_at', 'description', 'control_last_tested', 'treatment'];
 
 export function formFromRisk(r: Risk): RiskFormValues {
   return {

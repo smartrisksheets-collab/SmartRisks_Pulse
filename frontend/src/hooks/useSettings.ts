@@ -37,6 +37,8 @@ export function useSettings() {
     mutationFn: (payload: SettingsUpdate) => patchSettings(payload),
     onSuccess: (data) => {
       queryClient.setQueryData(SETTINGS_KEY, data);
+      // Home's greeting, sky and date follow the workspace time zone.
+      queryClient.invalidateQueries({ queryKey: ['dashboard', 'home'] });
       if (data.currency_symbol) setCurrency(data.currency_symbol);
       applyBrandColors(data.primary_color, data.accent_color);
       applyWorkspaceTheme(data.theme_mode as "light" | "dark" | "auto");

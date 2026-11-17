@@ -1,11 +1,11 @@
 // src/pages/ExternalSubmit.tsx
 
 import { useState, useEffect, useRef } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 
 const API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000';
 
-interface TokenInfo { label: string; department: string; org_name: string; logo_url: string | null; }
+interface TokenInfo { label: string; department: string; org_name: string; logo_url: string | null; incident_form_path: string | null; }
 interface SubmitResult { reference: string; message: string; }
 
 function CheckIcon() {
@@ -262,14 +262,23 @@ export default function ExternalSubmit() {
                   <line x1="12" y1="16" x2="12.01" y2="16"/>
                 </svg>
                 <div>
-                  <strong>That is an incident, not a risk.</strong> Incidents are logged separately
-                  so they can be investigated and closed. Your answers will be carried across —
-                  nothing is lost.
+                  <strong>That is an incident, not a risk.</strong> Incidents are reported on the
+                  incident form so they can be investigated and closed.
+                  {tokenInfo?.incident_form_path ? (
+                    <>
+                      {' '}Please fill in the incident form instead. Your name and email are not carried over.
+                      <Link className="sf-callout-btn" to={tokenInfo.incident_form_path}>Open the incident form</Link>
+                    </>
+                  ) : (
+                    <> This workspace does not take incident reports online. Please tell the risk team directly.</>
+                  )}
                 </div>
               </div>
             )}
           </div>
 
+          {/* Sections 3 to 5 and the submit button are for risks only. Incidents go to the incident form. */}
+          {subType === 'risk' && (<>
           {/* Section 3 — Tell us about it */}
           <div className="sf-sect">
             <div className="sf-sect-head">
@@ -384,6 +393,7 @@ export default function ExternalSubmit() {
               risk team. It is not anonymous, and is not shared with your line manager as a matter of course.
             </p>
           </div>
+          </>)}
         </div>
 
         <WhatHappensNext />

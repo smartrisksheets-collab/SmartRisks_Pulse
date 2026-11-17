@@ -3,7 +3,7 @@
 // The art comes from the partner's design pack; colours are part of the illustration.
 
 import type { ReactNode } from 'react';
-import type { DayPart } from './links';
+import type { DayPart } from '../../types/home';
 
 const SKY: Record<DayPart, ReactNode> = {
   morning: (

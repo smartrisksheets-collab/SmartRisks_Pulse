@@ -45,9 +45,15 @@ export interface HomeSetup {
   first_run: boolean;
 }
 
+export type DayPart = 'morning' | 'afternoon' | 'evening';
+
 export interface HomeData {
   first_name: string | null;
   workspace: string;
+  // Workspace clock from the Settings time zone, worked out on the backend.
+  timezone: string;
+  local_date: string | null;
+  day_part: DayPart;
   status: string;
   confidence: string;
   verdict: string;

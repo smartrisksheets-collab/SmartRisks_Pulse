@@ -55,6 +55,13 @@ export interface Risk {
   appetite_status:      'within' | 'near' | 'exceeds' | null;
   is_undecided:         boolean;
   is_past_target:       boolean;
+  // Evidence document (migration 066). has_evidence comes from the backend.
+  has_evidence:         boolean;
+  evidence_name:        string | null;
+  evidence_mime:        string | null;
+  evidence_size:        number | null;
+  evidence_uploaded_at: string | null;
+  evidence_uploaded_by: string | null;
   source:               string;
   created_at:           string;
   updated_at:           string;
@@ -227,4 +234,18 @@ export interface RiskContext {
   score:     ScoreBreakdown;
   history:   RiskHistoryItem[];
   incidents: RiskLinkedIncident[];
+}
+
+/** Short-lived link to view a risk's evidence document (GET /risks/{id}/evidence/link). */
+export interface EvidenceLink {
+  url:        string;
+  name:       string;
+  mime:       string;
+  expires_in: number;
+}
+
+/** What the risk form asks to change about the evidence document when it saves. */
+export interface EvidenceChange {
+  file:   File | null;   // a new document to upload (replaces any current one)
+  remove: boolean;       // remove the current document; ignored when file is set
 }

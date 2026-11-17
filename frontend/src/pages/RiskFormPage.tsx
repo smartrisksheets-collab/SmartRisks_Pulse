@@ -7,12 +7,32 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft } from 'lucide-react';
 import RiskForm from '../components/risks/RiskForm';
 import { EMPTY_RISK_FORM, formFromRisk } from '../utils/riskForm';
-import { createRisk, getRisk, updateRisk } from '../services/risks';
+import { createRisk, getRisk, removeEvidence, updateRisk, uploadEvidence } from '../services/risks';
 import { invalidateRiskQueries } from '../hooks/useRisks';
 import { useLookups } from '../hooks/useLookups';
 import { useToast } from '../hooks/useToast';
 import { useFeedbackStore } from '../store/feedbackStore';
-import type { RiskCreate } from '../types/risk';
+import type { EvidenceChange, Risk, RiskCreate } from '../types/risk';
+import type { SavedEvidence } from '../components/risks/EvidenceField';
+
+/** Uploads or removes the evidence document. Returns an error message, or null when it worked. */
+async function applyEvidence(id: string, change: EvidenceChange): Promise<string | null> {
+  try {
+    if (change.file) await uploadEvidence(id, change.file);
+    else if (change.remove) await removeEvidence(id);
+    return null;
+  } catch (e) {
+    return e instanceof Error ? e.message : 'The evidence file could not be saved.';
+  }
+}
+
+function savedEvidenceOf(r: Risk | undefined): SavedEvidence | null {
+  if (!r || !r.has_evidence) return null;
+  return {
+    riskId: r.id, version: r.updated_at, name: r.evidence_name ?? 'Evidence', mime: r.evidence_mime ?? '',
+    size: r.evidence_size, uploadedAt: r.evidence_uploaded_at, uploadedBy: r.evidence_uploaded_by,
+  };
+}
 
 export default function RiskFormPage() {
   const { id } = useParams<{ id: string }>();
@@ -36,19 +56,33 @@ export default function RiskFormPage() {
   const linkCategory = params.get('category');
   const category = linkCategory && lookups?.category.includes(linkCategory) ? linkCategory : '';
 
-  async function handleSubmit(payload: RiskCreate, addAnother: boolean) {
+  async function handleSubmit(payload: RiskCreate, addAnother: boolean, evidence: EvidenceChange) {
     setSaving(true);
     setError(null);
     try {
       if (isEdit && id) {
         await updateRisk(id, payload);
+        const evErr = await applyEvidence(id, evidence);
         invalidateRiskQueries(qc);
+        if (evErr) {
+          // The risk is saved; stay on the form so the file can be tried again.
+          setError(`${id} saved, but the evidence was not updated: ${evErr}`);
+          window.scrollTo({ top: 0 });
+          return;
+        }
         toast(`${id} saved.`, 'success');
         navigate(`/risks?risk=${encodeURIComponent(id)}`);
         return;
       }
       const created = await createRisk(payload);
+      const evErr = await applyEvidence(created.id, evidence);
       invalidateRiskQueries(qc);
+      if (evErr) {
+        // The risk exists now, so carry on in its edit form to retry the upload.
+        toast(`${created.id} saved, but the evidence was not uploaded: ${evErr}`, 'error');
+        navigate(`/risks/${encodeURIComponent(created.id)}/edit`);
+        return;
+      }
       useFeedbackStore.getState().trigger('add_risk', 'How was adding your first risk?');
       if (addAnother) {
         toast(`${created.id} saved. Add the next one.`, 'success');
@@ -85,6 +119,7 @@ export default function RiskFormPage() {
       <RiskForm
         key={existing.data ? `${existing.data.id}-${existing.data.updated_at}` : `new-${formKey}`}
         initial={initial}
+        savedEvidence={savedEvidenceOf(existing.data)}
         isEdit={isEdit}
         saving={saving}
         error={error}

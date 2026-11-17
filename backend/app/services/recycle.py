@@ -12,6 +12,7 @@ from app.models.recycle_bin import RecycleBin
 from app.models.audit_log import AuditLog
 from app.core.config import settings
 from app.core.exceptions import PermissionDeniedError, ResourceNotFoundError, ValidationError
+from app.services.evidence import delete_evidence_objects
 
 
 def _to_date(v: str | date | None) -> date | None:
@@ -186,6 +187,15 @@ async def restore_item(
             source=data.get('source') or 'internal',
             source_submission_id=UUID(data['source_submission_id']) if data.get('source_submission_id') else None,
         )
+        # Evidence document (migration 066): the file stays in storage while the
+        # risk is in the bin, so restoring the columns reattaches it.
+        if data.get('evidence_path') and data.get('evidence_name'):
+            restored.evidence_path        = data['evidence_path']
+            restored.evidence_name        = data['evidence_name']
+            restored.evidence_mime        = data.get('evidence_mime')
+            restored.evidence_size        = data.get('evidence_size')
+            restored.evidence_uploaded_at = _to_dt(data.get('evidence_uploaded_at'))
+            restored.evidence_uploaded_by = data.get('evidence_uploaded_by')
         restored.severity       = scored['severity']
         restored.level          = scored['level']
         restored.level_index    = scored['level_index']
@@ -238,6 +248,14 @@ async def restore_item(
     return {'item_type': bin_item.item_type, 'item_id': bin_item.item_id}
 
 
+def _bin_evidence_path(item_type: str, item_data: dict | None) -> str | None:
+    """The evidence object path stored with a binned risk, if it had a document."""
+    if item_type != 'risk' or not item_data:
+        return None
+    path = item_data.get('evidence_path')
+    return str(path) if path else None
+
+
 async def permanent_delete(
     db: AsyncSession,
     tenant_id: UUID,
@@ -258,6 +276,7 @@ async def permanent_delete(
     item_type  = str(bin_item.item_type or "item").capitalize()
     item_id    = str(bin_item.item_id   or "")
     await db.execute(delete(RecycleBin).where(RecycleBin.id == bin_id))
+    evidence_path = _bin_evidence_path(str(bin_item.item_type or ""), bin_item.item_data)  # type: ignore[arg-type]
     db.add(AuditLog(
         tenant_id=tenant_id,
         user_email=deleted_by,
@@ -267,13 +286,23 @@ async def permanent_delete(
         summary=f"Permanently deleted {item_type.lower()} {item_id} from bin",
     ))
     await db.flush()
+    if evidence_path:
+        await delete_evidence_objects([evidence_path])
 
 
 async def purge_expired(db: AsyncSession) -> int:
     """Entry point for the daily scheduler job."""
     now = datetime.now(timezone.utc)
+    # Evidence files of risks about to be purged, read before the rows go.
+    expiring = await db.execute(
+        select(RecycleBin.item_type, RecycleBin.item_data)
+        .where(RecycleBin.purge_at < now, RecycleBin.item_type == 'risk')
+    )
+    paths = [p for p in (_bin_evidence_path(str(t), d) for t, d in expiring.all()) if p]
     result = await db.execute(
         delete(RecycleBin).where(RecycleBin.purge_at < now)
     )
     await db.flush()
+    if paths:
+        await delete_evidence_objects(paths)
     return result.rowcount
