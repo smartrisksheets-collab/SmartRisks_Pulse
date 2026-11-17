@@ -416,7 +416,7 @@ function Brandbar({ tokenInfo }: { tokenInfo: TokenInfo | null }) {
       )}
       <div>
         <strong className="sf-brand-name">{tokenInfo?.org_name || tokenInfo?.label || 'SmartRisk Pulse'}</strong>
-        <span className="sf-brand-sub">Risk &amp; Compliance</span>
+        {tokenInfo?.department && <span className="sf-brand-sub">{tokenInfo.department}</span>}
       </div>
     </div>
   );

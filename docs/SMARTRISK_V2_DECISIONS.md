@@ -8,6 +8,7 @@ Plain English record of every significant decision made during the build, who ra
 
 One line per decision, newest first. Started November 16, 2026. Decisions before Session 29 are in the log below, by session.
 
+- 2026-11-17: Public form headers show no fixed subtitle; the department link shows its department.
 - 2026-11-17: The public incident form shows the workspace's own severity levels and rejects others.
 - 2026-11-17: Public incident cost confidence keeps the 3 stored values; the incident date and time are stored as entered, marked UTC.
 - 2026-11-17: On the department link, "already happened" shows a button to the incident form. The forms are not merged.
@@ -2188,3 +2189,8 @@ Why: The incident register uses the workspace's levels, so a public report must 
 **Decision: Public incident form fields follow stored values (November 17, 2026)**
 Chosen: "How sure is that figure?" keeps the 3 stored values (Unknown, Estimated, Confirmed), because the mockup's "Low, a rough guess" has nowhere to be stored. The incident date and time are stored the way the internal form stores them (the time as entered, marked UTC). The mockup's "New" badges and sample values are not shipped.
 Why: Both forms must store data the same way, and no value is shown that has no source.
+
+**Decision: No fixed subtitle on public form headers (November 17, 2026)**
+Raised by: Partner. "Risk & Compliance" was hardcoded under the workspace name on the public forms.
+Chosen: The department link shows its department (e.g. Finance). The incident form shows only the workspace name.
+Why: Every line on a public page must come from real data. The department is already sent with the link.

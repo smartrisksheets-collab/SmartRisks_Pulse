@@ -54,6 +54,10 @@ Built on staging 532eea3. Delivered as 4 patches, applied in this order. Claude 
 - `/external/incident` was rebuilt from the partner's mockup with pl- classes and a new `pl-ext-` section in `index.css`.
 - New `GET /external/severity/{id}` returns the workspace's severity levels with criteria text. It is read-only and falls back to the defaults without seeding. A submit with a severity outside that list gets a 422.
 - Public submissions take `title` and `impact_confidence`. On approval they carry over `title`, `impact_confidence` and `incident_dt` (date and time). The date and time were dropped before.
+
+**5. Public form subtitle (follow-up commit on staging, after ed4a030)**
+- The hardcoded "Risk & Compliance" line under the workspace name is gone. The department link shows the link's department (e.g. Finance), and the incident form shows only the workspace name. Frontend only: `src/pages/ExternalSubmit.tsx`, `src/pages/ExternalIncident.tsx`.
+- Claude committed and pushed this fix to staging at the user's request.
 - Checks: 157 pytest pass (7 new), lint (0 errors) and build pass. The page was checked at desktop and phone width in a headless browser.
 
 **Migrations:** 066 (`066_risk_evidence`), so the alembic head is 066. Supabase also needs `066_risk_evidence_bucket_supabase.sql`.
@@ -66,7 +70,7 @@ Frontend: `src/components/analytics/ActivityTab.tsx`, `src/components/analytics/
 
 Docs: `docs/SMARTRISK_V2_BUILD.md`, `docs/SMARTRISK_V2_DECISIONS.md`, `docs/session_archive.md`
 
-**Status:** All 4 patches delivered and checked together on a fresh checkout of 532eea3 (157 pytest pass, lint 0 errors, build passes). The user is applying them and pushing to staging.
+**Status:** All 4 patches checked together on a fresh checkout of 532eea3 (157 pytest pass, lint 0 errors, build passes). The user pushed them to staging in ed4a030. The subtitle fix (item 5) followed as a separate commit.
 
 **Incomplete (first tasks next session):**
 1. On Supabase staging, run `066_risk_evidence.sql`, then `066_risk_evidence_bucket_supabase.sql`, and check that the `risk-evidence` bucket is private. Then run the real upload test in `risk-evidence-upload.md` (add, preview, replace, remove, bin restore, purge, Analyst preview).

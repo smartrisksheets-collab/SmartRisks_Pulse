@@ -52,10 +52,7 @@ function BrandRow({ brand }: { brand: Brand }) {
       <span className="pl-ext-logo">
         {brand.logo_url ? <img src={brand.logo_url} alt={`${name} logo`} /> : <span aria-hidden="true">{initialsOf(name)}</span>}
       </span>
-      <div className="pl-stack-0">
-        <span className="pl-ext-org">{name}</span>
-        <span className="pl-caption">Risk &amp; Compliance</span>
-      </div>
+      <span className="pl-ext-org">{name}</span>
     </header>
   );
 }
