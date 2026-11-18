@@ -25,7 +25,7 @@ class Incident(Base):
     category = Column(String)
     severity = Column(String)
     priority = Column(String)
-    status = Column(String, server_default="Open")
+    status = Column(String, server_default="New")
     root_cause = Column(String)
     assigned_to = Column(String)
     reported_by = Column(String)

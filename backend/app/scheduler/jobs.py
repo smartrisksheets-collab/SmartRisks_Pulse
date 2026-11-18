@@ -97,6 +97,28 @@ async def job_recycle_purge() -> None:
         logger.exception("job_recycle_purge: help events purge failed")
 
 
+# ── job: Ask Pulse unanswered questions report ──────────────────────────────
+
+async def job_help_gaps_report() -> None:
+    """
+    Email the questions Ask Pulse could not answer in the last week.
+    Runs Mondays at 07:30 UTC. Skipped when no recipient is set or nothing went unanswered.
+    """
+    from app.core.config import settings
+    from app.services.ask_pulse import unanswered_questions
+    from app.services.email import send_help_gaps_email
+
+    if not settings.HELP_REPORT_EMAIL:
+        return
+    try:
+        async with AsyncSessionLocal() as db:
+            gaps = await unanswered_questions(db, settings.HELP_REPORT_DAYS)
+        if gaps:
+            send_help_gaps_email(settings.HELP_REPORT_EMAIL, gaps, settings.HELP_REPORT_DAYS)
+    except Exception:
+        logger.exception("job_help_gaps_report failed")
+
+
 # ── job: orphaned logo sweep ───────────────────────────────────────────────
 
 _ORPHAN_LOGO_SQL = text(
@@ -227,10 +249,11 @@ async def job_incident_escalation() -> None:
     from app.models.workspace_member import WorkspaceMember
     from app.models.account import Account
     from app.services.incident_severity import compute_breach, get_sla_map
+    from app.services.incident_status import OPEN_STATUSES
     from app.services.email import send_escalation_alert
 
     now = datetime.now(timezone.utc)
-    open_statuses = {'New', 'Open', 'In Progress', 'Under Review'}
+    open_statuses = set(OPEN_STATUSES)
 
     tenant_ids = await _get_all_tenant_ids()
 
@@ -403,4 +426,4 @@ async def job_brief_send() -> None:
                     logger.info("job_brief_send: sent for tenant=%s to=%d recipients", tenant.id, len(recipient_list))
 
         except Exception:
-            logger.exception("job_brief_send failed for tenant=%s", tenant.id)
+            logger.exception("job_brief_send failed for tenant=%s", tenant.id)

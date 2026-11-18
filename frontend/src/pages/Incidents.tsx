@@ -1,393 +1,394 @@
 // src/pages/Incidents.tsx
+// Incident log in the Pulse layout: summary line, actions, quick views with
+// counts, filters, the log table and the side panel. Logging and editing
+// happen on their own page (IncidentFormPage). Counts and wording come from
+// GET /incidents/views and the list rows; nothing is derived here.
 
-import { useState, useCallback, useEffect, useRef } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
-import { useSearchParams } from 'react-router-dom';
-import { useToast } from '../hooks/useToast';
-import { Link2, RefreshCw, Printer } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
-import { useFeedbackStore } from '../store/feedbackStore';
-import { useIncidents } from '../hooks/useIncidents';
-import type { ListIncidentsParams } from '../services/incidents';
-import { useAuth } from '../hooks/useAuth';
+import { useEffect, useRef, useState } from 'react';
+import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { MoreHorizontal, Plus } from 'lucide-react';
+import { useIncidents, invalidateIncidentQueries } from '../hooks/useIncidents';
+import { useIncidentSeverity } from '../hooks/useIncidentSeverity';
 import { useLookups } from '../hooks/useLookups';
-import IncidentStatCards from '../components/incidents/IncidentStatCards';
+import { useAuth } from '../hooks/useAuth';
+import { useToast } from '../hooks/useToast';
+import { useCanDo } from '../utils/permissions';
+import {
+  deleteIncident, getIncidentPageInsights, getIncidentViewCounts, updateIncident, type ListIncidentsParams,
+} from '../services/incidents';
+import { INCIDENT_PAGE_SIZE, INCIDENT_VIEWS, insightParts, type IncidentView } from '../utils/incidentDisplay';
 import IncidentTable from '../components/incidents/IncidentTable';
-import IncidentDetailDrawer from '../components/incidents/IncidentDetailDrawer';
+import IncidentPanel from '../components/incidents/IncidentPanel';
 import IncidentPrintModal from '../components/incidents/IncidentPrintModal';
 import IncidentExternalLinkModal from '../components/incidents/IncidentExternalLinkModal';
-import AddIncidentModal from '../components/incidents/AddIncidentModal';
-import type { Incident, IncidentCreate, IncidentStats, IncidentPageInsight, MonthlyTrend, TopDriver } from '../types/incident';
-import { getIncidentPageInsights, getIncident } from '../services/incidents';
-import { useCanDo } from '../utils/permissions';
-import { useIncidentSeverity } from '../hooks/useIncidentSeverity';
+import RecycleBinModal from '../components/recycle/RecycleBinModal';
+import type { IncidentPageInsight, IncidentStage } from '../types/incident';
 
-const PAGE_SIZE = 10;
+export default function Incidents() {
+  const canManage  = useCanDo('manage_incidents');
+  const canAddRisk = useCanDo('manage_risks');
+  const canAI      = useCanDo('generate_ai');
+  const canPrint   = useCanDo('print_reports');
+  const canAudit   = useCanDo('manage_settings');
+  const { claims } = useAuth();
+  const navigate   = useNavigate();
+  const toast      = useToast();
+  const qc         = useQueryClient();
+  const { lookups } = useLookups();
+  const { config: sevConfig } = useIncidentSeverity();
+  const levels = (sevConfig.data?.levels ?? []).slice().sort((a, b) => a.sort_order - b.sort_order);
+  const sevRank: Record<string, number> = Object.fromEntries(levels.map((l, i) => [l.label, i]));
 
-const STATUSES   = ['New', 'Open', 'In Progress', 'Under Review', 'Resolved', 'Closed'];
-const CHANNELS   = ['Email', 'Phone', 'Walk-in', 'Monitoring', 'Other'];
+  // ── Filters ───────────────────────────────────────────────────────────────
+  const [view, setView]           = useState<IncidentView>('open');
+  const [search, setSearch]       = useState('');
+  const [debounced, setDebounced] = useState('');
+  const [category, setCategory]   = useState('');
+  const [severity, setSeverity]   = useState('');
+  const [owner, setOwner]         = useState('');
+  const [page, setPage]           = useState(1);
 
-// ── AI Insights card ──────────────────────────────────────────────────────────
-function IncidentInsightSection({ stats }: { stats: IncidentStats }) {
-  const [insight, setInsight]   = useState<IncidentPageInsight | null>(null);
-  const [loading, setLoading]   = useState(false);
-  const [err,     setErr]       = useState<string | null>(null);
+  useEffect(() => {
+    const t = setTimeout(() => { setDebounced(search.trim()); setPage(1); }, 300);
+    return () => clearTimeout(t);
+  }, [search]);
 
-  async function generate() {
-    setLoading(true);
-    setErr(null);
+  const filterParams = {
+    search:   debounced || undefined,
+    category: category  || undefined,
+    severity: severity  || undefined,
+    owner:    owner     || undefined,
+  };
+  const listParams: ListIncidentsParams = { ...filterParams, view, page, page_size: INCIDENT_PAGE_SIZE };
+  const { incidents, total, loading, error } = useIncidents(listParams);
+
+  const counts = useQuery({
+    queryKey: ['incidents', 'views', filterParams],
+    queryFn: () => getIncidentViewCounts(filterParams),
+    staleTime: 2 * 60 * 1000,
+    placeholderData: keepPreviousData,
+  });
+
+  function pick(setter: (v: string) => void) {
+    return (v: string) => { setter(v); setPage(1); };
+  }
+  function clearFilters() {
+    setSearch(''); setCategory(''); setSeverity(''); setOwner(''); setView('open'); setPage(1);
+  }
+  const filtersActive = !!(search || category || severity || owner || view !== 'open');
+
+  // ── Selection, panel, menu, modals ────────────────────────────────────────
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [menuOpen, setMenuOpen]       = useState(false);
+  const [showPrint, setShowPrint]     = useState(false);
+  const [showLink, setShowLink]       = useState(false);
+  const [showBin, setShowBin]         = useState(false);
+  const [insight, setInsight]         = useState<IncidentPageInsight | null>(null);
+  const [insightBusy, setInsightBusy] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenuOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [menuOpen]);
+
+  // ── Deep links (the open panel lives in the URL, so it can be shared) ───
+  //   /incidents?incident=INC-2026-001  opens the side panel
+  //   /incidents?edit=INC-2026-001      goes to the edit page
+  //   /incidents?new=1                  goes to the log page
+  const [searchParams, setSearchParams] = useSearchParams();
+  const openId = searchParams.get('incident');
+  const editId = searchParams.get('edit');
+  const wantsNew = searchParams.get('new') === '1';
+
+  function setOpenId(id: string | null) {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (id) next.set('incident', id); else next.delete('incident');
+      return next;
+    }, { replace: true });
+  }
+
+  useEffect(() => {
+    if (!editId && !wantsNew) return;
+    if (wantsNew && canManage) { navigate('/incidents/new', { replace: true }); return; }
+    if (editId && canManage) { navigate(`/incidents/${encodeURIComponent(editId)}/edit`, { replace: true }); return; }
+    toast(`You do not have permission to ${wantsNew ? 'log' : 'edit'} incidents.`, 'error');
+    const next = new URLSearchParams(searchParams);
+    next.delete('edit'); next.delete('new');
+    if (editId) next.set('incident', editId);
+    setSearchParams(next, { replace: true });
+  }, [editId, wantsNew, canManage, navigate, toast, searchParams, setSearchParams]);
+
+  function handleToggle(id: string) {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  function handleToggleAll() {
+    setSelectedIds(prev => {
+      const pageIds = incidents.map(r => r.id);
+      const all = pageIds.length > 0 && pageIds.every(id => prev.has(id));
+      const next = new Set(prev);
+      pageIds.forEach(id => (all ? next.delete(id) : next.add(id)));
+      return next;
+    });
+  }
+
+  async function handlePatch(patch: { status?: IncidentStage; linked_risk_id?: string }, done: string) {
+    if (!openId) return;
+    try {
+      await updateIncident(openId, patch);
+      invalidateIncidentQueries(qc);
+      toast(done, 'success');
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'The incident could not be saved.', 'error');
+      throw e;
+    }
+  }
+
+  async function handleDelete() {
+    if (!openId) return;
+    const id = openId;
+    try {
+      await deleteIncident(id);
+      invalidateIncidentQueries(qc);
+      toast(`${id} moved to the recycle bin.`, 'success');
+      setSelectedIds(prev => { const n = new Set(prev); n.delete(id); return n; });
+      setOpenId(null);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'The incident could not be deleted.', 'error');
+      throw e;
+    }
+  }
+
+  async function handleInsights() {
+    setMenuOpen(false);
+    setInsightBusy(true);
     try {
       setInsight(await getIncidentPageInsights());
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Failed to generate insights.');
+      toast(e instanceof Error ? e.message : 'The AI insights could not be generated.', 'error');
     } finally {
-      setLoading(false);
+      setInsightBusy(false);
     }
   }
 
-  const breachCount  = stats.totals.count - stats.health.within_sla;
-  const breachPct    = stats.totals.count > 0 ? Math.round((breachCount / stats.totals.count) * 100) : 0;
-
-  return (
-    <div className="inc-insight-card">
-      <div className="inc-insight-head">
-        <span className="inc-insight-title">AI Insights — Recommended Actions</span>
-        <span className="inc-exec-tag">Executive summary</span>
-      </div>
-      <div className="inc-insight-stats">
-        <div className="inc-insight-stat">
-          <div className="inc-insight-stat-n">{stats.health.score}</div>
-          <div className="inc-insight-stat-l">Health Index ({stats.health.label})</div>
-        </div>
-        <div className="inc-insight-stat">
-          <div className="inc-insight-stat-n">{breachPct}%</div>
-          <div className="inc-insight-stat-l">SLA breach rate · {breachCount} of {stats.totals.count}</div>
-        </div>
-        <div className="inc-insight-stat">
-          <div className="inc-insight-stat-n">{stats.totals.open_over_150d}</div>
-          <div className="inc-insight-stat-l">Open &gt;150 days</div>
-        </div>
-      </div>
-      {insight ? (
-        <ul className="inc-action-list">
-          {insight.actions.map((a, i) => (
-            <li key={i} className="inc-action-item">
-              <span className="inc-action-badge">{a.badge}</span>
-              <span dangerouslySetInnerHTML={{ __html: a.text }} />
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <>
-          {err && <p style={{ color: '#fca5a5', fontSize: 12, marginBottom: 8 }}>{err}</p>}
-          <button className="inc-insight-gen-btn" onClick={generate} disabled={loading} type="button">
-            {loading
-              ? <><span className="spinner" />Generating…</>
-              : <>✦ Generate AI Insights</>
-            }
-          </button>
-        </>
-      )}
-    </div>
-  );
-}
-
-// ── Incident Trend panel ───────────────────────────────────────────────────────
-function IncidentTrendPanel({ trend }: { trend: MonthlyTrend[] }) {
-  return (
-    <div className="inc-panel">
-      <div className="inc-panel-title">Incident Trend</div>
-      <div className="inc-panel-sub">6-month rolling count</div>
-      {trend.some(t => t.count > 0) ? (
-        <ResponsiveContainer width="100%" height={130}>
-          <BarChart data={trend} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
-            <XAxis dataKey="month" tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} />
-            <YAxis tick={{ fontSize: 10, fill: 'var(--muted)' }} allowDecimals={false} axisLine={false} tickLine={false} />
-            <Tooltip contentStyle={{ fontSize: 12, borderRadius: 6 }} />
-            <Bar dataKey="count" name="Incidents" fill="var(--primary)" radius={[3, 3, 0, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
-      ) : (
-        <div className="dash-empty" style={{ padding: '30px 0', textAlign: 'center', fontSize: 13 }}>No incidents logged in the last 6 months.</div>
-      )}
-    </div>
-  );
-}
-
-// ── Top Incident Drivers panel ─────────────────────────────────────────────────
-function IncidentDriversPanel({ drivers, sevColors }: { drivers: TopDriver[]; sevColors: Record<string, string> }) {
-  return (
-    <div className="inc-panel">
-      <div className="inc-panel-title">Top Incident Drivers</div>
-      <div className="inc-panel-sub">Open incidents ranked by age and recurrence</div>
-      {drivers.length > 0 ? (
-        <table className="inc-driver-table">
-          <thead>
-            <tr><th>Incident</th><th>Severity</th><th>Age</th></tr>
-          </thead>
-          <tbody>
-            {drivers.slice(0, 3).map(d => (
-              <tr key={d.id}>
-                <td title={d.title ?? d.id}>
-                  {d.title ? (d.title.length > 45 ? `${d.title.slice(0, 45)}…` : d.title) : d.id}
-                </td>
-                <td>
-                  <span style={{ color: sevColors[d.severity ?? ''] ?? 'var(--muted)', fontWeight: 700, fontSize: 12 }}>
-                    {d.severity || '—'}
-                  </span>
-                </td>
-                <td style={{ whiteSpace: 'nowrap', fontWeight: 700, color: d.age_days > 90 ? '#dc2626' : 'var(--text)' }}>
-                  {d.age_days}d
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      ) : (
-        <div className="dash-empty" style={{ padding: '30px 0', textAlign: 'center', fontSize: 13 }}>No open incidents.</div>
-      )}
-    </div>
-  );
-}
-
-export default function Incidents() {
-  const { claims } = useAuth();
-  const canManageInc = useCanDo('manage_incidents');
-  const canPrint     = useCanDo('print_reports');
-  const qc           = useQueryClient();
-  const { lookups } = useLookups();
-  const { config: sevConfig } = useIncidentSeverity();
-  const severityLabels: string[] = (sevConfig.data?.levels ?? [])
-    .slice()
-    .sort((a, b) => a.sort_order - b.sort_order)
-    .map(l => l.label);
-  const sevColors: Record<string, string> = Object.fromEntries(
-    (sevConfig.data?.levels ?? []).map(l => [l.label, l.color]),
-  );
-
-  // Pagination + filters
-  const [page, setPage]                     = useState(1);
-  const [filterId, setFilterId]             = useState('');
-  const [filterCategory, setFilterCategory] = useState('');
-  const [filterSeverity, setFilterSeverity] = useState('');
-  const [filterStatus, setFilterStatus]     = useState('');
-  const [filterBusinessUnit, setFilterBU]   = useState('');
-  const [filterSearch, setFilterSearch]     = useState('');
-
-  // UI state
-  const [flashId, setFlashId]         = useState<string | null>(null);
-  const [detailInc, setDetailInc]     = useState<Incident | null>(null);
-  const [showAdd, setShowAdd]         = useState(false);
-  const [showPrint, setShowPrint]     = useState(false);
-  const [showExtLink, setShowExtLink] = useState(false);
-
-  // Deep link: /incidents?incident=INC-2026-001 opens that incident's drawer
-  const [searchParams, setSearchParams] = useSearchParams();
-  const toast = useToast();
-  const handledLink = useRef<string | null>(null);
-  const linkedIncidentId = searchParams.get('incident');
-
-  useEffect(() => {
-    if (!linkedIncidentId || handledLink.current === linkedIncidentId) return;
-    handledLink.current = linkedIncidentId;
-    const next = new URLSearchParams(searchParams);
-    next.delete('incident');
-    setSearchParams(next, { replace: true });
-    getIncident(linkedIncidentId)
-      .then(setDetailInc)
-      .catch(() => toast(`Incident ${linkedIncidentId} could not be opened. It may have been deleted.`, 'error'));
-  }, [linkedIncidentId, searchParams, setSearchParams, toast]);
-
-  // Incident list query — declared after all state is initialised
-  const incidentParams: ListIncidentsParams = {
-    page,
-    page_size:     PAGE_SIZE,
-    incident_id:   filterId           || undefined,
-    category:      filterCategory     || undefined,
-    severity:      filterSeverity     || undefined,
-    status:        filterStatus       || undefined,
-    business_unit: filterBusinessUnit || undefined,
-    search:        filterSearch       || undefined,
+  // ── Display ───────────────────────────────────────────────────────────────
+  const c = counts.data;
+  const viewCount: Record<IncidentView, number | undefined> = {
+    open: c?.open, unlinked: c?.unlinked, high: c?.high, resolved: c?.resolved, all: c?.all,
   };
-  const { incidents, total, loading, error, stats, statsLoading, create } = useIncidents(incidentParams);
-
-
-  const members = (lookups?.risk_owner ?? []).map(o => ({ name: o, email: o }));
-  const incidentCategories = lookups?.incident_category ?? ['Cybersecurity', 'IT Operations', 'Physical Security', 'Data Protection', 'Compliance', 'Other'];
-  const businessUnits = lookups?.business_unit ?? [];
-
-  const loadPage = useCallback((p: number) => {
-    setPage(p);
-  }, []);
-
-  function applyFilters() { setPage(1); }
-  function clearFilters() {
-    setFilterId(''); setFilterCategory(''); setFilterSeverity('');
-    setFilterStatus(''); setFilterBU(''); setFilterSearch('');
-    setPage(1);
-  }
-
-  async function handleAdd(payload: IncidentCreate): Promise<void> {
-    const inc = await create(payload);
-    if (inc) {
-      useFeedbackStore.getState().trigger('log_incident', 'How was logging your first incident?');
-      setShowAdd(false);
-      setFlashId(inc.id);
-      setTimeout(() => setFlashId(null), 3500);
-    }
-  }
-
-  function handleSaved(updated: Incident) {
-    setDetailInc(null);
-    setFlashId(updated.id);
-    setTimeout(() => setFlashId(null), 3500);
-    qc.invalidateQueries({ queryKey: ['incidents'] });
-    qc.invalidateQueries({ queryKey: ['dashboard'] });
-  }
-
-  function handleDeleted() {
-    setDetailInc(null);
-    qc.invalidateQueries({ queryKey: ['incidents'] });
-    qc.invalidateQueries({ queryKey: ['dashboard'] });
-  }
+  const totalPages = Math.max(1, Math.ceil(total / INCIDENT_PAGE_SIZE));
+  const first = total === 0 ? 0 : (page - 1) * INCIDENT_PAGE_SIZE + 1;
+  const last = Math.min(page * INCIDENT_PAGE_SIZE, total);
+  const owners = Array.from(new Set([...(c?.owners ?? []), ...(lookups?.risk_owner ?? []), ...(owner ? [owner] : [])])).sort();
+  const openRow = openId ? (incidents.find(r => r.id === openId) ?? null) : null;
+  const hasMenu = canManage || canAI || canPrint;
 
   return (
-    <>
-      <IncidentStatCards stats={stats} loading={statsLoading} />
-
-      {stats && <IncidentInsightSection stats={stats} />}
-
-      {stats && (
-        <div className="inc-panel-row">
-          <IncidentTrendPanel trend={stats.monthly_trend} />
-          <IncidentDriversPanel drivers={stats.top_drivers} sevColors={sevColors} />
+    <div className="pl-app pl-an-page">
+      <div className="pl-an-head">
+        <div className="pl-stack-xs">
+          <h1 className="pl-page-title">Incidents</h1>
+          <p className="pl-intro">
+            {c?.summary} {c && c.all > 0 && <Link to="/analytics#incidents">See the analysis</Link>}
+          </p>
         </div>
+        <div className="pl-inline pl-rr-actions">
+          {canManage && (
+            <button type="button" className="pl-btn pl-btn-secondary" onClick={() => setShowLink(true)}>
+              Share reporting link
+            </button>
+          )}
+          {hasMenu && (
+            <div className="pl-rr-menu-wrap" ref={menuRef}>
+              <button type="button" className="pl-btn pl-btn-secondary" aria-label="More actions"
+                aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen(o => !o)}>
+                <MoreHorizontal size={18} aria-hidden="true" />
+              </button>
+              {menuOpen && (
+                <div className="pl-menu pl-rr-menu" role="menu" aria-label="More actions">
+                  {canPrint && (
+                    <button type="button" role="menuitem" className="pl-menu-item" onClick={() => { setMenuOpen(false); setShowPrint(true); }}>
+                      Print or export
+                    </button>
+                  )}
+                  {canAI && (
+                    <button type="button" role="menuitem" className="pl-menu-item" disabled={insightBusy} onClick={handleInsights}>
+                      Generate AI insights
+                    </button>
+                  )}
+                  {canManage && (
+                    <button type="button" role="menuitem" className="pl-menu-item" onClick={() => { setMenuOpen(false); setShowBin(true); }}>
+                      Recycle bin
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+          {canManage && (
+            <Link className="pl-btn pl-btn-primary" to="/incidents/new">
+              <Plus size={16} aria-hidden="true" />Log incident
+            </Link>
+          )}
+        </div>
+      </div>
+
+      {insightBusy && <p className="pl-caption" role="status">Generating AI insights…</p>}
+      {insight && (
+        <section className="pl-card pl-sect" aria-label="AI insights">
+          <div className="pl-inline">
+            <h2 className="pl-label">AI insights</h2>
+            <button type="button" className="pl-btn pl-btn-ghost pl-btn-sm pl-push" onClick={() => setInsight(null)}>Dismiss</button>
+          </div>
+          {insight.actions.length === 0 && <p className="pl-p">No recommended actions right now.</p>}
+          {insight.actions.map((a, i) => (
+            <p className="pl-p" key={i}>
+              <span className="pl-tag">{a.badge}</span>{' '}
+              {insightParts(a.text).map((p, k) => (p.bold ? <b key={k}>{p.text}</b> : <span key={k}>{p.text}</span>))}
+            </p>
+          ))}
+        </section>
       )}
 
-      <div className="card">
-        {/* Toolbar */}
-        <div className="card-hd">
-          <div className="action-group">
-            <button className="btn-icon" title="External Submission Link" type="button" onClick={() => setShowExtLink(true)}>
-              <Link2 size={16} />
-            </button>
-            <button className="btn-icon" title="Refresh" type="button" onClick={() => qc.invalidateQueries({ queryKey: ['incidents'] })}>
-              <RefreshCw size={16} />
-            </button>
-            {canPrint && (
-              <button className="btn-icon" title="Print Report" type="button" onClick={() => setShowPrint(true)}>
-                <Printer size={16} />
-              </button>
-            )}
-            {canManageInc && (
-              <button className="btn btn-primary btn-compact" type="button" onClick={() => setShowAdd(true)}>
-                + Add Incident
-              </button>
-            )}
+      <div className="pl-views" role="group" aria-label="Quick views">
+        {INCIDENT_VIEWS.map(v => (
+          <button key={v.key} type="button" className={`pl-view${view === v.key ? ' pl-on' : ''}`}
+            aria-pressed={view === v.key} onClick={() => { setView(v.key); setPage(1); }}>
+            {v.label(c?.high_label ?? 'High or above')}
+            <span className="pl-view-n">{viewCount[v.key] ?? '…'}</span>
+          </button>
+        ))}
+      </div>
+
+      <section className="pl-card pl-rr-card" aria-label="Incidents">
+        <div className="pl-rr-filters">
+          <div className="pl-field pl-rr-f-search">
+            <label className="pl-field-label" htmlFor="in-q">Search</label>
+            <input id="in-q" className="pl-input" type="search" value={search}
+              onChange={e => setSearch(e.target.value)} placeholder="Incident ID, title, owner or description" />
           </div>
+          <div className="pl-field pl-rr-f">
+            <label className="pl-field-label" htmlFor="in-cat">Category</label>
+            <select id="in-cat" className="pl-input" value={category} onChange={e => pick(setCategory)(e.target.value)}>
+              <option value="">All categories</option>
+              {(lookups?.incident_category ?? []).map(x => <option key={x} value={x}>{x}</option>)}
+            </select>
+          </div>
+          <div className="pl-field pl-rr-f">
+            <label className="pl-field-label" htmlFor="in-sev">Severity</label>
+            <select id="in-sev" className="pl-input" value={severity} onChange={e => pick(setSeverity)(e.target.value)}>
+              <option value="">All severities</option>
+              {levels.map(l => <option key={l.label} value={l.label}>{l.label}</option>)}
+            </select>
+          </div>
+          <div className="pl-field pl-rr-f">
+            <label className="pl-field-label" htmlFor="in-own">Owner</label>
+            <select id="in-own" className="pl-input" value={owner} onChange={e => pick(setOwner)(e.target.value)}>
+              <option value="">All owners</option>
+              {owners.map(x => <option key={x} value={x}>{x}</option>)}
+            </select>
+          </div>
+          {filtersActive && (
+            <button type="button" className="pl-btn pl-btn-ghost" onClick={clearFilters}>Clear filters</button>
+          )}
         </div>
 
-        {/* Owner nudge banner */}
-        {members.length === 0 && (
-          <div className="inc-nudge">
-            No owners configured. Go to <strong>Settings → Lookups</strong> to add owners and enable the <strong>Reported By</strong> dropdown.
+        {selectedIds.size > 0 && (
+          <div className="pl-rr-bulk" role="region" aria-label="Bulk actions">
+            <span className="pl-rr-bulk-n">{selectedIds.size} selected</span>
+            {canPrint && <button type="button" className="pl-btn pl-btn-sm pl-btn-on-dark" onClick={() => setShowPrint(true)}>Print or export</button>}
+            <button type="button" className="pl-btn pl-btn-sm pl-btn-on-dark pl-push" onClick={() => setSelectedIds(new Set())}>Clear</button>
           </div>
         )}
 
-        {/* Filter bar */}
-        <div className="filter-bar">
-          <div className="filter-field">
-            <label className="filter-label">Incident ID</label>
-            <input type="text" value={filterId} onChange={e => setFilterId(e.target.value)} placeholder="e.g. INC-2026-001" onKeyDown={e => e.key === 'Enter' && applyFilters()} />
-          </div>
-          <div className="filter-field">
-            <label className="filter-label">Category</label>
-            <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)}>
-              <option value="">All</option>
-              {incidentCategories.map(c => <option key={c}>{c}</option>)}
-            </select>
-          </div>
-          <div className="filter-field">
-            <label className="filter-label">Severity</label>
-            <select value={filterSeverity} onChange={e => setFilterSeverity(e.target.value)}>
-              <option value="">All</option>
-              {severityLabels.map(s => <option key={s}>{s}</option>)}
-            </select>
-          </div>
-          <div className="filter-field">
-            <label className="filter-label">Status</label>
-            <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
-              <option value="">All</option>
-              {STATUSES.map(s => <option key={s}>{s}</option>)}
-            </select>
-          </div>
-          {businessUnits.length > 0 && (
-            <div className="filter-field">
-              <label className="filter-label">Business Unit</label>
-              <select value={filterBusinessUnit} onChange={e => setFilterBU(e.target.value)}>
-                <option value="">All</option>
-                {businessUnits.map(b => <option key={b}>{b}</option>)}
-              </select>
-            </div>
-          )}
-          <div className="filter-field grow">
-            <label className="filter-label">Quick Search</label>
-            <input type="text" value={filterSearch} onChange={e => setFilterSearch(e.target.value)} placeholder="Search description, reporter…" onKeyDown={e => e.key === 'Enter' && applyFilters()} />
-          </div>
-          <div className="filter-actions">
-            <button className="btn btn-secondary" type="button" onClick={clearFilters}>Clear</button>
-            <button className="btn btn-primary" type="button" onClick={applyFilters}>Search</button>
-          </div>
-        </div>
-
-        {error && <p style={{ color: '#dc2626', padding: '8px 16px', fontSize: 13 }}>{error}</p>}
-        {loading && <p className="muted" style={{ padding: '8px 16px' }}>Loading…</p>}
+        {error && <p className="pl-note pl-alert" role="alert">{error}</p>}
 
         <IncidentTable
           incidents={incidents}
-          flashId={flashId}
-          onOpen={setDetailInc}
-          page={page}
-          pageSize={PAGE_SIZE}
-          total={total}
-          onPrev={() => loadPage(page - 1)}
-          onNext={() => loadPage(page + 1)}
+          loading={loading}
+          sevRank={sevRank}
+          openId={openId}
+          selectedIds={selectedIds}
+          onOpen={r => setOpenId(r.id)}
+          onToggle={handleToggle}
+          onToggleAll={handleToggleAll}
         />
-      </div>
 
-      {showAdd && (
-        <AddIncidentModal
-          open={showAdd}
-          onClose={() => setShowAdd(false)}
-          onSubmit={handleAdd}
-          members={members}
-          categories={incidentCategories}
-          severities={severityLabels}
-          channels={CHANNELS}
+        {!loading && incidents.length === 0 && (
+          <div className="pl-rr-empty">
+            {filtersActive ? (
+              <>
+                <p className="pl-item-title">No incidents match</p>
+                <p className="pl-caption">Try another view or clear the filters.</p>
+              </>
+            ) : (
+              <>
+                <p className="pl-item-title">No incidents yet</p>
+                <p className="pl-caption">
+                  {canManage ? 'Log the first incident, or share the reporting link.' : 'Incidents appear here once someone logs them.'}
+                </p>
+              </>
+            )}
+          </div>
+        )}
+
+        <div className="pl-rr-foot">
+          <span className="pl-caption">
+            {total > 0 ? `Showing ${first} to ${last} of ${total}, newest first` : ''}
+          </span>
+          {totalPages > 1 && (
+            <span className="pl-inline">
+              <button type="button" className="pl-btn pl-btn-secondary pl-btn-sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Previous</button>
+              <span className="pl-caption">Page {page} of {totalPages}</span>
+              <button type="button" className="pl-btn pl-btn-secondary pl-btn-sm" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>Next</button>
+            </span>
+          )}
+        </div>
+      </section>
+
+      {openId && (
+        <IncidentPanel
+          key={openId}
+          incidentId={openId}
+          row={openRow}
+          sevRank={sevRank}
+          canManage={canManage}
+          canAddRisk={canAddRisk}
+          canAI={canAI}
+          canSeeAudit={canAudit}
+          onClose={() => setOpenId(null)}
+          onEdit={() => navigate(`/incidents/${encodeURIComponent(openId)}/edit`)}
+          onDelete={handleDelete}
+          onPatch={handlePatch}
         />
       )}
 
-      {/* Detail / Edit Drawer */}
-      {detailInc && (
-        <IncidentDetailDrawer
-          incident={detailInc}
-          members={members}
-          onClose={() => setDetailInc(null)}
-          onSaved={handleSaved}
-          onDeleted={handleDeleted}
-        />
-      )}
-
-      {/* Print Modal */}
       {showPrint && <IncidentPrintModal onClose={() => setShowPrint(false)} />}
-
-      {/* External Link Modal */}
-      {showExtLink && (
-        <IncidentExternalLinkModal
-          workspaceId={claims?.active_tenant_id ?? ''}
-          onClose={() => setShowExtLink(false)}
-        />
+      {showLink && (
+        <IncidentExternalLinkModal workspaceId={claims?.active_tenant_id ?? ''} onClose={() => setShowLink(false)} />
       )}
-    </>
+      <RecycleBinModal
+        open={showBin}
+        itemType="incident"
+        onClose={() => setShowBin(false)}
+        onRestored={() => invalidateIncidentQueries(qc)}
+      />
+    </div>
   );
 }

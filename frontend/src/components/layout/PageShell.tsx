@@ -6,7 +6,8 @@ import { useAuth } from '../../hooks/useAuth';
 import { useInactivityLogout } from '../../hooks/useInactivityLogout';
 
 const ROUTE_META: Record<string, string> = {
-  '/':            'Dashboard',
+  '/':            'Home',
+  '/analytics':   'Analytics',
   '/risks':       'Risk Register',
   '/incidents':   'Incident Management',
   '/reports':     'Report Builder',
@@ -77,7 +78,10 @@ interface PageShellProps {
 
 export default function PageShell({ children, title }: PageShellProps) {
   const location   = useLocation();
-  const routeTitle = ROUTE_META[location.pathname] ?? title ?? 'SmartRisk';
+  const routeTitle = ROUTE_META[location.pathname]
+    ?? (location.pathname === '/risks/new' || /^\/risks\/[^/]+\/edit$/.test(location.pathname) ? 'Risk Register' : undefined)
+    ?? (location.pathname === '/incidents/new' || /^\/incidents\/[^/]+\/edit$/.test(location.pathname) ? 'Incident Management' : undefined)
+    ?? title ?? 'SmartRisk';
   const { sidebarCollapsed, mobSidebarOpen } = useUIStore();
   const { logout } = useAuth();
   const { countdown, stayLoggedIn } = useInactivityLogout(logout);
@@ -122,4 +126,4 @@ export default function PageShell({ children, title }: PageShellProps) {
     </div>
     </>
   );
-}
+}

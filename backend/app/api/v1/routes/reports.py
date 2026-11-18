@@ -19,6 +19,7 @@ from app.schemas.report import (
     ReportEmailRequest,
     TemplateSaveRequest,
     ReportSettingsSaveRequest,
+    ReportDraftSaveRequest,
 )
 from app.services import report as report_service
 from app.services import ai_report as ai_report_service
@@ -143,7 +144,7 @@ async def export_report(
     request: Request,
     payload: ReportExportRequest,
     db:      AsyncSession = Depends(get_db),
-    claims:  dict         = Depends(get_active_tenant),
+    claims:  dict         = Depends(require_permission("print_reports")),
 ):
     tenant_id = UUID(claims["active_tenant_id"])
     fmt = payload.format
@@ -189,7 +190,7 @@ async def email_report(
     request: Request,
     payload: ReportEmailRequest,
     db:      AsyncSession = Depends(get_db),
-    claims:  dict         = Depends(get_active_tenant),
+    claims:  dict         = Depends(require_permission("print_reports")),
 ):
     tenant_id = UUID(claims["active_tenant_id"])
     if not payload.to:
@@ -254,7 +255,7 @@ async def list_templates(
 async def save_template(
     payload: TemplateSaveRequest,
     db:      AsyncSession = Depends(get_db),
-    claims:  dict         = Depends(get_active_tenant),
+    claims:  dict         = Depends(require_permission("print_reports")),
 ):
     tenant_id = UUID(claims["active_tenant_id"])
     try:
@@ -284,7 +285,7 @@ async def get_template(
 async def delete_template(
     template_id: str,
     db:          AsyncSession = Depends(get_db),
-    claims:      dict         = Depends(get_active_tenant),
+    claims:      dict         = Depends(require_permission("print_reports")),
 ):
     tenant_id = UUID(claims["active_tenant_id"])
     deleted   = await report_service.delete_template(db, tenant_id, template_id)
@@ -298,7 +299,7 @@ async def set_default_template(
     template_id: str,
     report_type: str = "",
     db:          AsyncSession = Depends(get_db),
-    claims:      dict         = Depends(get_active_tenant),
+    claims:      dict         = Depends(require_permission("print_reports")),
 ):
     tenant_id = UUID(claims["active_tenant_id"])
     ok = await report_service.set_default_template(db, tenant_id, template_id, report_type)
@@ -338,3 +339,53 @@ async def save_report_settings_route(
     except Exception as exc:
         logger.error("save_report_settings failed | tenant=%s | %s", tenant_id, exc, exc_info=True)
         raise ServerError("Failed to save report settings.")
+
+
+# ── Draft (UI step 7, migration 065) ───────────────────────────────────────────
+# One draft per person per workspace. Any member may keep their own draft;
+# exporting it still needs print_reports.
+
+@router.get("/draft")
+async def get_draft(
+    db:     AsyncSession = Depends(get_db),
+    claims: dict         = Depends(get_active_tenant),
+):
+    tenant_id  = UUID(claims["active_tenant_id"])
+    account_id = UUID(claims["sub"])
+    try:
+        draft = await report_service.get_draft(db, tenant_id, account_id)
+        return {"data": {"draft": draft}, "error": None, "meta": {}}
+    except Exception as exc:
+        logger.error("get_draft failed | tenant=%s | %s", tenant_id, exc, exc_info=True)
+        raise ServerError("Failed to load your saved draft.")
+
+
+@router.put("/draft")
+async def save_draft(
+    payload: ReportDraftSaveRequest,
+    db:      AsyncSession = Depends(get_db),
+    claims:  dict         = Depends(get_active_tenant),
+):
+    tenant_id  = UUID(claims["active_tenant_id"])
+    account_id = UUID(claims["sub"])
+    try:
+        draft = await report_service.save_draft(db, tenant_id, account_id, payload.draft.model_dump())
+        return {"data": {"draft": draft}, "error": None, "meta": {}}
+    except Exception as exc:
+        logger.error("save_draft failed | tenant=%s | %s", tenant_id, exc, exc_info=True)
+        raise ServerError("Failed to save your draft.")
+
+
+@router.delete("/draft")
+async def delete_draft(
+    db:     AsyncSession = Depends(get_db),
+    claims: dict         = Depends(get_active_tenant),
+):
+    tenant_id  = UUID(claims["active_tenant_id"])
+    account_id = UUID(claims["sub"])
+    try:
+        deleted = await report_service.delete_draft(db, tenant_id, account_id)
+        return {"data": {"deleted": deleted}, "error": None, "meta": {}}
+    except Exception as exc:
+        logger.error("delete_draft failed | tenant=%s | %s", tenant_id, exc, exc_info=True)
+        raise ServerError("Failed to discard your draft.")

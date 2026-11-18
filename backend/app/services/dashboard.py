@@ -57,7 +57,11 @@ from app.schemas.dashboard import (
 )
 from app.services.snapshot import get_snapshot_delta
 from app.services.incident import get_stats as incident_get_stats
-from app.services.incident_severity import get_severity_ranks, high_severity_labels
+from app.services.incident_severity import (
+    _OPEN_STATUSES as OPEN_STATUSES,
+    get_severity_ranks,
+    high_severity_labels,
+)
 from app.services.lookup import get_lookups, covering_risk_categories
 from app.services.matrix_config import get_config as get_matrix_config
 from app.services.risk_status import (
@@ -598,9 +602,9 @@ async def _lifecycle(db: AsyncSession, tenant_id: UUID) -> IncidentLifecycle:
     counts: dict[str, int] = {}
     for r in rows:
         s = str(r.status or "Open").lower()
-        if s == "new" or s == "open":
+        if s == "new":
             counts["new"] = counts.get("new", 0) + int(r.cnt)
-        elif s in ("under review", "in progress", "investigating"):
+        elif s in ("open", "under review", "in progress", "triaged", "investigating", "remediating"):
             counts["review"] = counts.get("review", 0) + int(r.cnt)
         elif s in ("resolved", "closed"):
             counts["resolved"] = counts.get("resolved", 0) + int(r.cnt)
@@ -695,7 +699,7 @@ async def _incident_feed(
         # Derive event_type from the incident's state
         if resolved_at is not None:
             event_type = "incident_resolved"
-        elif status.lower() in ("in progress", "under review"):
+        elif status.lower() in ("in progress", "under review", "triaged", "investigating", "remediating"):
             event_type = "incident_in_progress"
         elif severity.lower() in ("critical", "very high", "high"):
             event_type = "incident_escalated"
@@ -853,7 +857,7 @@ async def _intel(
             Risk.control_effectiveness, Risk.is_elevated, Risk.linked_decision,
             Risk.mitigation_status, Risk.target_date, Risk.last_reviewed_at,
             Risk.logged_at, Risk.control_last_tested, Risk.control_assertion_source,
-            Risk.financial_exposure,
+            Risk.financial_exposure, Risk.evidence_path,
         ).where(Risk.tenant_id == tenant_id, Risk.deleted_at.is_(None))
     )).all()
 
@@ -861,7 +865,7 @@ async def _intel(
         select(
             Incident.id, Incident.title, Incident.category, Incident.severity,
             Incident.reported_at, Incident.linked_risk_id, Incident.financial_impact,
-            Incident.assigned_to,
+            Incident.assigned_to, Incident.status,
         ).where(Incident.tenant_id == tenant_id, Incident.deleted_at.is_(None))
     )).all()
 
@@ -879,7 +883,10 @@ async def _intel(
     )).scalar_one() or 0)
 
     snap_rows = (await db.execute(
-        select(SnapshotMonthly.month_key, SnapshotMonthly.month_label, SnapshotMonthly.avg_residual)
+        select(
+            SnapshotMonthly.month_key, SnapshotMonthly.month_label, SnapshotMonthly.avg_residual,
+            SnapshotMonthly.health_score, SnapshotMonthly.pressure_score,
+        )
         .where(SnapshotMonthly.tenant_id == tenant_id)
         .order_by(SnapshotMonthly.month_key.desc())
         .limit(_TREND_MONTHS)
@@ -1007,6 +1014,7 @@ async def _intel(
         ev = is_evidenced(
             control_last_tested=r.control_last_tested,
             control_assertion_source=r.control_assertion_source,
+            has_document=r.evidence_path is not None,
             today=today,
         )
         contra = is_contradicted(rating, ce_scale, rid in linked_by_risk)
@@ -1223,12 +1231,12 @@ async def _intel(
             title=f"Evidence the {n} highest control {_plural(n, 'rating', 'ratings')}",
             detail=(
                 f"{_ids_text(ids)} {_plural(n, 'carries', 'carry')} a rating of {hc_text} without a recent independent "
-                "test. A high rating removes most of a risk's severity from its residual score, so these are the "
+                "test backed by a document on file. A high rating removes most of a risk's severity from its residual score, so these are the "
                 "largest unverified assumptions on the register."
             ),
             done_when=(
                 "Each carries a test dated within 12 months that was independently tested or externally audited, "
-                "or the rating is revised."
+                "with the evidence document attached to the risk, or the rating is revised."
             ),
             owner=_owners_text([r.owner for r in unev_high], "Risk owners"),
             refs=ids,
@@ -1308,6 +1316,17 @@ async def _intel(
 
     # ── Risk pressure ────────────────────────────────────────────────────────
     open_n = inc_stats.totals.open_count
+    high_set = set(high_severity_labels(sev_rank))
+    open_high = sum(
+        1 for i in incidents
+        if str(i.status or '') in OPEN_STATUSES and str(i.severity or '') in high_set
+    )
+    owner_res: dict[str, list[float]] = defaultdict(list)
+    for r in risks:
+        owner = str(r.owner or '').strip()
+        if owner and r.residual is not None:
+            owner_res[owner].append(float(r.residual))
+    top_owner = max(owner_res, key=lambda o: (sum(owner_res[o]), o), default=None)
     overdue_n = inc_stats.totals.overdue_count
     pressure_components = [
         ScoreComponent(name="Elevated risk share", weight=PRESSURE_WEIGHTS["Elevated risk share"],
@@ -1332,10 +1351,14 @@ async def _intel(
         exceeds_appetite=exceeds,
         open_incidents=open_n,
         open_incidents_overdue=overdue_n,
+        open_high=open_high,
         undecided=undecided,
         past_target=past_target,
         evidenced=evidenced,
         rated=rated_n,
+        top_owner=top_owner,
+        top_owner_residual=round(sum(owner_res[top_owner]), 1) if top_owner else 0.0,
+        top_owner_risks=len(owner_res[top_owner]) if top_owner else 0,
         by_category=by_category,
         actions=pressure_actions,
     )
@@ -1401,11 +1424,23 @@ async def _intel(
             res_val = float(snap.avg_residual)
         else:
             res_val = None
+        # Health and pressure: live scores for the current month, stored scores
+        # for past months. Months snapshotted before migration 062 stay None.
+        if is_live:
+            h_val = health_score
+            p_val = pressure_score
+        elif snap is not None:
+            h_val = int(snap.health_score) if snap.health_score is not None else None
+            p_val = int(snap.pressure_score) if snap.pressure_score is not None else None
+        else:
+            h_val = p_val = None
         points.append(MovementPoint(
             month_key=key,
             label=str(snap.month_label or key) if snap is not None else start.strftime("%b %Y"),
             avg_residual=res_val,
             incidents_created=created_by_month.get(key, 0),
+            health_score=h_val,
+            pressure_score=p_val,
             is_live=is_live,
         ))
 
@@ -1472,4 +1507,4 @@ def _build_attention(
         items.append("Incident health is At Risk — monitor resolution velocity.")
     if not items:
         items.append("No urgent items flagged. Risk posture is within tolerance.")
-    return items
+    return items

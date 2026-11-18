@@ -47,7 +47,7 @@ async def restore_item(
 ):
     tenant_id = UUID(claims["active_tenant_id"])
     result = await recycle_service.restore_item(
-        db, tenant_id, bin_id, claims["email"]
+        db, tenant_id, bin_id, claims["email"], permissions=claims.get("permissions") or {},
     )
     return {"data": result, "error": None, "meta": {}}
 
@@ -61,9 +61,12 @@ async def permanent_delete(
     claims: dict     = Depends(get_active_tenant),
 ):
     tenant_id = UUID(claims["active_tenant_id"])
-    await recycle_service.permanent_delete(db, tenant_id, bin_id, deleted_by=str(claims.get("email") or ""))
+    await recycle_service.permanent_delete(
+        db, tenant_id, bin_id, deleted_by=str(claims.get("email") or ""),
+        permissions=claims.get("permissions") or {},
+    )
     return {
         "data": {"message": "Item permanently deleted"},
         "error": None,
         "meta": {},
-    }
+    }

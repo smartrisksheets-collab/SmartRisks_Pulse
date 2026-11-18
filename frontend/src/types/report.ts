@@ -24,7 +24,10 @@ export type BlockKey =
   | 'executive-dashboard'
   | 'risk-heat-map'
   | 'methodology'
-  | 'risk-incident-correlation';
+  | 'risk-incident-correlation'
+  | 'appetite-breaches'
+  | 'decisions-needed'
+  | 'control-evidence';
 
 // ── Block data shapes (mirrors Python service output) ─────────────────────────
 
@@ -271,6 +274,76 @@ export interface RiskIncidentCorrelationData {
   rows_truncated?:     boolean;
 }
 
+// ── Pulse UI sections (UI step 7). Residual and appetite values are whole numbers. ──
+
+export interface AppetiteBreachRow {
+  id:          string;
+  title:       string;
+  category:    string;
+  owner:       string | null;
+  level:       string;
+  level_index: number;
+  residual:    number;
+  threshold:   number;
+  over_by:     number;
+}
+
+export interface AppetiteBreachesData {
+  thresholds_configured: boolean;
+  count:          number;
+  near_count:     number;
+  risks_total:    number;
+  risks:          AppetiteBreachRow[];
+  rows_truncated: boolean;
+  narrative:      string;
+}
+
+export interface DecisionRow {
+  id:          string;
+  title:       string;
+  owner:       string | null;
+  level:       string;
+  level_index: number;
+  residual:    number;
+  reason:      string;
+}
+
+export interface DecisionsNeededData {
+  count:          number;
+  risks_total:    number;
+  risks:          DecisionRow[];
+  rows_truncated: boolean;
+  narrative:      string;
+}
+
+export interface ControlGapRow {
+  id:           string;
+  title:        string;
+  owner:        string | null;
+  rating:       string;
+  rating_level: number | null;
+  residual:     number;
+  contradicted: boolean;
+  reasons:      string[];
+}
+
+export interface ControlEvidenceData {
+  rated:          number;
+  unrated:        number;
+  evidenced:      number;
+  contradicted:   number;
+  ce_scale:       number;
+  gaps:           ControlGapRow[];
+  rows_truncated: boolean;
+  narrative:      string;
+}
+
+export interface SuppressedBlockData {
+  status:      'suppressed';
+  reason:      string;
+  requirement: string;
+}
+
 export type BlockData =
   | ExposureIndexData
   | RiskSnapshotData
@@ -290,7 +363,11 @@ export type BlockData =
   | ExecutiveDashboardData
   | RiskHeatMapData
   | MethodologyData
-  | RiskIncidentCorrelationData;
+  | RiskIncidentCorrelationData
+  | AppetiteBreachesData
+  | DecisionsNeededData
+  | ControlEvidenceData
+  | SuppressedBlockData;
 
 export type BlockDataMap = Record<string, BlockData>;
 
@@ -350,7 +427,19 @@ export interface ReportTemplate {
 
 // ── Date range ─────────────────────────────────────────────────────────────────
 
-export type DatePreset = 'Last 30 days' | 'Last 3 months' | 'Last 6 months' | 'Last 12 months' | 'custom';
+export type PeriodPreset =
+  | 'last_30'
+  | 'quarter_to_date'
+  | 'last_quarter'
+  | 'last_6_months'
+  | 'last_12_months'
+  | 'custom';
+
+export interface ReportPeriod {
+  preset:    PeriodPreset;
+  date_from: string | null;   // YYYY-MM-DD, used when preset is custom
+  date_to:   string | null;
+}
 
 export interface DateRange {
   date_from: string | null;
@@ -359,9 +448,19 @@ export interface DateRange {
 
 export type ExportFormat = 'pdf' | 'pptx';
 
-// ── Build step state ───────────────────────────────────────────────────────────
+// ── Draft (one per person per workspace, migration 065) ────────────────────────
 
-export type BuildStep = 1 | 2 | 3;
+export interface ReportDraft {
+  blocks:      BlockKey[];
+  settings:    ReportSettings;
+  ai_data:     Record<string, string>;
+  ai_reviewed: string[];
+  period:      ReportPeriod;
+  template:    string;
+  updated_at?: string;
+}
+
+export type AIStatus = 'not_included' | 'not_written' | 'draft' | 'reviewed';
 
 // ── BLOCK KEY → LABEL map ──────────────────────────────────────────────────────
 
@@ -388,6 +487,9 @@ export const BLOCK_LABELS: Record<BlockKey, string> = {
   'risk-heat-map':        'Risk Heat Map',
   'methodology':          'Methodology',
   'risk-incident-correlation': 'Risk & Incident Correlation',
+  'appetite-breaches':    'Risks Outside Appetite',
+  'decisions-needed':     'Decisions Needed',
+  'control-evidence':     'Control Evidence',
 };
 
 export const AI_BLOCKS = new Set<BlockKey>([

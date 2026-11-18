@@ -3,10 +3,33 @@
 from __future__ import annotations
 from datetime import date, datetime
 from uuid import UUID
-from pydantic import BaseModel, Field, field_validator, computed_field
+from pydantic import BaseModel, Field, ValidationInfo, computed_field, field_validator
+
+from app.services.clock import ensure_not_future
+
+
+TITLE_MAX = 80
+
+
+def display_title(title: str | None, description: str | None, risk_id: str) -> str:
+    """One label for a risk everywhere: its title, else the description cut at a word, else its ID."""
+    t = (title or '').strip()
+    if t:
+        return t
+    d = ' '.join((description or '').split())
+    if not d:
+        return risk_id
+    if len(d) <= TITLE_MAX:
+        return d
+    cut = d[:TITLE_MAX - 1]
+    space = cut.rfind(' ')
+    if space >= TITLE_MAX // 2:
+        cut = cut[:space]
+    return cut.rstrip(' ,.;:') + '…'
 
 
 class RiskCreate(BaseModel):
+    title: str | None                    = Field(default=None, max_length=TITLE_MAX)
     category: str
     description: str
     owner: str
@@ -24,6 +47,14 @@ class RiskCreate(BaseModel):
     mitigation_status: str | None        = 'Open'
     logged_at: date | None               = None
     control_last_tested: date | None     = None
+
+    # Past-only dates: a control cannot have been tested, or a risk logged, in the future.
+    @field_validator('logged_at', 'control_last_tested')
+    @classmethod
+    def _not_future(cls, v: date | None, info: ValidationInfo) -> date | None:
+        label = 'Last tested' if info.field_name == 'control_last_tested' else 'Date logged'
+        return ensure_not_future(v, label)  # type: ignore[return-value]
+
     control_test_result:      str | None = None
     control_assertion_source: str | None = None
     root_cause:               str | None = None
@@ -39,6 +70,14 @@ class RiskCreate(BaseModel):
             raise ValueError('Field cannot be empty')
         return v
 
+    @field_validator('title', mode='before')
+    @classmethod
+    def blank_title_is_none(cls, v: object) -> str | None:
+        if v is None:
+            return None
+        s = str(v).strip()
+        return s or None
+
     @field_validator('mitigation_status', mode='before')
     @classmethod
     def validate_mitigation_status(cls, v: str | None) -> str:
@@ -51,6 +90,7 @@ class RiskCreate(BaseModel):
 
 
 class RiskUpdate(BaseModel):
+    title: str | None                    = Field(default=None, max_length=TITLE_MAX)
     category: str | None                 = None
     description: str | None              = None
     owner: str | None                    = None
@@ -68,11 +108,27 @@ class RiskUpdate(BaseModel):
     mitigation_status: str | None        = None
     logged_at: date | None               = None
     control_last_tested: date | None     = None
+
+    # Past-only dates: a control cannot have been tested, or a risk logged, in the future.
+    @field_validator('logged_at', 'control_last_tested')
+    @classmethod
+    def _not_future(cls, v: date | None, info: ValidationInfo) -> date | None:
+        label = 'Last tested' if info.field_name == 'control_last_tested' else 'Date logged'
+        return ensure_not_future(v, label)  # type: ignore[return-value]
+
     control_test_result:      str | None = None
     control_assertion_source: str | None = None
     root_cause:               str | None = None
     financial_exposure:       str | None = None
     linked_decision:          str | None = None
+
+    @field_validator('title', mode='before')
+    @classmethod
+    def blank_title_is_none(cls, v: object) -> str | None:
+        if v is None:
+            return None
+        s = str(v).strip()
+        return s or None
 
     @field_validator('mitigation_status', mode='before')
     @classmethod
@@ -88,6 +144,7 @@ class RiskUpdate(BaseModel):
 class RiskResponse(BaseModel):
     id: str
     tenant_id: UUID
+    title: str | None = None
     category: str | None
     description: str | None
     primary_impact: str | None
@@ -124,8 +181,28 @@ class RiskResponse(BaseModel):
     created_at:               datetime
     updated_at:               datetime
     appetite_status:          str | None = None
+    is_undecided:             bool = False
+    is_past_target:           bool = False
+    # Evidence document (migration 066). The storage path is never exposed.
+    evidence_name:            str | None = None
+    evidence_mime:            str | None = None
+    evidence_size:            int | None = None
+    evidence_uploaded_at:     datetime | None = None
+    evidence_uploaded_by:     str | None = None
 
     model_config = {'from_attributes': True}
+
+    @computed_field
+    @property
+    def has_evidence(self) -> bool:
+        """A document is on file. Name and path are always set and cleared together."""
+        return self.evidence_name is not None
+
+    @computed_field
+    @property
+    def display_title(self) -> str:
+        """The title, or the start of the description for risks logged before titles existed."""
+        return display_title(self.title, self.description, self.id)
 
     @computed_field
     @property
@@ -164,6 +241,7 @@ _DATE_FORMATS = (
 
 
 class BulkImportRow(BaseModel):
+    title: str | None = None  # length checked per row by RiskCreate, so one long title fails only its row
     category: str
     description: str
     owner: str
@@ -296,3 +374,59 @@ class RiskStatsResponse(BaseModel):
     concentration:   list[ConcentrationItem]
     top_owner:       TopOwner | None
     control_signal:  ControlSignal
+
+# ── Register views, score preview and risk context (UI step 5) ────────────────
+
+class RiskViewCounts(BaseModel):
+    all:            int
+    exceeds:        int
+    elevated:       int
+    undecided:      int
+    past_target:    int
+    elevated_label: str          # e.g. "High or Critical", from the workspace bands
+    avg_residual:   float | None # average residual of the risks counted in `all`
+    residual_max:   int          # highest score on the workspace matrix
+
+
+class ScorePreviewRequest(BaseModel):
+    likelihood:            int        = Field(..., ge=1, le=5)
+    impact_score:          int        = Field(..., ge=1, le=5)
+    control_effectiveness: int | None = Field(default=None, ge=0, le=5)
+    category:              str | None = None
+
+
+class ScoreBreakdown(BaseModel):
+    severity:        float
+    level:           str
+    level_index:     int
+    is_elevated:     bool
+    residual:        float
+    residual_max:    int
+    ce_level:        int | None
+    ce_scale:        int
+    ce_label:        str
+    ce_pct:          int          # share of the inherent score the controls remove, 0 to 100
+    threshold:       float | None
+    appetite_status: str | None   # within, near, exceeds; None when no threshold or category
+    note:            str
+
+
+class RiskHistoryItem(BaseModel):
+    at:      datetime | None
+    user:    str | None
+    action:  str | None
+    summary: str | None
+
+
+class RiskLinkedIncident(BaseModel):
+    id:          str
+    title:       str | None
+    severity:    str | None
+    status:      str | None
+    reported_at: date | None
+
+
+class RiskContext(BaseModel):
+    score:     ScoreBreakdown
+    history:   list[RiskHistoryItem]
+    incidents: list[RiskLinkedIncident]

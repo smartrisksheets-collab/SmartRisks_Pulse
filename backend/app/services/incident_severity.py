@@ -31,9 +31,11 @@ from app.schemas.incident_severity import (
     SlaTargetUpsert,
 )
 
+from app.services.incident_status import OPEN_STATUSES
+
 logger = logging.getLogger(__name__)
 
-_OPEN_STATUSES = {'New', 'Open', 'In Progress', 'Under Review'}
+_OPEN_STATUSES = OPEN_STATUSES  # kept for existing importers (home, dashboard)
 
 _DEFAULT_LEVELS: list[dict] = [
     {'label': 'Very High', 'sort_order': 1, 'color': '#c0392b',
@@ -94,6 +96,21 @@ async def get_sla_map(db: AsyncSession, tenant_id: UUID) -> dict[str, float]:
 
 
 # ── Default seed ───────────────────────────────────────────────────────────────
+
+async def public_levels(db: AsyncSession, tenant_id: UUID) -> list[dict[str, str]]:
+    """Severity levels for the public incident form, most severe first: label and help text.
+
+    Read-only (never seeds). A workspace with no levels yet gets the platform default labels.
+    """
+    rows = (await db.execute(
+        select(IncidentSeverityLevel.label, IncidentSeverityLevel.criteria_text)
+        .where(IncidentSeverityLevel.tenant_id == tenant_id)
+        .order_by(IncidentSeverityLevel.sort_order, IncidentSeverityLevel.label)
+    )).all()
+    if not rows:
+        return [{"label": str(d["label"]), "help": ""} for d in _DEFAULT_LEVELS]
+    return [{"label": str(r.label), "help": str(r.criteria_text or "")} for r in rows]
+
 
 async def _seed_defaults(db: AsyncSession, tenant_id: UUID) -> None:
     for d in _DEFAULT_LEVELS:
@@ -412,4 +429,4 @@ async def get_preview(
         breach_count=breach_count,
         breach_rate_pct=breach_rate,
         unowned_count=unowned_count,
-    )
+    )

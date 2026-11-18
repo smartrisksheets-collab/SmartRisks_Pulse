@@ -2,6 +2,7 @@
 
 from datetime import date, datetime, timezone, timedelta
 from decimal import Decimal
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select, delete
@@ -10,7 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.recycle_bin import RecycleBin
 from app.models.audit_log import AuditLog
 from app.core.config import settings
-from app.core.exceptions import ResourceNotFoundError, ValidationError
+from app.core.exceptions import PermissionDeniedError, ResourceNotFoundError, ValidationError
+from app.services.evidence import delete_evidence_objects
 
 
 def _to_date(v: str | date | None) -> date | None:
@@ -33,6 +35,17 @@ def _to_decimal(v: float | int | str | None) -> Decimal | None:
     if v is None:
         return None
     return Decimal(str(v))
+
+
+# The permission that owns each kind of record in the bin. Restoring or purging
+# a record needs the same permission as deleting it.
+_BIN_PERMISSION: dict[str, str] = {'risk': 'manage_risks', 'incident': 'manage_incidents'}
+
+
+def _check_bin_permission(item_type: str, permissions: dict[str, Any]) -> None:
+    perm = _BIN_PERMISSION.get(item_type)
+    if perm is None or not permissions.get(perm):
+        raise PermissionDeniedError(f"Permission denied: {perm or 'manage_risks'} required")
 
 
 async def soft_delete(
@@ -105,6 +118,8 @@ async def restore_item(
     tenant_id: UUID,
     bin_id: UUID,
     restored_by: str,
+    *,
+    permissions: dict[str, Any],
 ) -> dict:
     result = await db.execute(
         select(RecycleBin)
@@ -114,6 +129,7 @@ async def restore_item(
     bin_item = result.scalar_one_or_none()
     if not bin_item:
         raise ResourceNotFoundError(f'Bin item {bin_id} not found')
+    _check_bin_permission(str(bin_item.item_type), permissions)
 
     data = bin_item.item_data
 
@@ -137,6 +153,7 @@ async def restore_item(
             id=data['id'],
             tenant_id=tenant_id,
             category=data.get('category'),
+            title=data.get('title'),
             description=data.get('description'),
             primary_impact=data.get('primary_impact'),
             owner=data.get('owner'),
@@ -170,6 +187,15 @@ async def restore_item(
             source=data.get('source') or 'internal',
             source_submission_id=UUID(data['source_submission_id']) if data.get('source_submission_id') else None,
         )
+        # Evidence document (migration 066): the file stays in storage while the
+        # risk is in the bin, so restoring the columns reattaches it.
+        if data.get('evidence_path') and data.get('evidence_name'):
+            restored.evidence_path        = data['evidence_path']
+            restored.evidence_name        = data['evidence_name']
+            restored.evidence_mime        = data.get('evidence_mime')
+            restored.evidence_size        = data.get('evidence_size')
+            restored.evidence_uploaded_at = _to_dt(data.get('evidence_uploaded_at'))
+            restored.evidence_uploaded_by = data.get('evidence_uploaded_by')
         restored.severity       = scored['severity']
         restored.level          = scored['level']
         restored.level_index    = scored['level_index']
@@ -180,23 +206,28 @@ async def restore_item(
 
     elif bin_item.item_type == 'incident':
         from app.models.incident import Incident
+        from app.services.incident_status import normalise_status
+        # Every stored field comes back (linkage, owner, dates, cost and so on),
+        # not only the original subset. Statuses from before migration 064 are renamed.
+        text_fields = (
+            'title', 'description', 'category', 'severity', 'priority', 'root_cause',
+            'assigned_to', 'reported_by', 'reporter_email', 'channel', 'incident_type',
+            'location', 'impact_summary', 'affected_asset', 'business_unit', 'linked_risk_id',
+            'linked_control', 'control_outcome', 'impact_confidence', 'immediate_actions',
+            'evidence_link', 'analyst_notes', 'tags', 'review_status', 'risk_impacted',
+            'resolution_summary', 'ai_impact', 'ai_actions', 'ai_status',
+        )
         restored = Incident(
             id=data['id'],
             tenant_id=tenant_id,
-            title=data.get('title'),
-            description=data.get('description'),
-            category=data.get('category'),
-            severity=data.get('severity'),
-            priority=data.get('priority'),
-            status=data.get('status', 'Open'),
-            root_cause=data.get('root_cause'),
-            assigned_to=data.get('assigned_to'),
-            reported_by=data.get('reported_by'),
+            status=normalise_status(data.get('status')),
             reported_at=_to_date(data.get('reported_at')),
+            containment_date=_to_date(data.get('containment_date')),
+            incident_dt=_to_dt(data.get('incident_dt')),
             resolved_at=_to_dt(data.get('resolved_at')),
+            ai_last_generated=_to_dt(data.get('ai_last_generated')),
             financial_impact=_to_decimal(data.get('financial_impact')),
-            ai_impact=data.get('ai_impact'),
-            ai_actions=data.get('ai_actions'),
+            **{f: data.get(f) for f in text_fields},
         )
         db.add(restored)
 
@@ -217,11 +248,21 @@ async def restore_item(
     return {'item_type': bin_item.item_type, 'item_id': bin_item.item_id}
 
 
+def _bin_evidence_path(item_type: str, item_data: dict | None) -> str | None:
+    """The evidence object path stored with a binned risk, if it had a document."""
+    if item_type != 'risk' or not item_data:
+        return None
+    path = item_data.get('evidence_path')
+    return str(path) if path else None
+
+
 async def permanent_delete(
     db: AsyncSession,
     tenant_id: UUID,
     bin_id: UUID,
     deleted_by: str = "",
+    *,
+    permissions: dict[str, Any],
 ) -> None:
     result = await db.execute(
         select(RecycleBin)
@@ -231,9 +272,11 @@ async def permanent_delete(
     bin_item = result.scalar_one_or_none()
     if not bin_item:
         raise ResourceNotFoundError(f'Bin item {bin_id} not found')
+    _check_bin_permission(str(bin_item.item_type), permissions)
     item_type  = str(bin_item.item_type or "item").capitalize()
     item_id    = str(bin_item.item_id   or "")
     await db.execute(delete(RecycleBin).where(RecycleBin.id == bin_id))
+    evidence_path = _bin_evidence_path(str(bin_item.item_type or ""), bin_item.item_data)  # type: ignore[arg-type]
     db.add(AuditLog(
         tenant_id=tenant_id,
         user_email=deleted_by,
@@ -243,13 +286,23 @@ async def permanent_delete(
         summary=f"Permanently deleted {item_type.lower()} {item_id} from bin",
     ))
     await db.flush()
+    if evidence_path:
+        await delete_evidence_objects([evidence_path])
 
 
 async def purge_expired(db: AsyncSession) -> int:
     """Entry point for the daily scheduler job."""
     now = datetime.now(timezone.utc)
+    # Evidence files of risks about to be purged, read before the rows go.
+    expiring = await db.execute(
+        select(RecycleBin.item_type, RecycleBin.item_data)
+        .where(RecycleBin.purge_at < now, RecycleBin.item_type == 'risk')
+    )
+    paths = [p for p in (_bin_evidence_path(str(t), d) for t, d in expiring.all()) if p]
     result = await db.execute(
         delete(RecycleBin).where(RecycleBin.purge_at < now)
     )
     await db.flush()
-    return result.rowcount
+    if paths:
+        await delete_evidence_objects(paths)
+    return result.rowcount

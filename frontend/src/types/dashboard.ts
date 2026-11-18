@@ -179,10 +179,14 @@ export interface RiskPressure {
   exceeds_appetite: number;
   open_incidents: number;
   open_incidents_overdue: number;
+  open_high: number;
   undecided: number;
   past_target: number;
   evidenced: number;
   rated: number;
+  top_owner: string | null;
+  top_owner_residual: number;
+  top_owner_risks: number;
   by_category: PressureCategoryRow[];
   actions: RecommendedAction[];
 }
@@ -262,6 +266,8 @@ export interface MovementPoint {
   label: string;
   avg_residual: number | null;
   incidents_created: number;
+  health_score: number | null;
+  pressure_score: number | null;
   is_live: boolean;
 }
 

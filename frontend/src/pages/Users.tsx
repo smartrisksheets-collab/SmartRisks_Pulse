@@ -19,6 +19,7 @@ import {
   type RolePermissions,
   type SignInStatus,
 } from "../hooks/useUsers";
+import { planLabel } from "../utils/constants";
 
 // ── local toast hook ──────────────────────────────────────────────────────
 
@@ -440,7 +441,7 @@ export default function Users() {
           <div className="kpi">
             <div className="lbl">Plan</div>
             <div className="num num-plan">
-              {settingsQuery.data?.plan ?? "—"}
+              {settingsQuery.data?.plan ? planLabel(settingsQuery.data.plan) : "—"}
             </div>
           </div>
         </div>

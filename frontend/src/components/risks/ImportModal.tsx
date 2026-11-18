@@ -18,6 +18,7 @@ interface Props {
 interface ImpField { key: string; label: string; required: boolean; }
 
 const IMP_FIELDS: ImpField[] = [
+  { key: 'title',                 label: 'Title',                 required: false },
   { key: 'category',              label: 'Category',              required: true  },
   { key: 'description',           label: 'Description',           required: true  },
   { key: 'owner',                 label: 'Dept/Risk Owner',       required: true  },
@@ -47,6 +48,7 @@ function normalize(s: string) { return s.toLowerCase().replace(/[^a-z0-9]/g, '')
 
 
 const AUTO_MAP: Record<string, string> = {
+  title: 'title', risktitle: 'title', riskname: 'title', shorttitle: 'title',
   category: 'category', riskcategory: 'category', riskcat: 'category',
   description: 'description', desc: 'description', riskdescription: 'description',
   owner: 'owner', riskowner: 'owner',
@@ -195,6 +197,7 @@ export default function ImportModal({ open, onClose, onImport }: Props) {
       if (get('impact_score') && (isNaN(imp) || imp < 1 || imp > 5)) errors.push('Impact Score must be 1–5');
 
       return {
+        title:                 get('title') || undefined,
         category:              get('category'),
         description:           get('description'),
         owner:                 get('owner'),
@@ -277,6 +280,7 @@ export default function ImportModal({ open, onClose, onImport }: Props) {
           return true;
         })
         .map(r => ({
+          title:                 r.title,
           category:              r.category,
           description:           r.description,
           owner:                 r.owner,

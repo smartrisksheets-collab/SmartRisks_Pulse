@@ -14,7 +14,7 @@ async def get_help(
     db: AsyncSession = Depends(get_db),
     claims: dict = Depends(get_active_tenant),
 ) -> dict:
-    entries = await ask_pulse.get_entries(db, UUID(claims["active_tenant_id"]))
+    entries = await ask_pulse.get_entries(db, UUID(claims["active_tenant_id"]), claims.get("modules"))
     return {"data": [e.model_dump() for e in entries], "error": None, "meta": {"total": len(entries)}}
 
 

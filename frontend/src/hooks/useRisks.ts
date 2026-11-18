@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, keepPreviousData, type QueryClient } from '@tanstack/react-query';
 import type {
   Risk, RiskCreate, RiskUpdate, RiskQuota,
   BulkImportRow, BulkImportResult,
@@ -9,6 +9,13 @@ import * as risksApi from '../services/risks';
 
 const RISKS_KEY = 'risks' as const;
 const STALE_MS  = 2 * 60 * 1000;
+
+/** Everything that shows risk data refetches after a risk changes. */
+export function invalidateRiskQueries(qc: QueryClient) {
+  qc.invalidateQueries({ queryKey: [RISKS_KEY] });
+  qc.invalidateQueries({ queryKey: ['dashboard'] });
+  qc.invalidateQueries({ queryKey: ['exec-insights'] });
+}
 
 export function useRisks(params: ListRisksParams = {}) {
   const qc = useQueryClient();
@@ -26,9 +33,7 @@ export function useRisks(params: ListRisksParams = {}) {
   const total: number           = query.data?.meta?.total  ?? 0;
 
   function invalidate() {
-    qc.invalidateQueries({ queryKey: [RISKS_KEY] });
-    qc.invalidateQueries({ queryKey: ['dashboard'] });
-    qc.invalidateQueries({ queryKey: ['exec-insights'] });
+    invalidateRiskQueries(qc);
   }
 
   // ── Mutations ───────────────────────────────────────────────────────────

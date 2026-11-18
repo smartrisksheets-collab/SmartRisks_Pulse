@@ -1,41 +1,47 @@
 // src/store/reportBuilderStore.ts
+// Report Builder state, kept across page navigation (no persist middleware).
+// The server draft (migration 065) is what survives a reload.
 
 import { create } from 'zustand';
-import type { BlockKey, ReportSettings, BuildStep } from '../types/report';
+import type { BlockKey, BlockDataMap, ReportPeriod, ReportSettings } from '../types/report';
 import { DEFAULT_SETTINGS } from '../types/report';
+import { DEFAULT_BLOCKS, DEFAULT_PERIOD, DEFAULT_TEMPLATE_ID } from '../utils/reportPresets';
 
-const DEFAULT_BLOCKS: BlockKey[] = ['executive-dashboard', 'top-risks'];
-
-import type { BlockDataMap } from '../types/report';
-
-interface ReportBuilderStore {
+export interface ReportBuilderState {
   activeBlocks: BlockKey[];
   settings:     ReportSettings;
-  step:         BuildStep;
   blockData:    BlockDataMap;
   aiData:       Record<string, string>;
-  sync: (patch: {
-    activeBlocks?: BlockKey[];
-    settings?:     ReportSettings;
-    step?:         BuildStep;
-    blockData?:    BlockDataMap;
-    aiData?:       Record<string, string>;
-  }) => void;
+  aiReviewed:   string[];
+  period:       ReportPeriod;
+  template:     string;
+  dataKey:      string;          // the period blockData was computed for
+  draftSavedAt: string | null;
+  hydrated:     boolean;         // server draft or saved settings already applied this session
+  tenantId:     string | null;   // workspace this state belongs to; a switch starts afresh
+}
+
+interface ReportBuilderStore extends ReportBuilderState {
+  sync:  (patch: Partial<ReportBuilderState>) => void;
   reset: () => void;
 }
 
-export const useReportBuilderStore = create<ReportBuilderStore>()((set) => ({
+export const initialReportState = (): ReportBuilderState => ({
   activeBlocks: [...DEFAULT_BLOCKS],
-  settings:     { ...DEFAULT_SETTINGS },
-  step:         1 as BuildStep,
+  settings:     { ...DEFAULT_SETTINGS, signoff: { ...DEFAULT_SETTINGS.signoff } },
   blockData:    {},
   aiData:       {},
+  aiReviewed:   [],
+  period:       { ...DEFAULT_PERIOD },
+  template:     DEFAULT_TEMPLATE_ID,
+  dataKey:      '',
+  draftSavedAt: null,
+  hydrated:     false,
+  tenantId:     null,
+});
+
+export const useReportBuilderStore = create<ReportBuilderStore>()((set) => ({
+  ...initialReportState(),
   sync:  (patch) => set((s) => ({ ...s, ...patch })),
-  reset: ()      => set({
-    activeBlocks: [...DEFAULT_BLOCKS],
-    settings:     { ...DEFAULT_SETTINGS },
-    step:         1 as BuildStep,
-    blockData:    {},
-    aiData:       {},
-  }),
+  reset: ()      => set((s) => ({ ...initialReportState(), hydrated: true, tenantId: s.tenantId })),
 }));

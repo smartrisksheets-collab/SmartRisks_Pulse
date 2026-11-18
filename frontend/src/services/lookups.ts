@@ -27,11 +27,16 @@ export async function patchLookups(payload: LookupPatch): Promise<Lookups> {
   return apiPatch<Lookups>('/api/v1/lookups', payload);
 }
 
-export async function checkUsage(
-  field: string,
-  value: string
-): Promise<{ field: string; value: string; count: number }> {
-  return apiGet<{ field: string; value: string; count: number }>(
+export interface LookupUsage {
+  field: string;
+  value: string;
+  count: number;
+  risks: number;
+  incidents: number;
+}
+
+export async function checkUsage(field: string, value: string): Promise<LookupUsage> {
+  return apiGet<LookupUsage>(
     `/api/v1/lookups/usage?field=${encodeURIComponent(field)}&value=${encodeURIComponent(value)}`
   );
 }

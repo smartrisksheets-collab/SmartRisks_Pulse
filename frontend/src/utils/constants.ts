@@ -1,4 +1,6 @@
 export const MAX_RISKS = 1000;
+// Rows per page on the Analytics tables and the Activity feed.
+export const ANALYTICS_PAGE_SIZE = 10;
 export const RISK_WARNING_THRESHOLD = 0.8;
 export const MAX_USERS = 25;
 export const MAX_WORKSPACES_TRIAL = 1;
@@ -18,6 +20,19 @@ export const PAID_DURATION_DAYS = 365;
 export const EXPIRY_REMINDER_DAYS = 30;
 export const ROLES = ['Owner', 'Manager', 'Analyst'] as const;
 export const PLANS = ['TRIAL', 'PAID', 'EXPIRED'] as const;
+// Display labels for the stored plan values. The stored value stays PAID; the screen shows PRO.
+export const PLAN_LABELS: Record<(typeof PLANS)[number], string> = {
+  TRIAL: 'TRIAL',
+  PAID: 'PRO',
+  EXPIRED: 'EXPIRED',
+};
+export function planLabel(plan: string | null | undefined): string {
+  if (!plan) return PLAN_LABELS.TRIAL;
+  const key = plan.toUpperCase();
+  return key in PLAN_LABELS ? PLAN_LABELS[key as keyof typeof PLAN_LABELS] : plan;
+}
+// Shown in the profile menu when the account has no name on file. The email is never shown.
+export const PROFILE_NAME_FALLBACK = 'My account';
 export const INDUSTRIES = [
   'Banking', 'Insurance', 'Financial Services', 'Healthcare',
   'Energy', 'Manufacturing', 'Technology', 'Retail',

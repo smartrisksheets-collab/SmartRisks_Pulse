@@ -1,342 +1,394 @@
 // src/hooks/useReports.ts
+// Report Builder state and actions (UI step 7). State lives in reportBuilderStore so it
+// survives navigation; the server draft (migration 065) survives a reload. Figures load
+// per section as sections are added, so AI text already written is never thrown away
+// by adding a section.
 
-import { useState, useCallback } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import * as reportsApi from '../services/reports';
-import { useReportBuilderStore } from '../store/reportBuilderStore';
+import { useReportBuilderStore, initialReportState } from '../store/reportBuilderStore';
+import { useAuthStore } from '../store/authStore';
+import { useToast } from './useToast';
 import type {
+  AIStatus,
   BlockKey,
-  BlockDataMap,
+  ExportFormat,
+  ReportDraft,
+  ReportPeriod,
   ReportSettings,
   ReportTemplate,
-  DateRange,
-  BuildStep,
-  ExportFormat,
 } from '../types/report';
-import { DEFAULT_SETTINGS as DEFAULTS } from '../types/report';
+import { AI_BLOCKS, BLOCK_LABELS, DEFAULT_SETTINGS } from '../types/report';
+import {
+  BUILTIN_PREFIX, BUILTIN_TEMPLATES, INCIDENT_BLOCK_KEYS, customError, periodRange,
+} from '../utils/reportPresets';
 
-export type ToastFn = (msg: string, type?: 'success' | 'error' | 'info') => void;
+const KNOWN_BLOCKS = new Set<string>(Object.keys(BLOCK_LABELS));
 
-interface UseReportsState {
-  // canvas
-  activeBlocks:  BlockKey[];
-  blockData:     BlockDataMap;
-  aiData:        Record<string, string>;
-  settings:      ReportSettings;
-  step:          BuildStep;
-
-  // loading flags
-  previewing:    boolean;
-  generatingAI:  boolean;
-  exporting:     boolean;
-
-  // templates
-  templates:     ReportTemplate[];
-  loadingTpls:   boolean;
+function mergeSettings(saved: Partial<ReportSettings> | null | undefined): ReportSettings {
+  return {
+    ...DEFAULT_SETTINGS,
+    ...(saved ?? {}),
+    signoff: { ...DEFAULT_SETTINGS.signoff, ...(saved?.signoff ?? {}) },
+  };
 }
 
-const DEFAULT_BLOCKS: BlockKey[] = ['executive-dashboard', 'top-risks'];
+/** Sections whose AI text is written but not yet reviewed. */
+export function unreviewedKeys(activeBlocks: BlockKey[], aiData: Record<string, string>, aiReviewed: string[]): BlockKey[] {
+  return activeBlocks.filter(k => AI_BLOCKS.has(k) && !!aiData[k] && !aiReviewed.includes(k));
+}
 
-export function useReports(toast: ToastFn) {
-  const stored = useReportBuilderStore.getState();
+export function aiStatusOf(activeBlocks: BlockKey[], aiData: Record<string, string>, aiReviewed: string[]): AIStatus {
+  const aiKeys = activeBlocks.filter(k => AI_BLOCKS.has(k));
+  if (!aiKeys.length) return 'not_included';
+  if (!aiKeys.some(k => aiData[k])) return 'not_written';
+  return unreviewedKeys(activeBlocks, aiData, aiReviewed).length ? 'draft' : 'reviewed';
+}
 
-  const [state, setState] = useState<UseReportsState>({
-    activeBlocks: stored.activeBlocks,
-    blockData:    stored.blockData,
-    aiData:       stored.aiData,
-    settings:     { ...stored.settings },
-    step:         stored.step,
-    previewing:   false,
-    generatingAI: false,
-    exporting:    false,
-    templates:    [],
-    loadingTpls:  false,
-  });
+export function useReports() {
+  const toast = useToast();
+  const st = useReportBuilderStore();
+  const tenantId = useAuthStore(s => s.claims?.active_tenant_id ?? null);
+  const modules = useAuthStore(s => s.claims?.modules);
+  const hasIncident = (modules ?? []).includes('incident');
 
-  const set = (patch: Partial<UseReportsState>) => {
-    setState((prev) => ({ ...prev, ...patch }));
-    if ('activeBlocks' in patch || 'settings' in patch || 'step' in patch ||
-        'blockData'    in patch || 'aiData'   in patch) {
-      useReportBuilderStore.getState().sync({
-        ...('activeBlocks' in patch ? { activeBlocks: patch.activeBlocks! } : {}),
-        ...('settings'     in patch ? { settings:     patch.settings! }     : {}),
-        ...('step'         in patch ? { step:         patch.step! }         : {}),
-        ...('blockData'    in patch ? { blockData:    patch.blockData! }    : {}),
-        ...('aiData'       in patch ? { aiData:       patch.aiData! }       : {}),
-      });
-    }
-  };
+  const [loadingKeys, setLoadingKeys] = useState<BlockKey[]>([]);
+  const [generating, setGenerating]   = useState<BlockKey[]>([]);
+  const [exporting, setExporting]     = useState(false);
+  const [savingDraft, setSavingDraft] = useState(false);
+  const [templates, setTemplates]     = useState<ReportTemplate[]>([]);
+  const inflight    = useRef(new Set<string>());
+  const replacing   = useRef('');
+  const hydrating   = useRef(false);
 
-  const reset = useCallback(() => {
-    useReportBuilderStore.getState().reset();
-    setState((prev) => ({
-      ...prev,
-      activeBlocks: DEFAULT_BLOCKS,
-      blockData:    {},
-      aiData:       {},
-      settings:     { ...DEFAULTS },
-      step:         1,
-    }));
-  }, []);
+  const allowed = useCallback(
+    (keys: string[]): BlockKey[] => keys.filter(
+      (k): k is BlockKey => KNOWN_BLOCKS.has(k) && (hasIncident || !INCIDENT_BLOCK_KEYS.has(k as BlockKey)),
+    ),
+    [hasIncident],
+  );
 
-  // ── Date range ─────────────────────────────────────────────────────────────
+  const periodError = customError(st.period);
+  const range = periodRange(st.period);
+  const rangeKey = periodError ? '' : JSON.stringify(range);
 
-  const getRange = useCallback((
-    preset: string,
-    customFrom: string,
-    customTo: string,
-  ): DateRange => {
-    const to = new Date();
+  // ── Figures ──────────────────────────────────────────────────────────────
 
-    if (preset === 'custom') {
-      const from = customFrom ? new Date(customFrom) : null;
-      const customToDate = customTo ? new Date(customTo) : to;
-      return {
-        date_from: from ? from.toISOString() : null,
-        date_to:   customToDate.toISOString(),
-      };
-    }
-
-    const days = preset === 'Last 3 months'  ? 90
-               : preset === 'Last 6 months'  ? 180
-               : preset === 'Last 12 months' ? 365
-               : 30;
-    const from = new Date();
-    from.setDate(from.getDate() - days);
-    return { date_from: from.toISOString(), date_to: to.toISOString() };
-  }, []);
-
-  // ── Preview ────────────────────────────────────────────────────────────────
-
-  const preview = useCallback(async (range: DateRange) => {
-    if (state.previewing) return;
-    set({ previewing: true });
+  const fetchBlocks = useCallback(async (keys: BlockKey[], replace: boolean) => {
+    const s = useReportBuilderStore.getState();
+    if (customError(s.period) || !keys.length) return;
+    const r = periodRange(s.period);
+    const key = JSON.stringify(r);
+    keys.forEach(k => inflight.current.add(k));
+    if (replace) replacing.current = key;
+    setLoadingKeys(prev => Array.from(new Set([...prev, ...keys])));
     try {
-      const result = await reportsApi.previewReport(state.activeBlocks, range);
-      set({
-        blockData: result.block_data,
-        aiData:    {},
-        step:      2,
-        previewing: false,
+      const res = await reportsApi.previewReport(keys, r);
+      const cur = useReportBuilderStore.getState();
+      if (JSON.stringify(periodRange(cur.period)) !== key) return;   // the period changed meanwhile
+      cur.sync({
+        blockData: replace ? res.block_data : { ...cur.blockData, ...res.block_data },
+        dataKey: key,
       });
-      toast('Preview ready — add AI narrative or export directly', 'success');
+      const failed = Object.keys(res.errors ?? {});
+      if (failed.length) toast(`Could not load: ${failed.map(k => BLOCK_LABELS[k as BlockKey] ?? k).join(', ')}`, 'error');
     } catch (err) {
-      set({ previewing: false });
-      toast(err instanceof Error ? err.message : 'Preview failed', 'error');
+      toast(err instanceof Error ? err.message : 'Could not load the figures', 'error');
+    } finally {
+      keys.forEach(k => inflight.current.delete(k));
+      if (replace && replacing.current === key) replacing.current = '';
+      setLoadingKeys(prev => prev.filter(k => !keys.includes(k)));
     }
-  }, [state.previewing, state.activeBlocks, toast]);
+  }, [toast]);
 
-  // ── AI narrative ───────────────────────────────────────────────────────────
-
-  const AI_BLOCKS: BlockKey[] = [
-    'ai-exec-summary', 'executive-commentary', 'top-risks',
-    'top-emerging-risks', 'major-incidents', 'recommendations', 'executive-dashboard',
-  ];
-
-  const generateAI = useCallback(async (range: DateRange) => {
-    if (state.generatingAI) return;
-    const aiBlocks = state.activeBlocks.filter((b) => AI_BLOCKS.includes(b));
-    if (!aiBlocks.length) {
-      toast('No AI-capable blocks on the canvas', 'info');
+  // Load figures for the current period, then for each section as it is added.
+  useEffect(() => {
+    if (!st.hydrated || !rangeKey) return;
+    if (st.dataKey !== rangeKey) {
+      if (replacing.current !== rangeKey) void fetchBlocks(st.activeBlocks, true);
       return;
     }
-    set({ generatingAI: true });
-    try {
-      const aiData = await reportsApi.generateAINarrative(aiBlocks, range);
-      const clean: Record<string, string> = {};
-      for (const [k, v] of Object.entries(aiData)) {
-        if (v) clean[k] = v;
+    const missing = st.activeBlocks.filter(k => !(k in st.blockData) && !inflight.current.has(k));
+    if (missing.length) void fetchBlocks(missing, false);
+  }, [st.hydrated, rangeKey, st.dataKey, st.activeBlocks, st.blockData, fetchBlocks]);
+
+  // ── First load: the person's draft, else the workspace's saved report details ──
+
+  useEffect(() => {
+    if (hydrating.current) return;
+    const s = useReportBuilderStore.getState();
+    if (s.hydrated && s.tenantId === tenantId) return;
+    hydrating.current = true;
+    (async () => {
+      let next = { ...initialReportState(), tenantId, hydrated: true };
+      try {
+        const draft = await reportsApi.getDraft();
+        if (draft) {
+          const blocks = allowed(draft.blocks);
+          next = {
+            ...next,
+            activeBlocks: blocks,
+            settings:     mergeSettings(draft.settings),
+            aiData:       Object.fromEntries(Object.entries(draft.ai_data ?? {}).filter(([k]) => blocks.includes(k as BlockKey))),
+            aiReviewed:   (draft.ai_reviewed ?? []).filter(k => blocks.includes(k as BlockKey)),
+            period:       draft.period ?? next.period,
+            template:     draft.template ?? '',
+            draftSavedAt: draft.updated_at ?? null,
+          };
+        } else {
+          next = { ...next, activeBlocks: allowed(next.activeBlocks), settings: mergeSettings(await reportsApi.getReportSettings()) };
+        }
+      } catch (err) {
+        toast(err instanceof Error ? err.message : 'Could not load your saved report', 'error');
+      } finally {
+        useReportBuilderStore.getState().sync(next);
+        hydrating.current = false;
       }
-      set({ aiData: clean, step: 3, generatingAI: false });
-      toast('AI narrative generated — review, edit if needed, then export', 'success');
+    })();
+  }, [tenantId, allowed, toast]);
+
+  // Report details stay the workspace default for the next report (existing behaviour).
+  const settingsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!st.hydrated) return;
+    if (settingsTimer.current) clearTimeout(settingsTimer.current);
+    const snapshot = st.settings;
+    settingsTimer.current = setTimeout(() => {
+      reportsApi.saveReportSettings(snapshot).catch(() => { /* the draft keeps them too */ });
+    }, 1200);
+    return () => { if (settingsTimer.current) clearTimeout(settingsTimer.current); };
+  }, [st.hydrated, st.settings]);
+
+  // ── Sections ─────────────────────────────────────────────────────────────
+
+  const addBlock = useCallback((key: BlockKey) => {
+    const s = useReportBuilderStore.getState();
+    if (s.activeBlocks.includes(key)) return;
+    s.sync({ activeBlocks: [...s.activeBlocks, key] });
+  }, []);
+
+  const removeBlock = useCallback((key: BlockKey) => {
+    const s = useReportBuilderStore.getState();
+    const aiData = { ...s.aiData };
+    delete aiData[key];
+    s.sync({
+      activeBlocks: s.activeBlocks.filter(b => b !== key),
+      aiData,
+      aiReviewed: s.aiReviewed.filter(k => k !== key),
+    });
+  }, []);
+
+  const moveBlock = useCallback((key: BlockKey, dir: -1 | 1) => {
+    const s = useReportBuilderStore.getState();
+    const a = [...s.activeBlocks];
+    const i = a.indexOf(key);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= a.length) return;
+    [a[i], a[j]] = [a[j], a[i]];
+    s.sync({ activeBlocks: a });
+  }, []);
+
+  const setPeriod = useCallback((period: ReportPeriod, clearAI: boolean) => {
+    useReportBuilderStore.getState().sync(clearAI ? { period, aiData: {}, aiReviewed: [] } : { period });
+  }, []);
+
+  const updateSettings = useCallback((patch: Partial<ReportSettings>) => {
+    const s = useReportBuilderStore.getState();
+    s.sync({ settings: { ...s.settings, ...patch } });
+  }, []);
+
+  const updateSignoff = useCallback((patch: Partial<ReportSettings['signoff']>) => {
+    const s = useReportBuilderStore.getState();
+    s.sync({ settings: { ...s.settings, signoff: { ...s.settings.signoff, ...patch } } });
+  }, []);
+
+  // ── AI narrative and review ──────────────────────────────────────────────
+
+  const generateAI = useCallback(async (keys?: BlockKey[]) => {
+    const s = useReportBuilderStore.getState();
+    const target = (keys ?? s.activeBlocks).filter(k => AI_BLOCKS.has(k) && s.activeBlocks.includes(k));
+    if (!target.length) { toast('No section in this report takes AI text', 'info'); return; }
+    if (customError(s.period)) { toast(customError(s.period), 'error'); return; }
+    setGenerating(target);
+    try {
+      const ai = await reportsApi.generateAINarrative(target, periodRange(s.period));
+      const cur = useReportBuilderStore.getState();
+      const aiData = { ...cur.aiData };
+      for (const k of target) {
+        const v = ai[k];
+        if (v) aiData[k] = v; else delete aiData[k];
+      }
+      cur.sync({ aiData, aiReviewed: cur.aiReviewed.filter(k => !target.includes(k as BlockKey)) });
+      toast('AI text written. Review it before you share the report.', 'success');
     } catch (err) {
-      set({ generatingAI: false });
       toast(err instanceof Error ? err.message : 'AI generation failed', 'error');
+    } finally {
+      setGenerating([]);
     }
-  }, [state.generatingAI, state.activeBlocks, toast]);
+  }, [toast]);
 
-  // ── Export PDF ─────────────────────────────────────────────────────────────
+  const setReviewed = useCallback((key: string, reviewed: boolean) => {
+    const s = useReportBuilderStore.getState();
+    const rest = s.aiReviewed.filter(k => k !== key);
+    s.sync({ aiReviewed: reviewed ? [...rest, key] : rest });
+  }, []);
 
-  const exportPDF = useCallback(async (range: DateRange, mode: 'download' | 'email', emailTo?: string, emailSubject?: string, emailCc: string[] = [], format: ExportFormat = 'pdf') => {
-    if (state.exporting) return;
-    set({ exporting: true });
+  /** Text saved in Review and Edit counts as reviewed. */
+  const updateNarrative = useCallback((key: string, value: string) => {
+    const s = useReportBuilderStore.getState();
+    s.sync({
+      aiData: { ...s.aiData, [key]: value },
+      aiReviewed: [...s.aiReviewed.filter(k => k !== key), key],
+    });
+  }, []);
+
+  // ── Export ───────────────────────────────────────────────────────────────
+
+  const exportReport = useCallback(async (
+    mode: 'download' | 'email', format: ExportFormat = 'pdf',
+    email?: { to: string; cc: string[]; subject: string },
+  ) => {
+    const s = useReportBuilderStore.getState();
+    if (customError(s.period)) { toast(customError(s.period), 'error'); return; }
+    const r = periodRange(s.period);
+    const base = {
+      blocks: s.activeBlocks, block_data: s.blockData, ai_data: s.aiData,
+      settings: s.settings, date_from: r.date_from, date_to: r.date_to,
+    };
+    setExporting(true);
     try {
       if (mode === 'download') {
-        const result = await reportsApi.exportReport({
-          blocks:     state.activeBlocks,
-          block_data: state.blockData,
-          ai_data:    state.aiData as Record<string, string>,
-          settings:   state.settings,
-          date_from:  range.date_from,
-          date_to:    range.date_to,
-          format,
-        });
-        reportsApi.downloadFile(result.file_base64, result.file_name, result.mime_type);
-        toast(format === 'pptx' ? 'PowerPoint downloaded' : 'Report downloaded', 'success');
-      } else {
-        if (!emailTo) throw new Error('Recipient email is required');
-        await reportsApi.emailReport({
-          blocks:     state.activeBlocks,
-          block_data: state.blockData,
-          ai_data:    state.aiData as Record<string, string>,
-          settings:   state.settings,
-          date_from:  range.date_from,
-          date_to:    range.date_to,
-          to:         emailTo,
-          cc:         emailCc,
-          subject:    emailSubject || 'SmartRisk Report',
-        });
-        toast(`Report sent to ${emailTo}${emailCc.length ? ` and ${emailCc.length} CC` : ''}`, 'success');
+        const res = await reportsApi.exportReport({ ...base, format });
+        reportsApi.downloadFile(res.file_base64, res.file_name, res.mime_type);
+        toast(format === 'pptx' ? 'PowerPoint downloaded' : 'PDF downloaded', 'success');
+      } else if (email) {
+        await reportsApi.emailReport({ ...base, to: email.to, cc: email.cc, subject: email.subject || 'SmartRisk Report' });
+        toast(`Report sent to ${email.to}${email.cc.length ? ` and ${email.cc.length} CC` : ''}`, 'success');
       }
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Export failed', 'error');
     } finally {
-      set({ exporting: false });
-    }
-  }, [state, toast]);
-
-  // ── Block canvas management ────────────────────────────────────────────────
-
-  const addBlock = useCallback((key: BlockKey) => {
-    if (state.activeBlocks.includes(key)) {
-      toast(`${key} is already on the canvas`, 'info');
-      return;
-    }
-    set({ activeBlocks: [...state.activeBlocks, key] });
-  }, [state.activeBlocks, toast]);
-
-  const removeBlock = useCallback((key: BlockKey) => {
-    const next = { ...state.aiData };
-    delete next[key];
-    set({
-      activeBlocks: state.activeBlocks.filter((b) => b !== key),
-      aiData: next,
-    });
-  }, [state.activeBlocks, state.aiData]);
-
-  const reorderBlocks = useCallback((ordered: BlockKey[]) => {
-    set({ activeBlocks: ordered });
-  }, []);
-
-  // ── Settings ───────────────────────────────────────────────────────────────
-
-  const updateSettings = useCallback((patch: Partial<ReportSettings>) => {
-    set({ settings: { ...state.settings, ...patch } });
-  }, [state.settings]);
-
-  const updateSignoff = useCallback((patch: Partial<ReportSettings['signoff']>) => {
-    set({ settings: { ...state.settings, signoff: { ...state.settings.signoff, ...patch } } });
-  }, [state.settings]);
-
-  // Auto-save settings (debounced in the page component via useEffect)
-  const saveSettings = useCallback(async () => {
-    try {
-      await reportsApi.saveReportSettings(state.settings);
-    } catch (e) {
-      console.error('saveSettings failed:', e);
-    }
-  }, [state.settings]);
-
-  const loadSavedSettings = useCallback(async () => {
-    try {
-      const saved = await reportsApi.getReportSettings();
-      if (saved && Object.keys(saved).length) {
-        set({ settings: { ...DEFAULTS, ...saved, signoff: { ...DEFAULTS.signoff, ...(saved.signoff || {}) } } });
-      }
-    } catch (e) {
-      console.error('loadSavedSettings failed:', e);
-    }
-  }, []);
-
-  // ── Narrative edits ────────────────────────────────────────────────────────
-  // Allows the user to edit AI-generated or computed narratives inline.
-
-  const updateNarrative = useCallback((blockKey: string, value: string) => {
-    set({ aiData: { ...state.aiData, [blockKey]: value } });
-  }, [state.aiData]);
-
-  // ── Templates ──────────────────────────────────────────────────────────────
-
-  const loadTemplates = useCallback(async () => {
-    set({ loadingTpls: true });
-    try {
-      const tpls = await reportsApi.listTemplates();
-      set({ templates: tpls, loadingTpls: false });
-    } catch {
-      set({ loadingTpls: false });
-    }
-  }, []);
-
-  const saveTemplate = useCallback(async (name: string, description: string) => {
-    try {
-      await reportsApi.saveTemplate({
-        name, description,
-        report_type: '',
-        blocks:   state.activeBlocks,
-        settings: state.settings,
-      });
-      toast('Template saved', 'success');
-      await loadTemplates();
-    } catch (err) {
-      toast(err instanceof Error ? err.message : 'Could not save template', 'error');
-    }
-  }, [state.activeBlocks, state.settings, loadTemplates, toast]);
-
-  const applyTemplate = useCallback(async (templateId: string) => {
-    try {
-      const tpl = await reportsApi.getTemplate(templateId);
-      set({
-        activeBlocks: tpl.blocks as BlockKey[],
-        settings: { ...DEFAULTS, ...tpl.settings, signoff: { ...DEFAULTS.signoff, ...(tpl.settings?.signoff || {}) } },
-        blockData: {},
-        aiData:    {},
-        step:      1,
-      });
-      toast('Template applied — click Preview & Edit to load live data', 'success');
-    } catch (err) {
-      toast(err instanceof Error ? err.message : 'Could not load template', 'error');
+      setExporting(false);
     }
   }, [toast]);
 
-  const deleteTemplate = useCallback(async (templateId: string) => {
+  // ── Draft ────────────────────────────────────────────────────────────────
+
+  const saveDraft = useCallback(async () => {
+    const s = useReportBuilderStore.getState();
+    const draft: ReportDraft = {
+      blocks: s.activeBlocks, settings: s.settings, ai_data: s.aiData,
+      ai_reviewed: s.aiReviewed, period: s.period, template: s.template,
+    };
+    setSavingDraft(true);
     try {
-      await reportsApi.deleteTemplate(templateId);
-      toast('Template deleted', 'success');
+      const saved = await reportsApi.saveDraft(draft);
+      useReportBuilderStore.getState().sync({ draftSavedAt: saved.updated_at ?? new Date().toISOString() });
+      toast('Draft saved', 'success');
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Could not save the draft', 'error');
+    } finally {
+      setSavingDraft(false);
+    }
+  }, [toast]);
+
+  const newReport = useCallback(async () => {
+    try {
+      await reportsApi.deleteDraft();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Could not discard the saved draft', 'error');
+      return;
+    }
+    const s = useReportBuilderStore.getState();
+    s.reset();
+    useReportBuilderStore.getState().sync({ activeBlocks: allowed(initialReportState().activeBlocks), settings: s.settings });
+  }, [allowed, toast]);
+
+  // ── Templates ────────────────────────────────────────────────────────────
+
+  const loadTemplates = useCallback(async () => {
+    try {
+      setTemplates(await reportsApi.listTemplates());
+    } catch { /* the select still offers the built-in templates */ }
+  }, []);
+
+  useEffect(() => {
+    let live = true;
+    reportsApi.listTemplates()
+      .then((t) => { if (live) setTemplates(t); })
+      .catch(() => { /* the select still offers the built-in templates */ });
+    return () => { live = false; };
+  }, [tenantId]);
+
+  const applyTemplate = useCallback(async (id: string) => {
+    try {
+      if (id.startsWith(BUILTIN_PREFIX)) {
+        const t = BUILTIN_TEMPLATES.find(b => b.id === id);
+        if (!t) return;
+        useReportBuilderStore.getState().sync({ activeBlocks: allowed(t.blocks), template: id, aiData: {}, aiReviewed: [] });
+      } else {
+        const t = await reportsApi.getTemplate(id);
+        const cur = useReportBuilderStore.getState();
+        cur.sync({
+          activeBlocks: allowed(t.blocks),
+          settings: mergeSettings({ ...cur.settings, ...t.settings }),
+          template: id, aiData: {}, aiReviewed: [],
+        });
+      }
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Could not load the template', 'error');
+    }
+  }, [allowed, toast]);
+
+  const saveTemplate = useCallback(async (name: string, description: string) => {
+    const s = useReportBuilderStore.getState();
+    try {
+      const res = await reportsApi.saveTemplate({ name, description, report_type: '', blocks: s.activeBlocks, settings: s.settings });
+      useReportBuilderStore.getState().sync({ template: res.template_id });
+      toast('Template saved', 'success');
       await loadTemplates();
     } catch (err) {
-      toast(err instanceof Error ? err.message : 'Could not delete template', 'error');
+      toast(err instanceof Error ? err.message : 'Could not save the template', 'error');
     }
   }, [loadTemplates, toast]);
 
-  const setDefaultTemplate = useCallback(async (templateId: string, reportType: string) => {
+  const deleteTemplate = useCallback(async (id: string) => {
     try {
-      await reportsApi.setDefaultTemplate(templateId, reportType);
+      await reportsApi.deleteTemplate(id);
+      const s = useReportBuilderStore.getState();
+      if (s.template === id) s.sync({ template: '' });
+      toast('Template deleted', 'success');
+      await loadTemplates();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Could not delete the template', 'error');
+    }
+  }, [loadTemplates, toast]);
+
+  const setDefaultTemplate = useCallback(async (id: string, reportType: string) => {
+    try {
+      await reportsApi.setDefaultTemplate(id, reportType);
       toast('Default template updated', 'success');
       await loadTemplates();
     } catch (err) {
-      toast(err instanceof Error ? err.message : 'Could not set default', 'error');
+      toast(err instanceof Error ? err.message : 'Could not set the default', 'error');
     }
   }, [loadTemplates, toast]);
 
   return {
-    ...state,
-    // actions
-    preview,
-    generateAI,
-    exportPDF,
-    addBlock,
-    removeBlock,
-    reorderBlocks,
-    updateSettings,
-    updateSignoff,
-    saveSettings,
-    loadSavedSettings,
-    updateNarrative,
-    loadTemplates,
-    saveTemplate,
-    applyTemplate,
-    deleteTemplate,
-    setDefaultTemplate,
-    getRange,
-    reset,
+    ...st,
+    range,
+    periodError,
+    hasIncident,
+    loadingKeys,
+    generating,
+    exporting,
+    savingDraft,
+    templates,
+    aiStatus: aiStatusOf(st.activeBlocks, st.aiData, st.aiReviewed),
+    unreviewed: unreviewedKeys(st.activeBlocks, st.aiData, st.aiReviewed),
+    addBlock, removeBlock, moveBlock, setPeriod, updateSettings, updateSignoff,
+    generateAI, setReviewed, updateNarrative, exportReport,
+    saveDraft, newReport,
+    applyTemplate, saveTemplate, deleteTemplate, setDefaultTemplate,
   };
 }

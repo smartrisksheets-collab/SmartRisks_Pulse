@@ -35,8 +35,8 @@ async def check_usage(
     claims: dict = Depends(get_active_tenant),
 ):
     tenant_id = UUID(claims["active_tenant_id"])
-    count = await lookup_service.check_lookup_usage(db, tenant_id, field, value)
-    return {"data": {"field": field, "value": value, "count": count}, "error": None, "meta": {}}
+    usage = await lookup_service.lookup_usage(db, tenant_id, field, value)
+    return {"data": {"field": field, "value": value, **usage}, "error": None, "meta": {}}
 
 
 @router.patch("")

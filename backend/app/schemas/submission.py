@@ -39,6 +39,8 @@ class TokenResolveResponse(BaseModel):
     department: str
     org_name:   str
     logo_url:   str | None
+    # Path of the workspace's open incident form, or None when the incident module is off.
+    incident_form_path: str | None = None
 
 
 class PublicSubmitRequest(BaseModel):

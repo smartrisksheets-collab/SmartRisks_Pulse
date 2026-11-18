@@ -44,11 +44,11 @@ async def test_update_incident(client: AsyncClient, owner_headers: dict) -> None
 
     r = await client.patch(
         f"/api/v1/incidents/{inc_id}",
-        json={"status": "In Progress"},
+        json={"status": "Investigating"},
         headers=owner_headers,
     )
     assert r.status_code == 200
-    assert r.json()["data"]["status"] == "In Progress"
+    assert r.json()["data"]["status"] == "Investigating"
 
 
 @pytest.mark.asyncio

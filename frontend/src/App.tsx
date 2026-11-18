@@ -20,8 +20,10 @@ import VerifyPin      from './pages/VerifyPin';
 import CreateWorkspace from './pages/CreateWorkspace';
 import AcceptInvite   from './pages/AcceptInvite';
 import PlanExpired    from './pages/PlanExpired';
-import Dashboard      from './pages/Dashboard';
+import Home           from './pages/Home';
 import RiskRegister   from './pages/RiskRegister';
+import RiskFormPage   from './pages/RiskFormPage';
+import IncidentFormPage from './pages/IncidentFormPage';
 import Incidents      from './pages/Incidents';
 
 // Apply the last workspace colors before React draws anything, so pages do not flash teal.
@@ -29,6 +31,7 @@ applyCachedBrandColors();
 
 // ── Lazy: heavy or infrequently visited pages ─────────────────────────────
 const ReportBuilder    = lazy(() => import('./pages/ReportBuilder'));
+const Analytics        = lazy(() => import('./pages/Analytics'));
 const Settings         = lazy(() => import('./pages/Settings'));
 const Frameworks       = lazy(() => import('./pages/Frameworks'));
 const Help             = lazy(() => import('./pages/Help'));
@@ -121,13 +124,18 @@ export default function App() {
               <PageShell>
                 <Suspense fallback={<PageLoader />}>
                   <Routes>
-                    <Route path="/"          element={<Dashboard />} />
+                    <Route path="/"          element={<Home />} />
+                    <Route path="/analytics" element={<Analytics />} />
                     <Route path="/risks"     element={<RequireModule module="risk"><RiskRegister /></RequireModule>} />
                     <Route path="/incidents" element={<RequireModule module="incident"><Incidents /></RequireModule>} />
+                    <Route path="/incidents/new"           element={<RequireModule module="incident"><RequirePermission permission="manage_incidents"><IncidentFormPage /></RequirePermission></RequireModule>} />
+                    <Route path="/incidents/:id/edit"      element={<RequireModule module="incident"><RequirePermission permission="manage_incidents"><IncidentFormPage /></RequirePermission></RequireModule>} />
                     <Route path="/reports"   element={<ReportBuilder />} />
                     <Route path="/audit"     element={<RequirePermission permission="manage_settings"><AuditLog /></RequirePermission>} />
                     <Route path="/users"     element={<RequirePermission permission="manage_users"><Users /></RequirePermission>} />
                     <Route path="/settings"   element={<RequirePermission permission="manage_settings"><Settings /></RequirePermission>} />
+                    <Route path="/risks/new"               element={<RequireModule module="risk"><RequirePermission permission="manage_risks"><RiskFormPage /></RequirePermission></RequireModule>} />
+                    <Route path="/risks/:id/edit"          element={<RequireModule module="risk"><RequirePermission permission="manage_risks"><RiskFormPage /></RequirePermission></RequireModule>} />
                     <Route path="/risks/triage"            element={<RequireModule module="risk"><RequirePermission permission="manage_risks"><TriageQueue /></RequirePermission></RequireModule>} />
                     <Route path="/risks/submission-links"  element={<RequireModule module="risk"><RequirePermission permission="manage_risks"><TokenManager /></RequirePermission></RequireModule>} />
                     <Route path="/frameworks" element={<Frameworks />} />

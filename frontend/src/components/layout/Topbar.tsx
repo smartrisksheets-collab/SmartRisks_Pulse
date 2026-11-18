@@ -7,6 +7,9 @@ import { useAuth } from '../../hooks/useAuth';
 import { usePresence } from '../../hooks/usePresence';
 import GetStartedDrawer from './GetStartedDrawer';
 import { roleLabel } from '../../utils/roles';
+import { useHome } from '../../hooks/useHome';
+import { PROFILE_NAME_FALLBACK } from '../../utils/constants';
+import { initialsOf } from '../home/links';
 import AskPulse from '../help/AskPulse';
 
 function computeGsPulse(tid: string): boolean {
@@ -75,12 +78,15 @@ export default function Topbar({ title = 'Dashboard' }: TopbarProps) {
     setGsOpen(false);
     setPulseVersion((v) => v + 1);
   }
-  const initials = claims?.email ? claims.email.slice(0, 2).toUpperCase() : '??';
+  // The profile menu shows the account name only. The email is never rendered on screen.
+  const { data: home } = useHome();
+  const profileName = home?.first_name || PROFILE_NAME_FALLBACK;
+  const initials    = initialsOf(home?.first_name ?? claims?.email);
 
   return (
     <>
     <div className="topbar">
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div className="topbar-left">
         <button
           className="mob-menu-btn"
           onClick={() => setMobSidebarOpen(true)}
@@ -127,7 +133,7 @@ export default function Topbar({ title = 'Dashboard' }: TopbarProps) {
         >
           <ThemeIcon size={15} />
         </button>
-        <button className="btn btn-secondary btn-compact" style={{ position: 'relative' }} onClick={() => setGsOpen(true)}>
+        <button className="pl-btn pl-btn-secondary topbar-btn topbar-gs" onClick={() => setGsOpen(true)}>
           Get Started
           {gsPulse && <span className="gs-pulse" />}
         </button>
@@ -135,8 +141,9 @@ export default function Topbar({ title = 'Dashboard' }: TopbarProps) {
         {/* Workspace dropdown */}
         <div className="topbar-dd-wrap" ref={wsRef}>
           <button
-            className="btn btn-secondary btn-compact"
+            className="pl-btn pl-btn-secondary topbar-btn"
             onClick={() => setWsOpen((v) => !v)}
+            aria-expanded={wsOpen}
           >
             Workspace
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
@@ -193,7 +200,7 @@ export default function Topbar({ title = 'Dashboard' }: TopbarProps) {
 
           {menuOpen && (
             <div className="topbar-dropdown">
-              <div className="topbar-dropdown-email">{claims?.email}</div>
+              <div className="topbar-dropdown-email">{profileName}</div>
               <div className="topbar-dropdown-divider" />
               <button
                 className="topbar-dropdown-item"

@@ -20,6 +20,7 @@ class Risk(Base):
 
     id = Column(String, nullable=False)
     tenant_id = Column(PG_UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False)
+    title = Column(String)
     category = Column(String)
     description = Column(String)
     primary_impact = Column(String)
@@ -53,6 +54,14 @@ class Risk(Base):
     linked_decision          = Column(String)
     linked_decision_at       = Column(Date)
     control_assertion_source = Column(String)
+    # Evidence document (migration 066). evidence_path is the object path in the
+    # private risk-evidence bucket and is never sent to the browser.
+    evidence_path        = Column(String)
+    evidence_name        = Column(String)
+    evidence_mime        = Column(String)
+    evidence_size        = Column(Integer)
+    evidence_uploaded_at = Column(DateTime(timezone=True))
+    evidence_uploaded_by = Column(String)
     level_index  = Column(Integer)
     is_elevated  = Column(Boolean, nullable=False, server_default='false')
     deleted_at   = Column(DateTime(timezone=True))

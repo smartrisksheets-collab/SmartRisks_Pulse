@@ -69,6 +69,71 @@ def band_for_score(score: float, cfg: MatrixConfig | None) -> tuple[int, str]:
     return 1, str(cfg.band_1_label or "Low")  # type: ignore[arg-type]
 
 
+AI_STATUSES = ("Escalate", "Monitor", "Review", "Stable")
+
+
+def _band_min(index: int, cfg: MatrixConfig | None) -> int:
+    """Lowest score in band `index` (2 to 5) on this workspace's matrix. Default 5x5 bands without config."""
+    if cfg is None:
+        return {2: 5, 3: 10, 4: 17, 5: 21}[index]
+    return int({
+        2: cfg.band_medium_min,
+        3: cfg.band_high_min,
+        4: cfg.band_critical_min,
+        5: cfg.band_extreme_min,
+    }[index] or 0)  # type: ignore[call-overload]
+
+
+def ai_escalate_index(bands: int) -> int:
+    """Lowest band index whose risks Escalate: the top band, or the top two bands on a 5-band matrix."""
+    return bands - 1 if bands >= 5 else bands
+
+
+def ai_status_thresholds(cfg: MatrixConfig | None) -> tuple[int, int | None]:
+    """(escalate_min, monitor_min) residual scores: the lowest score of the escalate band and of the band below it.
+
+    monitor_min is None on a 2-band matrix, where only the top band carries a residual trigger.
+    """
+    esc = ai_escalate_index(band_count(cfg))
+    escalate_min = _band_min(esc, cfg)
+    monitor_min = _band_min(esc - 1, cfg) if esc >= 3 else None
+    return escalate_min, monitor_min
+
+
+def ai_status(
+    level_index: int | None,
+    residual: float | None,
+    cfg: MatrixConfig | None,
+    level: str | None = None,
+) -> str:
+    """Status line on an AI insight, by band position on the workspace matrix.
+
+    Escalate band or above (top band; top two on a 5-band matrix), or residual in it: Escalate.
+    Next band down, or residual in it: Monitor. The band below that (never band 1): Review.
+    Otherwise Stable. Band names are never matched
+    against fixed strings. A risk scored before level_index existed falls back to finding its
+    stored level label among this workspace's band labels.
+    """
+    bc = band_count(cfg)
+    idx = level_index
+    if idx is None and level:
+        labels = [lbl.casefold() for lbl in band_labels(cfg)]
+        if level.strip().casefold() in labels:
+            idx = labels.index(level.strip().casefold()) + 1
+    esc = ai_escalate_index(bc)
+    escalate_min, monitor_min = ai_status_thresholds(cfg)
+    if (idx is not None and idx >= esc) or (residual is not None and residual >= escalate_min):
+        return "Escalate"
+    if esc >= 3 and (
+        (idx is not None and idx == esc - 1)
+        or (residual is not None and monitor_min is not None and residual >= monitor_min)
+    ):
+        return "Monitor"
+    if esc >= 4 and idx is not None and idx == esc - 2:
+        return "Review"
+    return "Stable"
+
+
 def elevated_min_index(bands: int) -> int:
     """Lowest band index counted as elevated: the top two bands, never below band 2."""
     return max(bands - 1, 2)
@@ -232,10 +297,16 @@ def is_evidenced(
     *,
     control_last_tested: date | None,
     control_assertion_source: str | None,
+    has_document: bool,
     today: date,
 ) -> bool:
-    """Tested within the evidence window, and asserted independently of the risk owner."""
-    return has_recent_test(control_last_tested, today) and is_independent(control_assertion_source)
+    """Tested within the evidence window, asserted independently of the risk owner,
+    and backed by an evidence document on file (decision 2026-11-16, migration 066)."""
+    return (
+        has_recent_test(control_last_tested, today)
+        and is_independent(control_assertion_source)
+        and has_document
+    )
 
 
 def is_contradicted(control_effectiveness: int | None, scale: int, materialised: bool) -> bool:

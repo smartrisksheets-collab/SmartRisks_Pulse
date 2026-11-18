@@ -24,8 +24,12 @@ import type {
   ExecutiveDashboardData,
   RiskHeatMapData,
   MethodologyData,
-  RiskIncidentCorrelationData
+  RiskIncidentCorrelationData,
+  AppetiteBreachesData,
+  DecisionsNeededData,
+  ControlEvidenceData,
 } from '../../types/report';
+import { heatCellClass, levelChipClass } from '../../utils/reportPresets';
 
 // ── Shared helpers ─────────────────────────────────────────────────────────────
 
@@ -146,7 +150,7 @@ function KPIBox({ value, label, color }: { value: string | number; label: string
 
 
 function AIPlaceholder() {
-  return <p className="rb-ai-placeholder">Click "Generate AI Narrative" to enhance this block.</p>;
+  return <p className="rb-ai-placeholder">Use Write AI text to add a narrative to this section.</p>;
 }
 
 // ── Block renderers ─────────────────────────────────────────────────────────────
@@ -475,19 +479,83 @@ function FindingsBlock({ data }: { data: FindingsData }) {
 }
 
 function RiskHeatMapBlock({ data }: { data: RiskHeatMapData }) {
+  const cols = { '--pl-rb-cols': String(data.impact_scale || 5) } as React.CSSProperties;
   return (
-    <div style={{ fontSize: 12, color: '#64748b' }}>
-      <div style={{ marginBottom: 8, color: '#1F2854', fontWeight: 600 }}>
-        {data.total_placed} of {data.active_risks} risks placed on a {data.likelihood_scale} × {data.impact_scale} grid
+    <div className="pl-rb-heat">
+      <div className="pl-rb-hm" style={cols} role="img"
+        aria-label={`Heat map of ${data.total_placed} risks by likelihood (rows, highest first) and impact (columns)`}>
+        {(data.grid || []).flat().map((c) => (
+          <span key={`${c.likelihood}-${c.impact}`} className={heatCellClass(c.band_index)}>
+            {c.risks.length || ''}
+          </span>
+        ))}
       </div>
-      {data.unplaced > 0 && (
-        <div style={{ color: '#f59e0b', marginBottom: 8 }}>
-          ⚠ {data.unplaced} risk{data.unplaced > 1 ? 's' : ''} not placed — no likelihood or impact score recorded
+      <p className="pl-caption pl-grow">
+        {data.total_placed} of {data.active_risks} risks placed on a {data.likelihood_scale} × {data.impact_scale} grid
+        by inherent likelihood and impact.
+        {data.unplaced > 0 && ` ${data.unplaced} ${data.unplaced === 1 ? 'risk has' : 'risks have'} no likelihood or impact score.`}
+      </p>
+    </div>
+  );
+}
+
+// ── Pulse UI sections (UI step 7) ──────────────────────────────────────────────
+
+function TruncatedNote({ show }: { show: boolean }) {
+  return show ? <p className="pl-caption">Showing the first 25. The full list is in the Risk Register.</p> : null;
+}
+
+function AppetiteBreachesBlock({ data }: { data: AppetiteBreachesData }) {
+  return (
+    <div className="pl-stack-xs">
+      {data.risks.map((r) => (
+        <div key={r.id} className="pl-rb-mini">
+          <span className="pl-grow"><b className="pl-rid">{r.id}</b> {r.title}</span>
+          <span className="pl-meta pl-num">residual {r.residual} against {r.threshold}</span>
+          <span className={`pl-chip ${levelChipClass(r.level_index)}`}>Over by {r.over_by}</span>
+        </div>
+      ))}
+      <TruncatedNote show={data.rows_truncated} />
+      <p className="pl-p">{data.narrative}</p>
+    </div>
+  );
+}
+
+function DecisionsNeededBlock({ data }: { data: DecisionsNeededData }) {
+  return (
+    <div className="pl-stack-xs">
+      {data.risks.map((r) => (
+        <div key={r.id} className="pl-rb-mini">
+          <span className="pl-grow"><b className="pl-rid">{r.id}</b> {r.title}</span>
+          <span className="pl-tag">{r.owner || 'Unassigned'}</span>
+          <span className={`pl-chip ${levelChipClass(r.level_index)}`}>{r.reason}</span>
+        </div>
+      ))}
+      <TruncatedNote show={data.rows_truncated} />
+      <p className="pl-p">{data.narrative}</p>
+    </div>
+  );
+}
+
+function ControlEvidenceBlock({ data }: { data: ControlEvidenceData }) {
+  return (
+    <div className="pl-stack-xs">
+      {data.rated > 0 && (
+        <div className="pl-an-stats">
+          <div className="pl-stat"><span className="pl-metric-s">{data.rated}</span><span className="pl-caption">rated controls</span></div>
+          <div className="pl-stat"><span className="pl-metric-s">{data.evidenced}</span><span className="pl-caption">evidenced</span></div>
+          <div className="pl-stat"><span className="pl-metric-s">{data.contradicted}</span><span className="pl-caption">contradicted by an incident</span></div>
         </div>
       )}
-      <div style={{ color: '#94a3b8', fontStyle: 'italic' }}>
-        Full heat map renders in the exported PDF.
-      </div>
+      {data.gaps.map((g) => (
+        <div key={g.id} className="pl-rb-mini">
+          <span className="pl-grow"><b className="pl-rid">{g.id}</b> {g.title}</span>
+          <span className="pl-meta">{g.reasons.join(', ')}</span>
+          <span className={`pl-chip ${g.contradicted ? 'pl-sev-x' : 'pl-sev-m'}`}>{g.rating}</span>
+        </div>
+      ))}
+      <TruncatedNote show={data.rows_truncated} />
+      <p className="pl-p">{data.narrative}</p>
     </div>
   );
 }
@@ -716,7 +784,7 @@ export default function ReportPreview({ blockKey, blockData, aiData, onEdit }: P
   const ai   = aiData[blockKey];
 
   if (!data) {
-    return <p style={{ fontSize: 12, color: '#94a3b8' }}>Click Preview &amp; Edit to load data.</p>;
+    return <p className="pl-caption">Loading figures…</p>;
   }
 
   switch (blockKey) {
@@ -742,6 +810,9 @@ export default function ReportPreview({ blockKey, blockData, aiData, onEdit }: P
     case 'risk-heat-map':       return <RiskHeatMapBlock        data={data as RiskHeatMapData} />;
     case 'methodology':         return <MethodologyBlock        data={data as MethodologyData} />;
     case 'risk-incident-correlation': return <RiskIncidentCorrelationBlock data={data as RiskIncidentCorrelationData} />;
+    case 'appetite-breaches':   return <AppetiteBreachesBlock   data={data as AppetiteBreachesData} />;
+    case 'decisions-needed':    return <DecisionsNeededBlock    data={data as DecisionsNeededData} />;
+    case 'control-evidence':    return <ControlEvidenceBlock    data={data as ControlEvidenceData} />;
     default:                    return <p style={{ fontSize: 12, color: '#94a3b8' }}>Unknown block.</p>;
   }
 }

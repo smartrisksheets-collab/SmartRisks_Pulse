@@ -1,103 +1,44 @@
 // src/components/reports/BlockSelector.tsx
+// Section library (UI step 7): grouped sections, each with an Add button that
+// turns into "Added" once the section is in the report.
 
 import type { BlockKey } from '../../types/report';
-import { useAuthStore } from '../../store/authStore';
-
-interface Group {
-  head: string;
-  items: { label: string; key: BlockKey }[];
-}
-
-const INCIDENT_BLOCK_KEYS = new Set<BlockKey>([
-  'incident-stability',
-  'incident-trend',
-  'major-incidents',
-  'incident-analytics',
-  'risk-incident-correlation',
-]);
-
-const GROUPS: Group[] = [
-  {
-    head: 'Executive',
-    items: [
-      { label: 'Executive Dashboard',  key: 'executive-dashboard'  },
-      { label: 'Risk Health',          key: 'exposure-index'       },
-      { label: 'Risk Snapshot',        key: 'risk-snapshot'        },
-      { label: 'Key Risk Changes',     key: 'key-risk-changes'     },
-      { label: 'Risk Ownership',       key: 'risk-ownership'       },
-      { label: 'Executive Summary',    key: 'ai-exec-summary'      },
-    ],
-  },
-  {
-    head: 'Visuals',
-    items: [
-      { label: 'Exposure Trend',       key: 'exposure-trend'       },
-      { label: 'Residual Risk Trend',  key: 'residual-risk-trend'  },
-      { label: 'Risk Distribution',    key: 'risk-distribution'    },
-      { label: 'Risk Heat Map',        key: 'risk-heat-map'        },
-    ],
-  },
-  {
-    head: 'Intelligence',
-    items: [
-      { label: 'Top Risks',            key: 'top-risks'            },
-      { label: 'Top Emerging Risks',   key: 'top-emerging-risks'   },
-    ],
-  },
-  {
-    head: 'Incidents',
-    items: [
-      { label: 'Incident Stability',   key: 'incident-stability'   },
-      { label: 'Incident Trend',       key: 'incident-trend'       },
-      { label: 'Major Incidents',      key: 'major-incidents'      },
-      { label: 'Incident Analytics',   key: 'incident-analytics'   },
-      { label: 'Risk & Incident Correlation', key: 'risk-incident-correlation' },
-    ],
-  },
-  {
-    head: 'Final Layer',
-    items: [
-      { label: 'Methodology',          key: 'methodology'          },
-      { label: 'Findings',             key: 'findings'             },
-      { label: 'Recommendations',      key: 'recommendations'      },
-      { label: 'Conclusion',           key: 'conclusion'           },
-    ],
-  },
-];
+import { BLOCK_LABELS } from '../../types/report';
+import { INCIDENT_BLOCK_KEYS, SECTION_GROUPS } from '../../utils/reportPresets';
 
 interface Props {
   activeBlocks: BlockKey[];
+  hasIncident:  boolean;
   onAdd:        (key: BlockKey) => void;
 }
 
-export default function BlockSelector({ activeBlocks, onAdd }: Props) {
-  const modules     = useAuthStore(s => s.claims?.modules ?? []);
-  const hasIncident = modules.includes('incident');
-
+export default function BlockSelector({ activeBlocks, hasIncident, onAdd }: Props) {
   return (
-    <div className="rb-lib">
-      <div className="rb-lib-title">Sections</div>
-      {GROUPS.map((g) => {
-        const items = g.items.filter(
-          item => hasIncident || !INCIDENT_BLOCK_KEYS.has(item.key)
-        );
-        if (!items.length) return null;
+    <aside className="pl-card pl-rb-lib" aria-label="Section library">
+      <h2 className="pl-label">Add sections</h2>
+      {SECTION_GROUPS.map((g) => {
+        const keys = g.keys.filter(k => hasIncident || !INCIDENT_BLOCK_KEYS.has(k));
+        if (!keys.length) return null;
         return (
-          <div key={g.head} className="rb-lib-group">
-            <div className="rb-lib-head">{g.head}</div>
-            {items.map((item) => (
-              <div
-                key={item.key}
-                className={`rb-lib-item${activeBlocks.includes(item.key) ? ' on-canvas' : ''}`}
-                onClick={() => onAdd(item.key)}
-                title={activeBlocks.includes(item.key) ? 'Already on canvas' : `Add ${item.label}`}
-              >
-                {item.label}
-              </div>
-            ))}
+          <div key={g.name} className="pl-rb-lib-g">
+            <span className="pl-rb-lib-h">{g.name}</span>
+            {keys.map((k) => {
+              const added = activeBlocks.includes(k);
+              const name = BLOCK_LABELS[k];
+              return (
+                <div key={k} className="pl-rb-lib-i">
+                  <span className="pl-grow">{name}</span>
+                  <button type="button" className="pl-rb-add" disabled={added}
+                    aria-label={added ? `${name} is in the report` : `Add ${name}`}
+                    onClick={() => onAdd(k)}>
+                    {added ? 'Added' : 'Add'}
+                  </button>
+                </div>
+              );
+            })}
           </div>
         );
       })}
-    </div>
+    </aside>
   );
 }

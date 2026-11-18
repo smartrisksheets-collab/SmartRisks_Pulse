@@ -53,6 +53,7 @@ from app.scheduler.jobs import (
     job_brief_send,
     job_orphan_logo_sweep,
     job_trial_cleanup,
+    job_help_gaps_report,
 )
 
 
@@ -77,6 +78,8 @@ async def lifespan(_app: FastAPI):
     scheduler.add_job(job_brief_send,        "cron", minute=0,  id="brief_send")
     scheduler.add_job(job_incident_escalation, "cron", minute=0,              id="incident_escalation")
     scheduler.add_job(job_trial_cleanup,        "cron", hour=5, minute=0,      id="trial_cleanup")
+    # Ask Pulse unanswered questions, 07:30 UTC on Mondays
+    scheduler.add_job(job_help_gaps_report, "cron", day_of_week="mon", hour=7, minute=30, id="help_gaps_report")
 
     scheduler.start()
     yield

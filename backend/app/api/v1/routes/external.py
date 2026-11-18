@@ -68,6 +68,21 @@ async def get_workspace_brand(tenant_id: str, db: AsyncSession = Depends(get_db)
     return {"data": {"org_name": org, "logo_url": logo}, "error": None, "meta": {}}
 
 
+@router.get("/external/severity/{tenant_id}")
+@limiter.limit("30/minute")
+async def get_public_severity(
+    request:   Request,
+    tenant_id: UUID,
+    db:        AsyncSession = Depends(get_db),
+):
+    """Severity levels for the public incident form: [{label, help}], most severe first. No auth."""
+    try:
+        data = await ext_svc.get_public_severity(db, tenant_id)
+    except ResourceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return {"data": data, "error": None, "meta": {}}
+
+
 @router.get("/external/lookups/{tenant_id}")
 @limiter.limit("30/minute")
 async def get_public_lookups(
