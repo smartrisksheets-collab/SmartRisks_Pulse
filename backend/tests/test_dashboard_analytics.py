@@ -139,7 +139,7 @@ async def test_pressure_extras_and_movement_scores(session: AsyncSession, seed: 
             INSERT INTO snapshots_monthly (
                 id, tenant_id, month_key, month_label, month_date, avg_residual,
                 health_score, pressure_score
-            ) VALUES (:id, :t, :k, :l, :d, 6.5, 61, 37)
+            ) VALUES (:id, :t, :k, :l, :d, 6.542857142857143, 61, 37)
         """),
         {"id": str(uuid.uuid4()), "t": str(tid), "k": prev.strftime("%Y-%m"),
          "l": prev.strftime("%b %Y"), "d": prev},
@@ -156,6 +156,7 @@ async def test_pressure_extras_and_movement_scores(session: AsyncSession, seed: 
     points = {p.month_key: p for p in movement.points}
     past = points[prev.strftime("%Y-%m")]
     assert (past.health_score, past.pressure_score) == (61, 37)
+    assert past.avg_residual == 6.5
     live = movement.points[-1]
     assert live.is_live
     assert live.health_score == health.score

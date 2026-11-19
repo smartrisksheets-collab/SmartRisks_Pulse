@@ -1421,7 +1421,7 @@ async def _intel(
         if is_live:
             res_val = avg_res if residuals else None
         elif snap is not None and snap.avg_residual is not None:
-            res_val = float(snap.avg_residual)
+            res_val = round(float(snap.avg_residual), 1)
         else:
             res_val = None
         # Health and pressure: live scores for the current month, stored scores

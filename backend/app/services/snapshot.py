@@ -101,7 +101,7 @@ async def compute_live_kpis(
         "month_date": date(now.year, now.month, 1),
         "total_risks": int(risk_row.total_risks or 0),
         "high_risk_count": int(risk_row.high_risk_count or 0),
-        "avg_residual": float(risk_row.avg_residual or 0),
+        "avg_residual": round(float(risk_row.avg_residual or 0), 1),
         "control_effectiveness": float(risk_row.avg_ctrl_eff or 0),
         "control_strength_pct": round(ce_avg_pct(
             float(risk_row.avg_ctrl_eff) if risk_row.avg_ctrl_eff is not None else None, ce_scale), 1),
