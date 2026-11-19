@@ -8,6 +8,7 @@ no database access, so they are cheap to call per row and easy to test.
 """
 
 import math
+from decimal import ROUND_HALF_UP, Decimal
 from datetime import date, datetime, timedelta
 
 from app.models.matrix_config import MatrixConfig
@@ -149,6 +150,11 @@ def elevated_phrase(cfg: MatrixConfig | None) -> str:
     if not top:
         return "elevated"
     return " or ".join(top)
+
+
+def round_avg_residual(value: float) -> int:
+    """Average residual as shown on every surface: a whole number, halves round up (6.5 -> 7)."""
+    return int(Decimal(str(value)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
 def residual_max(cfg: MatrixConfig | None) -> int:

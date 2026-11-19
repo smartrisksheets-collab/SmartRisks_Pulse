@@ -65,6 +65,7 @@ from app.services.incident_severity import (
 from app.services.lookup import get_lookups, covering_risk_categories
 from app.services.matrix_config import get_config as get_matrix_config
 from app.services.risk_status import (
+    round_avg_residual,
     appetite_status,
     threshold_for,
     is_stale,
@@ -294,7 +295,7 @@ async def _get_kpis(db: AsyncSession, tenant_id: UUID) -> KPISummary:
         total_risks=int(risk_row.total or 0),
         high_risks=int(risk_row.high or 0),
         open_incidents=int(open_inc or 0),
-        risk_severity_avg=round(float(risk_row.avg_residual or 0), 1),
+        risk_severity_avg=round_avg_residual(float(risk_row.avg_residual or 0)),
         control_effectiveness_avg=round(ce_avg_pct(
             float(risk_row.avg_ctrl) if risk_row.avg_ctrl is not None else None, ce_scale), 1),
         est_financial_exposure=round(_fin_total, 2),
@@ -1303,10 +1304,10 @@ async def _intel(
         appetite=AppetiteComparison(
             configured=bool(thresholds),
             scored_risks=scored,
-            avg_residual_scored=round(sum(scored_res) / len(scored_res), 1) if scored_res else None,
+            avg_residual_scored=round_avg_residual(sum(scored_res) / len(scored_res)) if scored_res else None,
             threshold_avg=round(sum(scored_thr) / len(scored_thr), 1) if scored_thr else None,
         ),
-        avg_residual=avg_res,
+        avg_residual=round_avg_residual(avg_res),
         scale_max=scale_max,
         incident_health_score=inc_stats.health.score if inc_count else None,
         incident_count=inc_count,
@@ -1421,7 +1422,7 @@ async def _intel(
         if is_live:
             res_val = avg_res if residuals else None
         elif snap is not None and snap.avg_residual is not None:
-            res_val = round(float(snap.avg_residual), 1)
+            res_val = float(snap.avg_residual)
         else:
             res_val = None
         # Health and pressure: live scores for the current month, stored scores
@@ -1462,10 +1463,15 @@ async def _intel(
             "and has produced no incidents."
         )
 
+    # Trend percentages use the unrounded averages; the points are rounded for display after.
+    trend_findings = _trend_findings(points)
+    for p in points:
+        if p.avg_residual is not None:
+            p.avg_residual = round_avg_residual(p.avg_residual)
     movement = Movement(
         snapshots_held=snapshots_held,
         points=points,
-        trend_findings=_trend_findings(points),
+        trend_findings=trend_findings,
         overlap_findings=overlap,
     )
 
