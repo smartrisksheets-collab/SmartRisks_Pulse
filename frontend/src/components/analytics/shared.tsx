@@ -3,7 +3,6 @@
 // computed by the backend; these helpers only pick chip colours and draw.
 
 import type { ReactNode } from 'react';
-import type { PageState } from '../../hooks/usePaged';
 import type { RecommendedAction, ScoreComponent } from '../../types/dashboard';
 import { formatDate } from '../../utils/format';
 
@@ -28,22 +27,6 @@ export function Card({ label, title, intro, right, children }: {
       )}
       {children}
     </section>
-  );
-}
-
-// ── Paging ───────────────────────────────────────────────────────────────────
-
-export function Pager({ p }: { p: PageState }) {
-  if (p.pages <= 1) return null;
-  return (
-    <div className="pl-pager">
-      <span className="pl-caption">Showing {p.first} to {p.last} of {p.total}</span>
-      <span className="pl-inline">
-        <button type="button" className="pl-btn pl-btn-secondary pl-btn-sm" disabled={p.page <= 1} onClick={() => p.setPage(p.page - 1)}>Previous</button>
-        <span className="pl-caption">Page {p.page} of {p.pages}</span>
-        <button type="button" className="pl-btn pl-btn-secondary pl-btn-sm" disabled={p.page >= p.pages} onClick={() => p.setPage(p.page + 1)}>Next</button>
-      </span>
-    </div>
   );
 }
 

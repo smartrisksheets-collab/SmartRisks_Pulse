@@ -4,6 +4,7 @@
 // only picks the colour and words for it.
 
 import type { Risk } from '../types/risk';
+import { TABLE_PAGE_SIZE } from './constants';
 
 export interface ChipView { cls: string; text: string; }
 
@@ -65,7 +66,7 @@ export const REGISTER_VIEWS: { key: RegisterView; label: (elevatedLabel: string)
   { key: 'past_target', label: () => 'Past target date' },
 ];
 
-export const REGISTER_PAGE_SIZE = 10;
+export const REGISTER_PAGE_SIZE = TABLE_PAGE_SIZE;
 
 export const ASSERTION_SOURCES = ['Self-assessed', 'Independently tested', 'External audit'] as const;
 

@@ -20,6 +20,8 @@ import {
   type SignInStatus,
 } from "../hooks/useUsers";
 import { planLabel } from "../utils/constants";
+import { usePaged } from "../hooks/usePaged";
+import { Pager } from "../components/ui/Pager";
 
 // ── local toast hook ──────────────────────────────────────────────────────
 
@@ -396,6 +398,7 @@ export default function Users() {
     const matchStatus = !statusFilter || m.status === statusFilter;
     return matchSearch && matchRole && matchStatus;
   });
+  const paged = usePaged(filtered);
 
   return (
     <>
@@ -453,12 +456,12 @@ export default function Users() {
             <input
               placeholder="Search by name or email…"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => { setSearch(e.target.value); paged.setPage(1); }}
             />
           </div>
           <div className="field">
             <label>Role</label>
-            <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}>
+            <select value={roleFilter} onChange={(e) => { setRoleFilter(e.target.value); paged.setPage(1); }}>
               <option value="">All</option>
               <option value="Owner">Admin</option>
               <option value="Manager">Manager</option>
@@ -467,7 +470,7 @@ export default function Users() {
           </div>
           <div className="field">
             <label>Status</label>
-            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+            <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); paged.setPage(1); }}>
               <option value="">All</option>
               <option value="ACTIVE">Active</option>
               <option value="DEACTIVATED">Deactivated</option>
@@ -502,7 +505,7 @@ export default function Users() {
                     No users found.
                   </td>
                 </tr>
-              ) : filtered.map((m) => (
+              ) : paged.rows.map((m) => (
                 <tr key={m.id}>
                   <td style={{ fontWeight: 600 }}>
                     {m.name || "—"}
@@ -532,6 +535,7 @@ export default function Users() {
             </tbody>
           </table>
         </div>
+        <Pager p={paged} />
 
         <p className="muted small" style={{ marginTop: 10 }}>
           Users here populate the "Dept/Risk Owner" dropdown in the Risk Register.

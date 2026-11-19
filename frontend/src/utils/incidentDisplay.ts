@@ -6,6 +6,7 @@
 import type { ChipView } from './riskDisplay';
 import type { Incident, IncidentCreate, IncidentRow, IncidentStage } from '../types/incident';
 import { INCIDENT_TITLE_MAX } from '../types/incident';
+import { TABLE_PAGE_SIZE } from './constants';
 
 // ── Quick views ──────────────────────────────────────────────────────────────
 
@@ -19,7 +20,7 @@ export const INCIDENT_VIEWS: { key: IncidentView; label: (highLabel: string) => 
   { key: 'all',      label: () => 'All' },
 ];
 
-export const INCIDENT_PAGE_SIZE = 10;
+export const INCIDENT_PAGE_SIZE = TABLE_PAGE_SIZE;
 
 // ── Chips ────────────────────────────────────────────────────────────────────
 

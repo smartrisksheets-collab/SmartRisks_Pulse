@@ -3,6 +3,8 @@
 
 import { useState } from 'react';
 import type { ConfirmRequest } from '../../hooks/useConfirm';
+import { usePaged } from '../../hooks/usePaged';
+import { Pager } from '../ui/Pager';
 import type { ReportTemplate } from '../../types/report';
 import { validateEmail, parseCcList, validateCcList, MAX_CC } from '../../utils/validation';
 
@@ -95,6 +97,7 @@ export function ManageTemplatesModal({ templates, canEdit, onApply, onDelete, on
   const [search, setSearch] = useState('');
   const q = search.trim().toLowerCase();
   const rows = templates.filter(t => !q || t.name.toLowerCase().includes(q));
+  const tplPage = usePaged(rows);
   return (
     <div className="modal-backdrop show pl-app" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal pl-rb-modal-l" role="dialog" aria-modal="true" aria-labelledby="rb-manage-tpl">
@@ -104,7 +107,7 @@ export function ManageTemplatesModal({ templates, canEdit, onApply, onDelete, on
         </div>
         <div className="modal-bd pl-stack">
           <input className="pl-input" aria-label="Search templates" placeholder="Search templates"
-            value={search} onChange={(e) => setSearch(e.target.value)} />
+            value={search} onChange={(e) => { setSearch(e.target.value); tplPage.setPage(1); }} />
           {!rows.length && <p className="pl-body-s">{q ? 'No template matches your search.' : 'No saved templates yet.'}</p>}
           {rows.length > 0 && (
             <div className="pl-table-wrap">
@@ -113,7 +116,7 @@ export function ManageTemplatesModal({ templates, canEdit, onApply, onDelete, on
                   <tr><th>Template</th><th>Sections</th><th>Updated</th><th>Created by</th><th><span className="pl-rb-sr">Actions</span></th></tr>
                 </thead>
                 <tbody>
-                  {rows.map(t => (
+                  {tplPage.rows.map(t => (
                     <tr key={t.template_id}>
                       <td>
                         <div className="pl-stack-xs">
@@ -141,6 +144,7 @@ export function ManageTemplatesModal({ templates, canEdit, onApply, onDelete, on
               </table>
             </div>
           )}
+          <Pager p={tplPage} />
         </div>
         <div className="modal-ft">
           <button type="button" className="pl-btn pl-btn-secondary" onClick={onClose}>Close</button>

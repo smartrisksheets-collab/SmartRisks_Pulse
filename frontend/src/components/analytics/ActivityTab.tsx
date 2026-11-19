@@ -16,7 +16,8 @@ import {
 } from '../../utils/feedEvents';
 import Explain from '../help/Explain';
 import { usePaged } from '../../hooks/usePaged';
-import { Card, Pager } from './shared';
+import { Pager } from '../ui/Pager';
+import { Card } from './shared';
 
 type Filter = 'all' | 'risk' | 'incident';
 

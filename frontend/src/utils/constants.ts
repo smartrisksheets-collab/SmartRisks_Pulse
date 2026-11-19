@@ -1,6 +1,6 @@
 export const MAX_RISKS = 1000;
-// Rows per page on the Analytics tables and the Activity feed.
-export const ANALYTICS_PAGE_SIZE = 10;
+// Rows per page on every table in the app. One rule, changed here only.
+export const TABLE_PAGE_SIZE = 10;
 export const RISK_WARNING_THRESHOLD = 0.8;
 export const MAX_USERS = 25;
 export const MAX_WORKSPACES_TRIAL = 1;

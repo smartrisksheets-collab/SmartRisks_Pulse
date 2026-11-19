@@ -5,7 +5,8 @@ import type { DashboardData, EvidenceStatus } from '../../types/dashboard';
 import { formatDate } from '../../utils/format';
 import Explain from '../help/Explain';
 import { usePaged } from '../../hooks/usePaged';
-import { ActionList, Card, Pager } from './shared';
+import { Pager } from '../ui/Pager';
+import { ActionList, Card } from './shared';
 import { plural, severityChip } from './format';
 
 interface Props {
