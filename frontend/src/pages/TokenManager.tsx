@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTokens, useCreateToken, useRevokeToken } from '../hooks/useSubmissions';
 import { useToast } from '../hooks/useToast';
+import { usePaged } from '../hooks/usePaged';
+import { Pager } from '../components/ui/Pager';
 import type { SubmissionToken } from '../types/submission';
 import Explain from '../components/help/Explain';
 
@@ -19,6 +21,7 @@ export default function TokenManager() {
   const toast         = useToast();
   const navigate      = useNavigate();
   const { data: tokens, isLoading } = useTokens();
+  const paged         = usePaged(tokens ?? []);
   const createMut     = useCreateToken();
   const revokeMut     = useRevokeToken();
 
@@ -113,7 +116,7 @@ export default function TokenManager() {
                 </tr>
               </thead>
               <tbody>
-                {tokens.map(t => {
+                {paged.rows.map(t => {
                   const { text, cls } = statusLabel(t);
                   const url = `${BASE_URL}/submit/${t.token}`;
                   return (
@@ -159,6 +162,7 @@ export default function TokenManager() {
             </table>
           </div>
         )}
+        <Pager p={paged} />
       </div>
 
       {/* Create modal */}

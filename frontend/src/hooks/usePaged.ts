@@ -3,7 +3,7 @@
 // the row count shrinks, so a refresh never shows an empty page.
 
 import { useState } from 'react';
-import { ANALYTICS_PAGE_SIZE } from '../utils/constants';
+import { TABLE_PAGE_SIZE } from '../utils/constants';
 
 export interface PageState {
   page: number;
@@ -14,7 +14,7 @@ export interface PageState {
   setPage: (n: number) => void;
 }
 
-export function usePaged<T>(rows: T[], size: number = ANALYTICS_PAGE_SIZE): PageState & { rows: T[] } {
+export function usePaged<T>(rows: T[], size: number = TABLE_PAGE_SIZE): PageState & { rows: T[] } {
   const [page, setPage] = useState(1);
   const pages = Math.max(1, Math.ceil(rows.length / size));
   const current = Math.min(page, pages);

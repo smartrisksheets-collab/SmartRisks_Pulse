@@ -2,8 +2,10 @@
 // How well incidents are handled: targets, resolution time, stages and cost.
 
 import { Link } from 'react-router-dom';
+import { usePaged } from '../../hooks/usePaged';
 import type { IncidentStats } from '../../types/incident';
 import { formatMoneyCompact } from '../../utils/format';
+import { Pager } from '../ui/Pager';
 import { Card } from './shared';
 import { plural } from './format';
 
@@ -16,6 +18,9 @@ interface Props {
 }
 
 export default function IncidentsTab({ stats, isLoading, uncovered, currency, goCorrelation }: Props) {
+  // Hooks run before the early returns below, so they are called on every render.
+  const sevPage = usePaged(stats?.by_severity ?? []);
+  const catPage = usePaged(stats?.by_category ?? []);
   if (isLoading) return <p className="pl-caption">Loading incident figures…</p>;
   if (!stats) return <p className="pl-note pl-alert">Incident figures could not be loaded. Refresh the page to try again.</p>;
 
@@ -90,7 +95,7 @@ export default function IncidentsTab({ stats, isLoading, uncovered, currency, go
               </tr>
             </thead>
             <tbody>
-              {stats.by_severity.map(s => (
+              {sevPage.rows.map(s => (
                 <tr key={s.severity}>
                   <td>{s.severity}</td>
                   <td className="pl-r">{plural(s.target_days, 'day')}</td>
@@ -103,6 +108,7 @@ export default function IncidentsTab({ stats, isLoading, uncovered, currency, go
             </tbody>
           </table>
         </div>
+        <Pager p={sevPage} />
       </Card>
 
       <div className="pl-card-grid">
@@ -119,7 +125,7 @@ export default function IncidentsTab({ stats, isLoading, uncovered, currency, go
                   </tr>
                 </thead>
                 <tbody>
-                  {stats.by_category.map(c => {
+                  {catPage.rows.map(c => {
                     const ids = c.unlinked_ids;
                     const cover = uncovered.includes(c.category)
                       ? 'No risk line'
@@ -139,6 +145,7 @@ export default function IncidentsTab({ stats, isLoading, uncovered, currency, go
               </table>
             </div>
           )}
+          <Pager p={catPage} />
           {goCorrelation && (
             <a href="#correlation" onClick={e => { e.preventDefault(); goCorrelation(); }}>See the blind spots in Correlation</a>
           )}

@@ -5,6 +5,7 @@
 import { useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 import api from "../services/api";
+import { TABLE_PAGE_SIZE } from "../utils/constants";
 import {
   useAuditLog,
   useClearAuditLog,
@@ -24,7 +25,7 @@ const PERIOD_OPTIONS: { label: string; value: string }[] = [
 
 const MODULE_OPTIONS = ["", "Risk", "Incident", "Settings"];
 const ACTION_OPTIONS = ["", "CREATE", "UPDATE", "DELETE", "IMPORT", "RESTORE"];
-const PAGE_SIZE = 50;
+const PAGE_SIZE = TABLE_PAGE_SIZE;
 
 // ── action badge helper ──────────────────────────────────────────────────
 

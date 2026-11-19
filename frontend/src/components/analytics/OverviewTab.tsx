@@ -6,7 +6,9 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { DashboardData } from '../../types/dashboard';
 import { formatMoneyCompact } from '../../utils/format';
+import { usePaged } from '../../hooks/usePaged';
 import Explain from '../help/Explain';
+import { Pager } from '../ui/Pager';
 import { Card, ScoreBars } from './shared';
 import { appetiteCell, healthChip, plural, pressureChip } from './format';
 
@@ -22,6 +24,7 @@ interface Props {
 export default function OverviewTab({ data, currency, tabs, go }: Props) {
   const { enterprise_health: h, pressure: p, snapshot_delta: delta, correlation: c, control_evidence: ev } = data;
   const [whyOpen, setWhyOpen] = useState(true);
+  const catPage = usePaged(p.by_category);
   const noData = h.status === 'No data';
   const ap = h.appetite;
   const threshold = ap.configured ? ap.threshold_avg : null;
@@ -206,7 +209,7 @@ export default function OverviewTab({ data, currency, tabs, go }: Props) {
                 </tr>
               </thead>
               <tbody>
-                {p.by_category.map(row => {
+                {catPage.rows.map(row => {
                   const a = appetiteCell(row);
                   return (
                     <tr key={`${row.category}-${row.covered}`}>
@@ -222,6 +225,7 @@ export default function OverviewTab({ data, currency, tabs, go }: Props) {
             </table>
           </div>
         )}
+        <Pager p={catPage} />
       </Card>
     </>
   );

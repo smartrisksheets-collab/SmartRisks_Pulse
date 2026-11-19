@@ -1,7 +1,9 @@
 // src/components/analytics/TrendsTab.tsx
 // Six-month movement from the monthly snapshots, plus category overlap.
 
+import { usePaged } from '../../hooks/usePaged';
 import type { DashboardData, MovementPoint } from '../../types/dashboard';
+import { Pager } from '../ui/Pager';
 import { BarChart, Card, LineChart, Sparkline } from './shared';
 import { plural } from './format';
 
@@ -27,6 +29,7 @@ function lastKnown(points: MovementPoint[], pick: (p: MovementPoint) => number |
 export default function TrendsTab({ data, hasRisk, hasIncident, goCorrelation }: Props) {
   const { movement: m, enterprise_health: h, risks_by_category, incidents_by_category } = data;
   const pts = m.points;
+  const snapPage = usePaged([...pts].reverse());
   const resMaxRaw = Math.max(0, ...pts.map(p => p.avg_residual ?? 0), h.appetite.threshold_avg ?? 0);
   const resMax = resMaxRaw > 0 ? Math.min(h.scale_max, Math.ceil(resMaxRaw * 1.25)) : h.scale_max;
   const incTotal = pts.reduce((n, p) => n + p.incidents_created, 0);
@@ -138,7 +141,7 @@ export default function TrendsTab({ data, hasRisk, hasIncident, goCorrelation }:
               </tr>
             </thead>
             <tbody>
-              {[...pts].reverse().map(p => (
+              {snapPage.rows.map(p => (
                 <tr key={p.month_key}>
                   <td>{p.label}{p.is_live && <span className="pl-meta"> · live</span>}</td>
                   {hasRisk && <td className="pl-r">{p.health_score ?? '—'}</td>}
@@ -150,6 +153,7 @@ export default function TrendsTab({ data, hasRisk, hasIncident, goCorrelation }:
             </tbody>
           </table>
         </div>
+        <Pager p={snapPage} />
         <p className="pl-caption">{plural(m.snapshots_held, 'monthly snapshot')} held.</p>
       </Card>
     </>

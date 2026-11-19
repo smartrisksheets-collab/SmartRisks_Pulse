@@ -5331,8 +5331,10 @@ button.hlp-step { width:100%; text-align:left; font:inherit; color:inherit; curs
 
 /* ── Base ─────────────────────────────────────────────────────────────────── */
 .pl-app { font-family: inherit; color: var(--pl-text); font-size: var(--pl-fs-body); line-height: var(--pl-lh-body); }
-.pl-app a { color: var(--pl-navy-text); }
-.pl-app a:hover { color: var(--pl-teal-text); }
+/* :where keeps this at the old weight but skips buttons drawn as links, so
+   .pl-btn-primary and .btn-primary keep white text on teal. */
+.pl-app a:where(:not(.pl-btn, .btn)) { color: var(--pl-navy-text); }
+.pl-app a:where(:not(.pl-btn, .btn)):hover { color: var(--pl-teal-text); }
 .pl-app :focus-visible { outline: none; box-shadow: var(--pl-focus-ring); border-radius: 6px; }
 .pl-num { font-variant-numeric: tabular-nums; }
 .pl-content { padding: 28px 32px 40px; display: flex; flex-direction: column; gap: var(--pl-space-8); max-width: var(--pl-content-max); box-sizing: border-box; width: 100%; }
@@ -5476,6 +5478,8 @@ textarea.pl-input { min-height: 88px; resize: vertical; line-height: 1.55; }
 .pl-pick-none { padding: 8px 12px; }
 /* Analytics table and feed paging. */
 .pl-pager { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
+/* Older pages have no stack gap between the table box and the pager. */
+.table-wrap + .pl-pager { margin-top: 12px; }
 .pl-scale { display: grid; grid-template-columns: repeat(var(--pl-scale-n, 5), minmax(0, 1fr)); gap: 6px; }
 .pl-scale-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 56px; padding: 6px 4px; border: 1px solid var(--pl-border-control); border-radius: var(--pl-r-control); background: var(--pl-bg-card); cursor: pointer; font-family: inherit; font-weight: 700; font-size: 15px; line-height: 1.2; color: var(--pl-navy-text); }
 .pl-scale-btn span { font-size: var(--pl-fs-label); font-weight: 600; color: var(--pl-text-muted); text-align: center; line-height: 1.2; }

@@ -9,6 +9,8 @@ import {
   useTriageClose, usePromote,
 } from '../hooks/useSubmissions';
 import { useToast } from '../hooks/useToast';
+import { usePaged } from '../hooks/usePaged';
+import { Pager } from '../components/ui/Pager';
 import { useLookups } from '../hooks/useLookups';
 import { listRisks } from '../services/risks';
 import { useAuthStore } from '../store/authStore';
@@ -48,6 +50,7 @@ export default function TriageQueue() {
   const hasIncident = useAuthStore(s => (s.claims?.modules ?? []).includes('incident'));
   const tenantId    = useAuthStore(s => s.claims?.active_tenant_id ?? null);
   const { data: queue, isLoading } = useTriageQueue();
+  const paged = usePaged(queue ?? []);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [action,     setAction]     = useState<TriageAction>(null);
@@ -254,7 +257,7 @@ export default function TriageQueue() {
                 </tr>
               </thead>
               <tbody>
-                {queue.map(item => (
+                {paged.rows.map(item => (
                   <tr
                     key={item.id}
                     style={{ cursor: 'pointer' }}
@@ -292,6 +295,7 @@ export default function TriageQueue() {
             </table>
           </div>
         )}
+        <Pager p={paged} />
       </div>
 
       {/* Detail drawer */}
