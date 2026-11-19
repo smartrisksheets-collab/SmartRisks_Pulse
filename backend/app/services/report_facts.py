@@ -17,7 +17,7 @@ from datetime import date
 from typing import Any
 
 from app.services.report import ReportContext, RiskRow, compute_risk_incident_correlation
-from app.services.risk_status import ce_avg_pct
+from app.services.risk_status import ce_avg_pct, round_avg_residual
 
 SMALL_N_THRESHOLD = 5     # below this, percentage framing is suppressed
 OVERDUE_DAYS      = 30    # decisions older than this are flagged overdue
@@ -105,14 +105,14 @@ class ReportFacts:
         risk_health    = max(0, 100 - exposure_index)
 
         self.scores = {
-            "avg_residual":         avg_residual,
+            "avg_residual":         round_avg_residual(avg_residual),
             "avg_severity":         avg_severity,
             "avg_control_eff":      avg_ctrl_eff,
             "control_strength_pct": ctrl_strength,
             "ce_scale":             _ce_scale(self.ctx),
             "exposure_index":       exposure_index,
             "risk_health":          risk_health,
-            "avg_residual_pulse":   avg_pulse,
+            "avg_residual_pulse":   round_avg_residual(avg_pulse),
         }
 
         # ── Governance ──────────────────────────────────────────────────────

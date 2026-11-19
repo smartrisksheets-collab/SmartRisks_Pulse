@@ -32,7 +32,7 @@ from app.models.matrix_config import MatrixConfig
 from app.models.tenant import Tenant
 from app.services.risk_status import (
     ce_avg_pct, appetite_status, threshold_for, high_control_text,
-    band_labels, elevated_phrase, residual_max,
+    band_labels, elevated_phrase, residual_max, round_avg_residual,
 )
 from typing import Any
 
@@ -471,7 +471,7 @@ def compute_exposure_index(ctx: ReportContext) -> dict:
 def compute_risk_snapshot(ctx: ReportContext) -> dict:
     risks = ctx.all_risks
     residuals = [r.residual for r in risks if r.residual > 0]
-    avg_residual = round(sum(residuals) / len(residuals)) if residuals else 0
+    avg_residual = round_avg_residual(sum(residuals) / len(residuals)) if residuals else 0
 
     by_level: dict[str, int] = {}
     by_treatment: dict[str, int] = {}
@@ -670,7 +670,7 @@ def compute_residual_risk_trend(ctx: ReportContext) -> dict:
     for b in buckets:
         slice_ = [r for r in ctx.all_risks if r.logged_at is None or r.logged_at <= b["to"]]
         residuals = [r.residual for r in slice_ if r.residual > 0]
-        avg = round(sum(residuals) / len(residuals)) if residuals else 0
+        avg = round_avg_residual(sum(residuals) / len(residuals)) if residuals else 0
         points.append({"label": b["label"], "avg": avg})
 
     first = points[0]["avg"] if points else 0
@@ -874,7 +874,7 @@ def compute_findings(ctx: ReportContext) -> dict:
     high_count   = sum(1 for r in risks if _is_high(r))
     total_risks  = len(risks)
     residuals    = [r.residual for r in risks if r.residual > 0]
-    avg_residual = round(sum(residuals) / len(residuals)) if residuals else 0
+    avg_residual = round_avg_residual(sum(residuals) / len(residuals)) if residuals else 0
     open_inc     = [i for i in incidents if i.status.lower().strip() not in ("resolved", "closed")]
 
     positive:        list[str] = []
@@ -1190,7 +1190,7 @@ def compute_risk_ownership(ctx: ReportContext) -> dict:
     top_owners = []
     for o in sorted_owners:
         res = o["residuals"]
-        avg_res = round(sum(res) / len(res)) if res else 0
+        avg_res = round_avg_residual(sum(res) / len(res)) if res else 0
         top_cat_e = sorted(o["categories"].items(), key=lambda x: x[1], reverse=True)
         top_owners.append({
             "owner":       o["owner"],

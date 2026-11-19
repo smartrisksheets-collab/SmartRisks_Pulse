@@ -35,6 +35,7 @@ from app.services.risk_status import (
     APPETITE_NEAR_RATIO, ce_fraction, ce_avg_pct, resolve_ce_input, appetite_status, threshold_for,
     band_count, band_for_score, is_elevated_index,
     OPEN_MITIGATION, ce_label, elevated_phrase, is_past_target, is_undecided, residual_max,
+    round_avg_residual,
 )
 
 logger = logging.getLogger(__name__)
@@ -592,7 +593,7 @@ async def get_stats(
         top_owner=top_owner,
         control_signal=ControlSignal(
             eff_pct=avg_eff,
-            avg_residual=round(avg_resid, 1),
+            avg_residual=round_avg_residual(avg_resid),
             residual_max=_res_max,
             signal_msg=signal_msg,
             signal_class=signal_class,
@@ -797,7 +798,7 @@ async def get_view_counts(
         undecided=await _count(undecided=True),
         past_target=await _count(past_target=True),
         elevated_label=elevated_phrase(cfg),
-        avg_residual=round(float(avg), 1) if avg is not None else None,
+        avg_residual=round_avg_residual(float(avg)) if avg is not None else None,
         residual_max=residual_max(cfg),
     )
 

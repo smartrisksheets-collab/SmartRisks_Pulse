@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.services.dashboard import _intel
 from app.services.incident import get_stats
+from app.services.risk_status import round_avg_residual
 from app.services.snapshot import write_monthly_snapshot
 
 
@@ -156,7 +157,7 @@ async def test_pressure_extras_and_movement_scores(session: AsyncSession, seed: 
     points = {p.month_key: p for p in movement.points}
     past = points[prev.strftime("%Y-%m")]
     assert (past.health_score, past.pressure_score) == (61, 37)
-    assert past.avg_residual == 6.5
+    assert past.avg_residual == 7
     live = movement.points[-1]
     assert live.is_live
     assert live.health_score == health.score
@@ -187,3 +188,7 @@ async def test_monthly_snapshot_empty_workspace_leaves_scores_blank(session: Asy
     assert snap is not None
     assert snap.health_score is None
     assert snap.pressure_score is None
+
+
+def test_round_avg_residual_whole_number_half_up() -> None:
+    assert [round_avg_residual(v) for v in (6.542857142857143, 4.117647058823529, 6.5, 2.5, 0.0)] == [7, 4, 7, 3, 0]
