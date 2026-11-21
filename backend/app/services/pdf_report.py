@@ -4,7 +4,8 @@ ReportLab PDF generation for the Report Builder.
 Translates Reportservice.gs api_buildAndExportPDF() and
 buildBlockHtml_() into ReportLab Platypus flowables.
 
-Brand: Navy #1F2854, Teal #01b88e. No gradients. Solid colors only.
+Brand: workspace palette from services/brand.py (SmartRisk Navy and Teal by
+default). Band, severity and RAG colors stay fixed. No gradients.
 Source: Reportservice.gs lines 1617-2450.
 """
 
@@ -12,6 +13,7 @@ from __future__ import annotations
 
 import io
 import logging
+from contextvars import ContextVar
 from datetime import date
 from typing import Any
 
@@ -21,6 +23,7 @@ from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from app.services.report_fonts import f_regular, f_medium, f_semibold, f_bold
+from app.services.brand import DEFAULT_ACCENT, DEFAULT_PALETTE, DEFAULT_PRIMARY, WHITE as _WHITE_HEX, BrandPalette
 from reportlab.platypus import (
     BaseDocTemplate,
     CondPageBreak,
@@ -52,10 +55,42 @@ BORDER = colors.HexColor("#e2e8f0")
 WHITE = colors.white
 BLACK = colors.HexColor("#0f172a")
 
+# The workspace palette for the export running now. A ContextVar, not a module
+# global, so two workspaces exporting at the same time never share colors.
+_PALETTE: ContextVar[BrandPalette] = ContextVar("pdf_palette", default=DEFAULT_PALETTE)
+
+
+def _hc(name: str) -> colors.Color:
+    """A palette color (accent, on_accent, primary_text, ...) as a ReportLab color."""
+    return colors.HexColor(getattr(_PALETTE.get(), name))
+
+
+def _bc(hex_: str) -> str:
+    """Maps the default navy or teal used as text to the workspace text color."""
+    h = str(hex_).upper()
+    if h == DEFAULT_ACCENT:
+        return _PALETTE.get().accent_text
+    if h == DEFAULT_PRIMARY:
+        return _PALETTE.get().primary_text
+    return hex_
+
+
+def _on_accent_muted_hex() -> str:
+    """Secondary text on an accent fill: soft grey on dark fills, slate on light ones."""
+    return "#94A3B8" if _PALETTE.get().on_accent == _WHITE_HEX else "#475569"
+
+
+def _on_accent_muted() -> colors.Color:
+    return colors.HexColor(_on_accent_muted_hex())
+
+
+def _with_alpha(c: colors.Color, alpha: float) -> colors.Color:
+    return colors.Color(c.red, c.green, c.blue, alpha=alpha)
+
 # ── Styles ─────────────────────────────────────────────────────────────────────
 _base = getSampleStyleSheet()
 
-_S = {
+_S_BASE: dict[str, ParagraphStyle] = {
     "block_title": ParagraphStyle(
         "block_title", fontName="Helvetica-Bold", fontSize=11,
         textColor=NAVY, spaceAfter=4, spaceBefore=12,
@@ -113,6 +148,30 @@ _S = {
         textColor=BLACK,
     ),
 }
+# Styles drawn in the accent color, re-colored for each workspace in _branded_styles.
+_ACCENT_STYLES = frozenset(k for k, st in _S_BASE.items() if st.textColor is NAVY)
+_STYLES: ContextVar[dict[str, ParagraphStyle]] = ContextVar("pdf_styles", default=_S_BASE)
+
+
+class _StyleSet:
+    """Reads _S["name"] from the styles of the export running now."""
+
+    def __getitem__(self, key: str) -> ParagraphStyle:
+        return _STYLES.get()[key]
+
+    def __contains__(self, key: object) -> bool:
+        return key in _STYLES.get()
+
+
+_S = _StyleSet()
+
+
+def _branded_styles(pal: BrandPalette) -> dict[str, ParagraphStyle]:
+    text = colors.HexColor(pal.accent_text)
+    return {
+        k: ParagraphStyle(k, parent=st, textColor=text) if k in _ACCENT_STYLES else st
+        for k, st in _S_BASE.items()
+    }
 
 
 # ── Page X of N canvas ────────────────────────────────────────────────────────
@@ -185,7 +244,7 @@ def _level_color(level: str, level_index: int | None = None) -> colors.HexColor:
 def _block_header(label: str) -> list:
     return [
         Paragraph(label, _S["block_title"]),
-        HRFlowable(width="100%", thickness=1, color=NAVY, spaceAfter=6),
+        HRFlowable(width="100%", thickness=1, color=_hc("accent"), spaceAfter=6),
     ]
 
 
@@ -197,7 +256,7 @@ def _kpi_val_paragraph(k: dict) -> Paragraph:
     """
     val_str  = str(k.get("value", ""))
     unit_str = str(k.get("unit", "") or "")
-    clr_str  = k.get("color", "#1F2854") if isinstance(k.get("color"), str) else "#1F2854"
+    clr_str  = _bc(k.get("color", "#1F2854") if isinstance(k.get("color"), str) else "#1F2854")
 
     direction = k.get("direction")
     arrow = ""
@@ -260,9 +319,9 @@ def _kpi_table(kpis: list[dict], col_width: float = 50 * mm) -> Table:
     tbl = Table(rows, colWidths=[col_width] * n)
 
     first_color = (
-        colors.HexColor(kpis[0]["color"])
+        colors.HexColor(_bc(kpis[0]["color"]))
         if isinstance(kpis[0].get("color"), str)
-        else NAVY
+        else _hc("accent_text")
     )
 
     style_cmds: list = [
@@ -324,8 +383,8 @@ def _apply_jakarta_fonts() -> None:
         "signoff_val":     f_regular(),    # sign-off value
     }
     for name, font in _STYLE_FONTS.items():
-        if name in _S:
-            _S[name].fontName = font
+        if name in _S_BASE:
+            _S_BASE[name].fontName = font
 
 
 # ── Narrative paragraph ────────────────────────────────────────────────────────
@@ -359,7 +418,7 @@ def _ai_callout(text: str) -> Table:
         m = re.fullmatch(r"\[(\w+)\]", seg)
         if m:
             label  = m.group(1)
-            color  = _CALLOUT_LABEL_COLORS.get(label, "#334155")
+            color  = _bc(_CALLOUT_LABEL_COLORS.get(label, "#334155"))
             body   = parts[i + 1].lstrip("\n").strip() if i + 1 < len(parts) else ""
             i += 2
             html_text = (
@@ -389,7 +448,7 @@ def _ai_callout(text: str) -> Table:
         ("RIGHTPADDING", (0, 0), (-1, -1), 14),
         ("TOPPADDING",   (0, 0), (-1, -1), 12),
         ("BOTTOMPADDING",(0, 0), (-1, -1), 12),
-        ("LINEBEFORE",   (0, 0), (0, -1), 3, TEAL),
+        ("LINEBEFORE",   (0, 0), (0, -1), 3, _hc("primary")),
     ]))
     return tbl
 
@@ -460,7 +519,7 @@ def _render_exposure_index(data: dict, ai_text: str | None) -> list:
             [Paragraph("EXPOSURE INDEX", _lbl_s)],
             [Paragraph(str(score), ParagraphStyle(
                 "eii", fontName=f_bold(), fontSize=23,
-                textColor=NAVY, alignment=TA_CENTER, leading=27, spaceAfter=4,
+                textColor=_hc("accent_text"), alignment=TA_CENTER, leading=27, spaceAfter=4,
             ))],
             [Paragraph(f"/ 100 \u2014 <b>{label}</b>", ParagraphStyle(
                 "eiil", fontName=f_regular(), fontSize=9,
@@ -548,9 +607,9 @@ def _render_ai_exec_summary(data: dict, ai_text: str | None) -> list:
 
 
 _COMMENTARY_SECTIONS = [
-    ("Observation",       NAVY,  "\u25cf"),   # ● matches GAS &#9679;
+    ("Observation",       "accent_text",  "\u25cf"),   # ● matches GAS &#9679;
     ("Impact",            RED,   "\u25b3"),   # △ matches GAS &#9651;
-    ("Recommended Focus", TEAL,  "\u2713"),   # ✓ matches GAS &#10003;
+    ("Recommended Focus", "primary_text",  "\u2713"),   # ✓ matches GAS &#10003;
 ]
 
 
@@ -573,7 +632,7 @@ def _parse_commentary(text: str) -> list[tuple[str, colors.HexColor, str, str]]:
         else:
             body = text[start:].strip()
         if body:
-            out.append((key, color, icon, body))
+            out.append((key, _hc(color) if isinstance(color, str) else color, icon, body))
     return out
 
 
@@ -741,14 +800,14 @@ def _render_line_chart(
 def _render_exposure_trend(data: dict, ai_text: str | None) -> list:
     return _render_trend_chart(
         "Exposure Trend", data.get("points", []),
-        "score", TEAL, ai_text or data.get("narrative")
+        "score", _hc("series_2"), ai_text or data.get("narrative")
     )
 
 
 def _render_residual_risk_trend(data: dict, ai_text: str | None) -> list:
     return _render_line_chart(
         "Residual Risk Trend", data.get("points", []),
-        "avg", NAVY, ai_text or data.get("narrative")
+        "avg", _hc("accent"), ai_text or data.get("narrative")
     )
 
 
@@ -924,8 +983,8 @@ def _render_risk_table(label: str, risks: list[dict], intro: str | None,
     col_w = [18 * mm, 26 * mm, 38 * mm, 18 * mm, 30 * mm, 30 * mm, 14 * mm]
     tbl = Table(rows, colWidths=col_w, repeatRows=1)
     tbl.setStyle(TableStyle([
-        ("BACKGROUND",    (0, 0), (-1, 0), NAVY),
-        ("TEXTCOLOR",     (0, 0), (-1, 0), WHITE),
+        ("BACKGROUND",    (0, 0), (-1, 0), _hc("accent")),
+        ("TEXTCOLOR",     (0, 0), (-1, 0), _hc("on_accent")),
         ("FONTNAME",      (0, 0), (-1, 0), "Helvetica-Bold"),
         ("FONTSIZE",      (0, 0), (-1, 0), 8),
         ("FONTSIZE",      (0, 1), (-1, -1), 7),
@@ -972,8 +1031,8 @@ def _render_major_incidents(data: dict, ai_text: str | None) -> list:
     ]
     tbl = Table(rows, colWidths=[22 * mm, 90 * mm, 24 * mm, 22 * mm], repeatRows=1)
     tbl.setStyle(TableStyle([
-        ("BACKGROUND",   (0, 0), (-1, 0), NAVY),
-        ("TEXTCOLOR",    (0, 0), (-1, 0), WHITE),
+        ("BACKGROUND",   (0, 0), (-1, 0), _hc("accent")),
+        ("TEXTCOLOR",    (0, 0), (-1, 0), _hc("on_accent")),
         ("FONTNAME",     (0, 0), (-1, 0), "Helvetica-Bold"),
         ("FONTSIZE",     (0, 0), (-1, -1), 8),
         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [WHITE, LIGHT]),
@@ -1102,7 +1161,7 @@ def _render_recommendations(data: dict, ai_text: str | None) -> list:
             row = Table(
                 [[Paragraph(f"{i}.", ParagraphStyle(
                     "recnum", fontName=f_bold(), fontSize=9,
-                    textColor=NAVY,
+                    textColor=_hc("accent_text"),
                  )),
                   Paragraph(rec, _S["body"])]],
                 colWidths=[6 * mm, None],
@@ -1161,7 +1220,7 @@ def _render_rec_card(out: list, index: int, rec: dict) -> None:
 
     inner_rows: list[list] = [
         [Paragraph(title_markup, ParagraphStyle(
-            "at", fontName=f_semibold(), fontSize=9, textColor=NAVY,
+            "at", fontName=f_semibold(), fontSize=9, textColor=_hc("accent_text"),
         ))],
     ]
     if meta_parts:
@@ -1185,7 +1244,7 @@ def _render_rec_card(out: list, index: int, rec: dict) -> None:
         inner_rows.append([Paragraph(
             f"&#10003; Done when: {completion_criterion}",
             ParagraphStyle("ac", fontName=f_regular(), fontSize=8,
-                           textColor=NAVY, spaceAfter=0),
+                           textColor=_hc("accent_text"), spaceAfter=0),
         )])
 
     card = Table([[
@@ -1202,7 +1261,7 @@ def _render_rec_card(out: list, index: int, rec: dict) -> None:
     ]], colWidths=["100%"])
     card.setStyle(TableStyle([
         ("BACKGROUND",   (0, 0), (-1, -1), colors.HexColor("#f8faff")),
-        ("LINEBEFORE",   (0, 0), (0, -1), 3, TEAL),
+        ("LINEBEFORE",   (0, 0), (0, -1), 3, _hc("primary")),
         ("LEFTPADDING",  (0, 0), (-1, -1), 10),
         ("RIGHTPADDING", (0, 0), (-1, -1), 8),
         ("TOPPADDING",   (0, 0), (-1, -1), 8),
@@ -1242,8 +1301,8 @@ def _render_risk_ownership(data: dict, ai_text: str | None) -> list:
     ]
     tbl = Table(rows, colWidths=[45 * mm, 22 * mm, 18 * mm, 26 * mm, 45 * mm], repeatRows=1)
     tbl.setStyle(TableStyle([
-        ("BACKGROUND",    (0, 0), (-1, 0), NAVY),
-        ("TEXTCOLOR",     (0, 0), (-1, 0), WHITE),
+        ("BACKGROUND",    (0, 0), (-1, 0), _hc("accent")),
+        ("TEXTCOLOR",     (0, 0), (-1, 0), _hc("on_accent")),
         ("FONTNAME",      (0, 0), (-1, 0), "Helvetica-Bold"),
         ("FONTSIZE",      (0, 0), (-1, -1), 8),
         ("ROWBACKGROUNDS",(0, 1), (-1, -1), [WHITE, LIGHT]),
@@ -1286,8 +1345,8 @@ def _render_incident_analytics(data: dict, ai_text: str | None) -> list:
     by_sev = sorted(data.get("by_severity", {}).items(), key=lambda x: x[1], reverse=True)
 
     ts = TableStyle([
-        ("BACKGROUND",   (0, 0), (-1, 0), NAVY),
-        ("TEXTCOLOR",    (0, 0), (-1, 0), WHITE),
+        ("BACKGROUND",   (0, 0), (-1, 0), _hc("accent")),
+        ("TEXTCOLOR",    (0, 0), (-1, 0), _hc("on_accent")),
         ("FONTNAME",     (0, 0), (-1, 0), "Helvetica-Bold"),
         ("FONTSIZE",     (0, 0), (-1, -1), 8),
         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [WHITE, LIGHT]),
@@ -1353,7 +1412,7 @@ def _render_executive_dashboard(data: dict, ai_text: str | None) -> list:
     heading = (data.get("heading_text") or "Highlights").upper()
     out.append(Paragraph(heading, ParagraphStyle(
         "edhead", fontName=f_semibold(), fontSize=8,
-        textColor=NAVY, spaceAfter=6, spaceBefore=4,
+        textColor=_hc("accent_text"), spaceAfter=6, spaceBefore=4,
     )))
 
     bullets_src = []
@@ -1369,7 +1428,7 @@ def _render_executive_dashboard(data: dict, ai_text: str | None) -> list:
     for b in bullets_src:
         row = Table(
             [[Paragraph("●", ParagraphStyle("dot2", fontName=f_bold(),
-                                             fontSize=9, textColor=TEAL)),
+                                             fontSize=9, textColor=_hc("primary_text"))),
               Paragraph(b, _btxt)]],
             colWidths=[6 * mm, None],
         )
@@ -1448,8 +1507,8 @@ def _render_key_risk_movements(data: dict, _ai: str | None) -> list:
         ))
 
     _tbl_style = TableStyle([
-        ("BACKGROUND",    (0, 0), (-1, 0), NAVY),
-        ("TEXTCOLOR",     (0, 0), (-1, 0), WHITE),
+        ("BACKGROUND",    (0, 0), (-1, 0), _hc("accent")),
+        ("TEXTCOLOR",     (0, 0), (-1, 0), _hc("on_accent")),
         ("FONTNAME",      (0, 0), (-1, 0), "Helvetica-Bold"),
         ("FONTSIZE",      (0, 0), (-1, -1), 8),
         ("ROWBACKGROUNDS",(0, 1), (-1, -1), [WHITE, LIGHT]),
@@ -1593,7 +1652,7 @@ def _corr_card_cells(title: str, tag: str, tag_color: str, value: int, of_text: 
     """Five stacked cells for one card. Cards sit side by side in one grid so the
     title, value, explanation and detail rows line up across all three."""
     return [
-        Paragraph(f'<font name="{f_bold()}" size="7.5" color="#1F2854">{_esc(title.upper())}</font>',
+        Paragraph(f'<font name="{f_bold()}" size="7.5" color="{_bc("#1F2854")}">{_esc(title.upper())}</font>',
                   ParagraphStyle("cc_t", leading=10)),
         Paragraph(f'<font name="{f_bold()}" size="7" color="{tag_color}">{_esc(tag)}</font>' if tag else "",
                   ParagraphStyle("cc_g", leading=9)),
@@ -1654,11 +1713,11 @@ def _corr_cards(cards: list[tuple[list, str]], card_w: float, gap: float) -> Tab
 def _corr_table(header: list[str], rows: list[list], widths: list[float]) -> Table:
     cell = ParagraphStyle("ct", fontName=f_regular(), fontSize=8,
                           textColor=colors.HexColor("#333333"), leading=10.5)
-    head = ParagraphStyle("cth", fontName=f_semibold(), fontSize=8, textColor=WHITE, leading=10.5)
+    head = ParagraphStyle("cth", fontName=f_semibold(), fontSize=8, textColor=_hc("on_accent"), leading=10.5)
     body = [[c if isinstance(c, Paragraph) else Paragraph(_esc(c), cell) for c in r] for r in rows]
     tbl = Table([[Paragraph(_esc(h), head) for h in header]] + body, colWidths=widths, repeatRows=1)
     tbl.setStyle(TableStyle([
-        ("BACKGROUND",     (0, 0), (-1, 0), NAVY),
+        ("BACKGROUND",     (0, 0), (-1, 0), _hc("accent")),
         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [WHITE, LIGHT]),
         ("GRID",           (0, 0), (-1, -1), 0.25, BORDER),
         ("TOPPADDING",     (0, 0), (-1, -1), 4),
@@ -1808,9 +1867,9 @@ def _render_methodology(data: dict, _ai: str | None) -> list:
     out = _block_header("Methodology & Evidence Basis")
 
     _lbl = ParagraphStyle("ml", fontName=f_medium(),  fontSize=8, textColor=MUTED)
-    _val = ParagraphStyle("mv", fontName=f_regular(), fontSize=8, textColor=NAVY)
+    _val = ParagraphStyle("mv", fontName=f_regular(), fontSize=8, textColor=_hc("accent_text"))
     _sec = ParagraphStyle("ms", fontName=f_semibold(), fontSize=9,
-                          textColor=NAVY, spaceBefore=10, spaceAfter=4)
+                          textColor=_hc("accent_text"), spaceBefore=10, spaceAfter=4)
     _note = ParagraphStyle("mn", fontName=f_regular(), fontSize=7.5,
                            textColor=MUTED, leading=11)
 
@@ -2082,8 +2141,8 @@ def _section_table(header: list[str], rows: list[list[Any]], widths_mm: list[flo
     """Navy-header zebra table shared by the three UI step 7 sections."""
     tbl = Table([header] + rows, colWidths=[w * mm for w in widths_mm], repeatRows=1)
     style = [
-        ("BACKGROUND",    (0, 0), (-1, 0), NAVY),
-        ("TEXTCOLOR",     (0, 0), (-1, 0), WHITE),
+        ("BACKGROUND",    (0, 0), (-1, 0), _hc("accent")),
+        ("TEXTCOLOR",     (0, 0), (-1, 0), _hc("on_accent")),
         ("FONTNAME",      (0, 0), (-1, 0), "Helvetica-Bold"),
         ("FONTSIZE",      (0, 0), (-1, -1), 8),
         ("ROWBACKGROUNDS",(0, 1), (-1, -1), [WHITE, LIGHT]),
@@ -2264,8 +2323,9 @@ class _PillChip(Flowable):
         c.roundRect(0, 0, self.width, self.height, r, fill=1, stroke=1)
         dot_x = r + 4.0
         dot_y = self.height / 2
-        c.setFillColor(NAVY)
+        c.setFillColor(_hc("accent"))
         c.circle(dot_x, dot_y, 2.0, fill=1, stroke=0)
+        c.setFillColor(_hc("accent_text"))
         c.setFont("Helvetica-Bold", 7)
         c.drawString(dot_x + 6.0, (self.height - 7.0) / 2, self._text)
         c.restoreState()
@@ -2290,20 +2350,20 @@ def _make_doc(
     def _on_cover_page(canvas, doc):
         canvas.saveState()
         accent = 52 * mm
-        canvas.setFillColor(colors.Color(31 / 255, 40 / 255, 84 / 255, alpha=0.07))
+        canvas.setFillColor(_with_alpha(_hc("accent"), 0.07))
         canvas.rect(page[0] - accent, page[1] - accent, accent, accent, fill=1, stroke=0)
         canvas.restoreState()
 
     def _on_page(canvas, doc):
         canvas.saveState()
         # Header bar — org name left, report type right
-        canvas.setFillColor(NAVY)
+        canvas.setFillColor(_hc("accent"))
         canvas.rect(0, page[1] - 14 * mm, page[0], 14 * mm, fill=1, stroke=0)
-        canvas.setFillColor(WHITE)
+        canvas.setFillColor(_hc("on_accent"))
         canvas.setFont("Helvetica-Bold", 9)
         canvas.drawString(margin, page[1] - 9 * mm, header_label)
         canvas.setFont("Helvetica", 8)
-        canvas.setFillColor(colors.HexColor("#94a3b8"))
+        canvas.setFillColor(_on_accent_muted())
         canvas.drawRightString(page[0] - margin, page[1] - 6.5 * mm, title)
         if period:
             canvas.setFont("Helvetica", 7)
@@ -2348,14 +2408,38 @@ def build_pdf(
     orientation: str = "portrait",
     org_name:    str = "",
     logo_bytes:  bytes | None = None,
+    palette:     BrandPalette | None = None,
 ) -> bytes:
     """
-    Builds and returns a PDF as bytes.
+    Builds and returns a PDF as bytes, in the workspace palette.
     Source: Reportservice.gs api_buildAndExportPDF()
     """
     from app.services.report_fonts import register_fonts
     register_fonts()
     _apply_jakarta_fonts()
+
+    pal = palette or DEFAULT_PALETTE
+    pal_token = _PALETTE.set(pal)
+    styles_token = _STYLES.set(_branded_styles(pal))
+    try:
+        return _build_pdf(blocks, block_data, ai_data, settings_p, date_from,
+                          date_to, orientation, org_name, logo_bytes)
+    finally:
+        _STYLES.reset(styles_token)
+        _PALETTE.reset(pal_token)
+
+
+def _build_pdf(
+    blocks:      list[str],
+    block_data:  dict,
+    ai_data:     dict,
+    settings_p:  dict,
+    date_from:   str | None,
+    date_to:     str | None,
+    orientation: str,
+    org_name:    str,
+    logo_bytes:  bytes | None,
+) -> bytes:
 
     buf          = io.BytesIO()
     title        = settings_p.get("report_title") or "SmartRisk Report"
@@ -2407,7 +2491,7 @@ def build_pdf(
             )
             _mv = ParagraphStyle(
                 "cv", fontName=f_semibold(), fontSize=10,
-                textColor=NAVY, spaceBefore=0, spaceAfter=0,
+                textColor=_hc("accent_text"), spaceBefore=0, spaceAfter=0,
             )
             return Table(
                 [[Paragraph(k.upper(), _mk)], [Paragraph(v or "\u2014", _mv)]],
@@ -2452,15 +2536,15 @@ def build_pdf(
 
         # ── Navy footer bar on cover ──────────────────────────────────────────
         cover_foot = Table(
-            [[Paragraph(f'<font color="#ffffff"><b>{brand_label}</b></font>', ParagraphStyle(
-                "cfl", fontName=f_semibold(), fontSize=7, textColor=WHITE)),
-              Paragraph(f'<font color="rgba(255,255,255,.7)">{ref_val}</font>', ParagraphStyle(
-                "cfr", fontName=f_regular(), fontSize=7, textColor=colors.HexColor("#94a3b8"),
+            [[Paragraph(f'<font color="{_PALETTE.get().on_accent}"><b>{brand_label}</b></font>', ParagraphStyle(
+                "cfl", fontName=f_semibold(), fontSize=7, textColor=_hc("on_accent"))),
+              Paragraph(f'<font color="{_on_accent_muted_hex()}">{ref_val}</font>', ParagraphStyle(
+                "cfr", fontName=f_regular(), fontSize=7, textColor=_on_accent_muted(),
                 alignment=TA_RIGHT))]],
             colWidths=["60%", "40%"],
         )
         cover_foot.setStyle(TableStyle([
-            ("BACKGROUND",   (0, 0), (-1, -1), NAVY),
+            ("BACKGROUND",   (0, 0), (-1, -1), _hc("accent")),
             ("LEFTPADDING",  (0, 0), (-1, -1), 16),
             ("RIGHTPADDING", (0, 0), (-1, -1), 16),
             ("TOPPADDING",   (0, 0), (-1, -1), 10),
@@ -2488,7 +2572,7 @@ def build_pdf(
             _limg.drawHeight = _limg.imageHeight * _scale
             _name_para = Paragraph(brand_label, ParagraphStyle(
                 "corg_aside", fontName=f_bold(), fontSize=13,
-                textColor=NAVY, leading=16,
+                textColor=_hc("accent_text"), leading=16,
             ))
             _logo_el = Table(
                 [[_limg, _name_para]],
@@ -2504,7 +2588,7 @@ def build_pdf(
         else:
             _logo_el = Paragraph(brand_label, ParagraphStyle(
                 "corg", fontName=f_bold(), fontSize=15,
-                textColor=NAVY, spaceAfter=0,
+                textColor=_hc("accent_text"), spaceAfter=0,
             ))
 
         # ── Cover body with navy left border ──────────────────────────────────
@@ -2531,7 +2615,7 @@ def build_pdf(
                     "ey",
                     fontName=f_medium(),
                     fontSize=8,
-                    textColor=NAVY,
+                    textColor=_hc("accent_text"),
                     leading=10,
                 ))],
 
@@ -2541,7 +2625,7 @@ def build_pdf(
                     "ctitle",
                     fontName=f_bold(),
                     fontSize=20,
-                    textColor=NAVY,
+                    textColor=_hc("accent_text"),
                     leading=27,
                 ))],
 
@@ -2560,7 +2644,7 @@ def build_pdf(
                 [HRFlowable(
                     width=52 * mm,
                     thickness=3,
-                    color=NAVY,
+                    color=_hc("accent"),
                 )],
 
                 [Spacer(1, 5 * mm)],
@@ -2594,7 +2678,7 @@ def build_pdf(
             ("RIGHTPADDING",(0, 0), (-1, -1), 0),
             ("TOPPADDING",  (0, 0), (-1, -1), 0),
             ("BOTTOMPADDING",(0,0), (-1, -1), 0),
-            ("LINEBEFORE",  (0, 0), (0, -1),  5, NAVY),
+            ("LINEBEFORE",  (0, 0), (0, -1),  5, _hc("accent")),
         ]))
 
         story.append(NextPageTemplate("cover"))

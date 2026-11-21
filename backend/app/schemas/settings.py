@@ -26,6 +26,8 @@ class SettingsResponse(BaseModel):
     primary_color: str
     accent_color: str
     theme_mode: str
+    # Resolved by services/brand.py resolve_palette: the same colors the reports use.
+    brand: dict[str, str]
 
     # Roles (JSONB)
     roles_default_role: str

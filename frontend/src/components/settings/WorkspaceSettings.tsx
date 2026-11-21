@@ -473,7 +473,7 @@ export default function WorkspaceSettings({ settings }: Props) {
                   theme_mode: settings.theme_mode, logo_url: settings.logo_url ?? undefined,
                 });
                 setLogoPreview(settings.logo_url ?? null);
-                applyBrandColors(settings.primary_color, settings.accent_color);
+                applyBrandColors(settings.brand);
                 setShowResetConfirm(false);
               }}>
                 Yes, Reset

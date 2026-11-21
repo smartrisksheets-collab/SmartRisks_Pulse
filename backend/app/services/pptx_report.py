@@ -15,7 +15,8 @@ Everything is native and editable: charts are PowerPoint charts (data editable i
 PowerPoint), tables are PowerPoint tables, text is in text boxes. Narratives and
 AI text go into the speaker notes so the slides stay short.
 
-Brand: Navy #1F2854, Teal #01b88e. Calibri throughout, because it ships with
+Brand: workspace palette from services/brand.py (SmartRisk Navy and Teal by
+default); band and severity colors stay fixed. Calibri throughout, because it ships with
 Office and renders the same width everywhere, so text that fits here fits there.
 """
 
@@ -24,6 +25,7 @@ from __future__ import annotations
 import io
 import logging
 import re
+from contextvars import ContextVar
 from datetime import date
 from typing import Any, Callable
 
@@ -34,6 +36,9 @@ from pptx.enum.chart import XL_CHART_TYPE, XL_LABEL_POSITION, XL_LEGEND_POSITION
 from pptx.enum.shapes import MSO_SHAPE
 from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
 from pptx.util import Emu, Inches, Pt
+
+from app.services.brand import DEFAULT_PALETTE, BrandPalette, contrast
+from app.services.brand import WHITE as WHITE_HEX
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +95,48 @@ def _rgb(hex_: str) -> RGBColor:
     return RGBColor.from_string(hex_.lstrip("#").upper()[:6])
 
 
+# The workspace palette for the deck being built now (see services/brand.py).
+# NAVY and TEAL above are the SmartRisk defaults; _fill and _ink swap them for
+# the workspace colors at draw time, so every builder picks them up unchanged.
+_PALETTE: ContextVar[BrandPalette] = ContextVar("pptx_palette", default=DEFAULT_PALETTE)
+
+
+def _pal() -> BrandPalette:
+    return _PALETTE.get()
+
+
+def _fill(hex_: str) -> RGBColor:
+    """A fill, line or chart series color. Navy maps to accent, teal to primary."""
+    h = hex_.lstrip("#").upper()
+    if h == NAVY:
+        return _rgb(_pal().accent)
+    if h == TEAL:
+        return _rgb(_pal().series_2)
+    return _rgb(h)
+
+
+def _ink(hex_: str) -> RGBColor:
+    """A text color on a light slide. Navy and teal map to the readable text shades."""
+    h = hex_.lstrip("#").upper()
+    if h == NAVY:
+        return _rgb(_pal().accent_text)
+    if h == TEAL:
+        return _rgb(_pal().primary_text)
+    return _rgb(h)
+
+
+def _soft_on_accent(light: str) -> str:
+    """Secondary text on an accent background: the given light grey on a dark
+    accent, slate on a light accent where grey would not read."""
+    return light if _pal().on_accent == WHITE_HEX else "475569"
+
+
+def _kicker_on_accent() -> str:
+    """Primary text on an accent background, or the on-accent text when they clash."""
+    p = _pal()
+    return p.primary if contrast(p.primary, p.accent) >= 3.0 else p.on_accent
+
+
 def _hex(value: Any, fallback: str) -> str:
     s = str(value or "").lstrip("#")
     return s.upper() if re.fullmatch(r"[0-9a-fA-F]{6}", s) else fallback
@@ -140,7 +187,7 @@ def _text(slide, x, y, w, h, text, size=14, bold=False, color=BODY, align=PP_ALI
     r.text = _clip(text, w, h, size) if clip else str(text or "")
     f = r.font
     f.name, f.size, f.bold, f.italic = FONT, Pt(size), bold, italic
-    f.color.rgb = _rgb(color)
+    f.color.rgb = _ink(color)
     return tb
 
 
@@ -160,7 +207,7 @@ def _runs(slide, x, y, w, h, runs: list[tuple[str, float, bool, str]], align=PP_
         r = p.add_run()
         r.text = text
         r.font.name, r.font.size, r.font.bold = FONT, Pt(size), bold
-        r.font.color.rgb = _rgb(color)
+        r.font.color.rgb = _ink(color)
     return tb
 
 
@@ -181,11 +228,11 @@ def _lines(slide, x, y, w, h, items: list[str], size=14, color=BODY, bullet_colo
         mark.text = f"{i + 1}.  " if numbered else "■  "
         mark.font.name, mark.font.bold = FONT, True
         mark.font.size = Pt(size if numbered else size * 0.6)
-        mark.font.color.rgb = _rgb(bullet_color)
+        mark.font.color.rgb = _ink(bullet_color)
         r = p.add_run()
         r.text = _clip(item, w - 0.3, per_item_h, size)
         r.font.name, r.font.size = FONT, Pt(size)
-        r.font.color.rgb = _rgb(color)
+        r.font.color.rgb = _ink(color)
     return tb
 
 
@@ -198,9 +245,9 @@ def _box(slide, x, y, w, h, fill=TINT, line=None, rounded=True, name="Card"):
     if rounded:
         shp.adjustments[0] = 0.06
     shp.fill.solid()
-    shp.fill.fore_color.rgb = _rgb(fill)
+    shp.fill.fore_color.rgb = _fill(fill)
     if line:
-        shp.line.color.rgb = _rgb(line)
+        shp.line.color.rgb = _fill(line)
         shp.line.width = Pt(0.75)
     else:
         shp.line.fill.background()
@@ -243,7 +290,7 @@ def _table(slide, x, y, w, headers: list[str], rows: list[list[Any]], widths: li
             cell = tbl.cell(r, c)
             val = headers[c] if r == 0 else rows[r - 1][c]
             cell.fill.solid()
-            cell.fill.fore_color.rgb = _rgb(NAVY if r == 0 else (WHITE if r % 2 else LIGHT))
+            cell.fill.fore_color.rgb = _fill(NAVY if r == 0 else (WHITE if r % 2 else LIGHT))
             cell.margin_left = cell.margin_right = Inches(0.08)
             cell.margin_top = cell.margin_bottom = Inches(0.04)
             cell.vertical_anchor = MSO_ANCHOR.MIDDLE
@@ -254,11 +301,11 @@ def _table(slide, x, y, w, headers: list[str], rows: list[list[Any]], widths: li
             run.text = _clip(val if val not in (None, "") else "—", widths[c] - 0.16, row_h * 1.6, size)
             run.font.name, run.font.size = FONT, Pt(size)
             run.font.bold = r == 0
-            colour = WHITE if r == 0 else INK
+            colour = _pal().on_accent if r == 0 else INK
             if cell_colors and r > 0 and (r - 1, c) in cell_colors:
                 colour = cell_colors[(r - 1, c)]
                 run.font.bold = True
-            run.font.color.rgb = _rgb(colour)
+            run.font.color.rgb = _ink(colour)
     return gf
 
 
@@ -310,7 +357,7 @@ def _column_chart(slide, x, y, w, h, cats, series: list[tuple[str, list, str]],
         ch.plots[0].overlap = -10
     for s, (_, _, color) in zip(ch.series, series):
         s.format.fill.solid()
-        s.format.fill.fore_color.rgb = _rgb(color)
+        s.format.fill.fore_color.rgb = _fill(color)
     if horizontal:
         ch.category_axis.reverse_order = True
         ch.plots[0].data_labels.position = XL_LABEL_POSITION.OUTSIDE_END
@@ -326,13 +373,13 @@ def _line_chart(slide, x, y, w, h, cats, vals, color=NAVY, name="Value"):
     ch = gf.chart
     _style_chart(ch, number_format='0.#')
     s = ch.series[0]
-    s.format.line.color.rgb = _rgb(color)
+    s.format.line.color.rgb = _fill(color)
     s.format.line.width = Pt(2.75)
     s.smooth = False
     s.marker.size = 8
     s.marker.format.fill.solid()
-    s.marker.format.fill.fore_color.rgb = _rgb(color)
-    s.marker.format.line.color.rgb = _rgb(color)
+    s.marker.format.fill.fore_color.rgb = _fill(color)
+    s.marker.format.line.color.rgb = _fill(color)
     ch.plots[0].data_labels.position = XL_LABEL_POSITION.ABOVE
     return ch
 
@@ -413,9 +460,9 @@ class Deck:
         s = self.prs.slides.add_slide(self.blank)
         bg = s.background.fill
         bg.solid()
-        bg.fore_color.rgb = _rgb(NAVY)
-        _text(s, MX, 2.9, 10, 0.9, title, 40, True, WHITE, name="Title")
-        _text(s, MX, 3.85, 10, 0.5, subtitle, 16, False, "CBD5E1", name="Subtitle")
+        bg.fore_color.rgb = _fill(NAVY)
+        _text(s, MX, 2.9, 10, 0.9, title, 40, True, _pal().on_accent, name="Title")
+        _text(s, MX, 3.85, 10, 0.5, subtitle, 16, False, _soft_on_accent("CBD5E1"), name="Subtitle")
         return s
 
 
@@ -772,10 +819,10 @@ def r_conclusion(d: Deck, data, ai, label):
     s = d.prs.slides.add_slide(d.blank)
     bg = s.background.fill
     bg.solid()
-    bg.fore_color.rgb = _rgb(NAVY)
-    _text(s, MX, 2.1, 6, 0.4, "OVERALL RISK POSTURE", 12, True, TEAL)
-    _text(s, MX, 2.5, 8, 1.0, data.get("status", ""), 54, True, WHITE)
-    _text(s, MX, 3.75, 10.5, 1.8, text, 18, False, "E2E8F0")
+    bg.fore_color.rgb = _fill(NAVY)
+    _text(s, MX, 2.1, 6, 0.4, "OVERALL RISK POSTURE", 12, True, _kicker_on_accent())
+    _text(s, MX, 2.5, 8, 1.0, data.get("status", ""), 54, True, _pal().on_accent)
+    _text(s, MX, 3.75, 10.5, 1.8, text, 18, False, _soft_on_accent("E2E8F0"))
     s.notes_slide.notes_text_frame.text = _notes(data.get("text"), ai)
     return True
 
@@ -1083,6 +1130,25 @@ def build_pptx(
     org_name: str = "",
     logo_bytes: bytes | None = None,
     orientation: str | None = None,   # accepted for parity with build_pdf; slides are 16:9
+    palette: BrandPalette | None = None,
+) -> bytes:
+    token = _PALETTE.set(palette or DEFAULT_PALETTE)
+    try:
+        return _build_pptx(blocks, block_data, ai_data, settings_p, date_from,
+                           date_to, org_name, logo_bytes)
+    finally:
+        _PALETTE.reset(token)
+
+
+def _build_pptx(
+    blocks: list[str],
+    block_data: dict,
+    ai_data: dict,
+    settings_p: dict,
+    date_from: str | None,
+    date_to: str | None,
+    org_name: str,
+    logo_bytes: bytes | None,
 ) -> bytes:
     title = settings_p.get("report_title") or "Risk Report"
     period = " to ".join(filter(None, [_fmt_date(date_from), _fmt_date(date_to)]))
@@ -1095,18 +1161,18 @@ def build_pptx(
     cover = deck.prs.slides.add_slide(deck.blank)
     bg = cover.background.fill
     bg.solid()
-    bg.fore_color.rgb = _rgb(NAVY)
+    bg.fore_color.rgb = _fill(NAVY)
     if deck.logo:
         _box(cover, MX, 0.6, 2.4, 1.0, fill=WHITE, name="Logo panel")
         deck._place_logo(cover, MX + 2.25, 0.72, 2.1, 0.76)
-    _text(cover, MX, 2.35, 10.5, 0.4, (org_name or "").upper(), 14, True, TEAL, name="Organisation")
-    _text(cover, MX, 2.8, 11.0, 1.6, title, 44, True, WHITE, name="Title")
+    _text(cover, MX, 2.35, 10.5, 0.4, (org_name or "").upper(), 14, True, _kicker_on_accent(), name="Organisation")
+    _text(cover, MX, 2.8, 11.0, 1.6, title, 44, True, _pal().on_accent, name="Title")
     meta = [("Period", period), ("Prepared for", settings_p.get("prepared_for")),
             ("Reference", " · ".join(filter(None, [settings_p.get("report_ref"), settings_p.get("version")])))]
     meta = [(k, v) for k, v in meta if v]
     for i, (k, v) in enumerate(meta):
-        _text(cover, MX + i * 3.6, 4.75, 3.4, 0.3, k.upper(), 11, True, "94A3B8")
-        _text(cover, MX + i * 3.6, 5.05, 3.4, 0.4, v, 15, False, WHITE)
+        _text(cover, MX + i * 3.6, 4.75, 3.4, 0.3, k.upper(), 11, True, _soft_on_accent("94A3B8"))
+        _text(cover, MX + i * 3.6, 5.05, 3.4, 0.4, v, 15, False, _pal().on_accent)
     so = settings_p.get("signoff") or {}
     if so.get("include", True) and (so.get("prepared_by") or so.get("approved_by")):
         parts = []

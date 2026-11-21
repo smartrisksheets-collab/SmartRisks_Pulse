@@ -30,6 +30,7 @@ import type {
   ControlEvidenceData,
 } from '../../types/report';
 import { heatCellClass, levelChipClass } from '../../utils/reportPresets';
+import { BRAND_ACCENT, BRAND_ACCENT_TEXT, BRAND_PRIMARY, BRAND_PRIMARY_TEXT } from '../../utils/brand';
 
 // ── Shared helpers ─────────────────────────────────────────────────────────────
 
@@ -170,7 +171,7 @@ function ExposureIndex({ data, onEdit }: { data: ExposureIndexData; onEdit: (k: 
         <div style={{ width: 1, height: 64, background: '#e2e8f0', flexShrink: 0 }} />
         <div style={{ textAlign: 'center', opacity: 0.75 }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 4 }}>Exposure Index</div>
-          <div style={{ fontSize: 30, fontWeight: 700, color: '#1F2854', lineHeight: 1 }}>{data.score}</div>
+          <div style={{ fontSize: 30, fontWeight: 700, color: BRAND_ACCENT_TEXT, lineHeight: 1 }}>{data.score}</div>
           <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>/ 100 — <strong style={{ color: '#475569' }}>{data.label}</strong></div>
         </div>
       </div>
@@ -183,7 +184,7 @@ function RiskSnapshot({ data, onEdit }: { data: RiskSnapshotData; onEdit: (k: st
   return (
     <>
       <div className="rb-kpi-row" style={{ gridTemplateColumns: 'repeat(3,1fr)' }}>
-        <KPIBox value={data.total}        label="Total Risks"    color="#1F2854" />
+        <KPIBox value={data.total}        label="Total Risks"    color={BRAND_ACCENT_TEXT} />
         <KPIBox value={data.high_count}   label="High / Critical" color="#ef4444" />
         <KPIBox value={data.avg_residual} label="Avg Residual"   color="#f59e0b" />
       </div>
@@ -210,7 +211,7 @@ function IncidentStability({ data, onEdit }: { data: IncidentStabilityData; onEd
   return (
     <>
       <div className="rb-kpi-row" style={{ gridTemplateColumns: 'repeat(4,1fr)' }}>
-        <KPIBox value={data.total}               label="Total"       color="#1F2854" />
+        <KPIBox value={data.total}               label="Total"       color={BRAND_ACCENT_TEXT} />
         <KPIBox value={data.open}                label="Open"        color="#ef4444" />
         <KPIBox value={data.closed}              label="Closed"      color="#10b981" />
         <KPIBox value={data.mttr_days ?? '—'}    label="MTTR (days)" color="#f59e0b" />
@@ -249,7 +250,7 @@ function SimpleTrendChart({ points, valueKey, color }: { points: Array<{ label: 
         const y   = H - 16 - bh;
         return (
           <g key={i}>
-            <rect x={x} y={y} width={bw} height={bh} fill={color} rx={2} />
+            <rect x={x} y={y} width={bw} height={bh} style={{ fill: color }} rx={2} />
             <text x={x + bw / 2} y={y - 2} textAnchor="middle" fontSize={8} fill="#64748b">{val}</text>
             <text x={x + bw / 2} y={H - 2} textAnchor="middle" fontSize={7} fill="#94a3b8">{pt.label}</text>
           </g>
@@ -262,7 +263,7 @@ function SimpleTrendChart({ points, valueKey, color }: { points: Array<{ label: 
 function ExposureTrend({ data, onEdit }: { data: TrendData; onEdit: (k: string, v: string) => void }) {
   return (
     <>
-      <SimpleTrendChart points={data.points || []} valueKey="score" color="#01b88e" />
+      <SimpleTrendChart points={data.points || []} valueKey="score" color={BRAND_PRIMARY} />
       <NarrativeTA blockKey="exposure-trend" value={data.narrative || ''} onEdit={onEdit} />
     </>
   );
@@ -271,7 +272,7 @@ function ExposureTrend({ data, onEdit }: { data: TrendData; onEdit: (k: string, 
 function ResidualRiskTrend({ data, onEdit }: { data: TrendData; onEdit: (k: string, v: string) => void }) {
   return (
     <>
-      <SimpleTrendChart points={data.points || []} valueKey="avg" color="#1F2854" />
+      <SimpleTrendChart points={data.points || []} valueKey="avg" color={BRAND_ACCENT} />
       <NarrativeTA blockKey="residual-risk-trend" value={data.narrative || ''} onEdit={onEdit} />
     </>
   );
@@ -398,7 +399,7 @@ function TopRisksTable({ data, ai, blockKey, onEdit }: { data: TopRisksData; ai?
         <tbody>
           {(data.risks || []).map((r) => (
             <tr key={r.id} style={{ borderTop: '1px solid #f1f5f9' }}>
-              <td style={{ padding: '6px 8px', fontWeight: 700, color: '#1F2854' }}>{r.id}</td>
+              <td style={{ padding: '6px 8px', fontWeight: 700, color: BRAND_ACCENT_TEXT }}>{r.id}</td>
               <td style={{ padding: '6px 8px', color: '#475569' }}>{r.owner || '—'}</td>
               <td style={{ padding: '6px 8px' }}>{(r.desc || '').substring(0, 80)}</td>
               <td style={{ padding: '6px 8px', fontWeight: 700, color: levelColor(r.level) }}>{r.level}</td>
@@ -428,7 +429,7 @@ function MajorIncidentsTable({ data, ai, onEdit }: { data: MajorIncidentsData; a
         <tbody>
           {(data.incidents || []).map((inc) => (
             <tr key={inc.id} style={{ borderTop: '1px solid #f1f5f9' }}>
-              <td style={{ padding: '6px 8px', fontWeight: 700, color: '#1F2854' }}>{inc.id}</td>
+              <td style={{ padding: '6px 8px', fontWeight: 700, color: BRAND_ACCENT_TEXT }}>{inc.id}</td>
               <td style={{ padding: '6px 8px' }}>{(inc.desc || '').substring(0, 80)}</td>
               <td style={{ padding: '6px 8px', fontWeight: 700, color: levelColor(inc.severity) }}>{inc.severity}</td>
               <td style={{ padding: '6px 8px' }}>{inc.status}</td>
@@ -564,7 +565,7 @@ function MetaRow({ label, value, warn }: { label: string; value: string; warn?: 
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #f1f5f9', fontSize: 12 }}>
       <span style={{ color: '#64748b' }}>{label}</span>
-      <span style={{ color: warn ? '#f59e0b' : '#1F2854', fontWeight: 500 }}>{value}</span>
+      <span style={{ color: warn ? '#f59e0b' : BRAND_ACCENT_TEXT, fontWeight: 500 }}>{value}</span>
     </div>
   );
 }
@@ -594,8 +595,8 @@ function RecommendationsBlock({ data, ai, onEdit }: { data: RecommendationsData;
         const body  = typeof r === 'string' ? '' : r.body;
         const meta  = typeof r === 'string' ? '' : `${r.priority} · ${r.owner} · ${r.due}`;
         return (
-          <div key={i} style={{ marginBottom: 10, padding: '10px 12px', background: '#f8faff', borderLeft: '3px solid #01b88e', borderRadius: '0 6px 6px 0' }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: '#01b88e', marginBottom: 4 }}>Action {i + 1}: {title}</div>
+          <div key={i} style={{ marginBottom: 10, padding: '10px 12px', background: '#f8faff', borderLeft: `3px solid ${BRAND_PRIMARY}`, borderRadius: '0 6px 6px 0' }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: BRAND_PRIMARY_TEXT, marginBottom: 4 }}>Action {i + 1}: {title}</div>
             {meta && <div style={{ fontSize: 11, color: '#64748b', marginBottom: 4 }}>{meta}</div>}
             {body && <div style={{ fontSize: 11, color: '#334155', lineHeight: 1.5 }}>{body}</div>}
           </div>
@@ -647,7 +648,7 @@ function IncidentAnalyticsBlock({ data, onEdit }: { data: IncidentAnalyticsData;
   return (
     <>
       <div className="rb-kpi-row" style={{ gridTemplateColumns: 'repeat(4,1fr)', marginBottom: 12 }}>
-        <KPIBox value={data.total}            label="Total"       color="#1F2854" />
+        <KPIBox value={data.total}            label="Total"       color={BRAND_ACCENT_TEXT} />
         <KPIBox value={data.open}             label="Open"        color="#ef4444" />
         <KPIBox value={data.closed}           label="Closed"      color="#10b981" />
         <KPIBox value={data.mttr_days ?? '—'} label="MTTR (days)" color="#f59e0b" />
@@ -714,7 +715,7 @@ function ExecutiveDashboardBlock({ data, ai, onEdit }: { data: ExecutiveDashboar
           </div>
         ))}
       </div>
-      <div style={{ fontSize: 10, fontWeight: 700, color: '#1F2854', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: BRAND_ACCENT_TEXT, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>
         {data.heading_text || 'Highlights'}
       </div>
       <NarrativeTA

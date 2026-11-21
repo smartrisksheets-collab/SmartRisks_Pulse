@@ -26,6 +26,7 @@ from app.services import ai_report as ai_report_service
 from app.services import pdf_report
 from app.services import pptx_report
 from app.services import email as email_service
+from app.services.brand import BrandPalette, resolve_palette
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/reports", tags=["reports"])
@@ -50,6 +51,13 @@ async def _get_tenant_name(db: AsyncSession, tenant_id: UUID) -> tuple[str, str]
     org      = ws.get("organization") or str(result.name or "") or "the organization"
     industry = str(result.industry or "")              # type: ignore[union-attr]
     return org, industry
+
+
+async def _get_palette(db: AsyncSession, tenant_id: UUID) -> BrandPalette:
+    """The workspace's resolved brand palette for the PDF and PPTX exports."""
+    tenant = await db.get(Tenant, tenant_id)
+    ws: dict = dict(tenant.workspace_settings or {}) if tenant else {}  # type: ignore[arg-type]
+    return resolve_palette(ws)
 
 
 async def _fetch_logo_bytes(db: AsyncSession, tenant_id: UUID) -> bytes | None:
@@ -153,6 +161,7 @@ async def export_report(
         settings_dict = payload.settings.model_dump()
         _org, _ = await _get_tenant_name(db, tenant_id)
         _logo   = await _fetch_logo_bytes(db, tenant_id)
+        _pal    = await _get_palette(db, tenant_id)
         builder = pptx_report.build_pptx if fmt == "pptx" else pdf_report.build_pdf
         file_bytes = builder(
             blocks=payload.blocks,
@@ -164,6 +173,7 @@ async def export_report(
             orientation=payload.orientation,
             org_name=_org,
             logo_bytes=_logo,
+            palette=_pal,
         )
         import base64
         title    = payload.settings.report_title or "SmartRisk_Report"
@@ -203,6 +213,7 @@ async def email_report(
 
         _org, _ = await _get_tenant_name(db, tenant_id)
         _logo   = await _fetch_logo_bytes(db, tenant_id)
+        _pal    = await _get_palette(db, tenant_id)
         pdf_bytes = pdf_report.build_pdf(
             blocks=payload.blocks,
             block_data=payload.block_data,
@@ -212,6 +223,7 @@ async def email_report(
             date_to=payload.date_to,
             org_name=_org,
             logo_bytes=_logo,
+            palette=_pal,
         )
         to_addr = payload.to.strip()
         cc_list = [e for e in payload.cc if e != to_addr.lower()]

@@ -40,7 +40,7 @@ export function useSettings() {
       // Home's greeting, sky and date follow the workspace time zone.
       queryClient.invalidateQueries({ queryKey: ['dashboard', 'home'] });
       if (data.currency_symbol) setCurrency(data.currency_symbol);
-      applyBrandColors(data.primary_color, data.accent_color);
+      applyBrandColors(data.brand);
       applyWorkspaceTheme(data.theme_mode as "light" | "dark" | "auto");
       setLogoUrl(data.logo_url ?? null);
       // Sync updated workspace name into auth store so sidebar reflects immediately
@@ -70,7 +70,7 @@ export function useSettings() {
   useEffect(() => {
     const d = query.data;
     if (!d) return;
-    applyBrandColors(d.primary_color, d.accent_color);
+    applyBrandColors(d.brand);
     applyWorkspaceTheme(d.theme_mode as "light" | "dark" | "auto");
     setLogoUrl(d.logo_url ?? null);
     if (d.currency_symbol) setCurrency(d.currency_symbol);
