@@ -1693,7 +1693,10 @@ This section supersedes section 12 (Module System), the `DEFAULT_MODULES` consta
 ### Workspace theming
 
 - Theme variables live in `:root`: `--primary`, `--primary-rgb`, `--primary-strong`, `--accent`, `--accent-rgb`, `--accent-strong`, `--accent-text`.
-- `applyBrandColors` in `src/utils/brand.ts` is the only code that sets them at runtime. It validates hex values and caches them under `sr-brand`.
+- `applyBrandColors` in `src/utils/brand.ts` is the only code that sets them at runtime. It takes the `brand` palette from the settings response, validates hex values and caches them under `sr-brand`.
+- `resolve_palette` in `backend/app/services/brand.py` is the only code that derives brand colors (fallback, text on fills, readable text shades, deep accent, chart series). The app, the PDF and the PPTX all use it.
+- Text on a brand fill uses `var(--on-primary)` or `var(--on-accent)`, never a fixed white. Large panels with light text use `var(--accent-deep)`. Brand color as text on a light surface uses `var(--accent-text)` or `var(--primary-text)`.
+- Reports: `build_pdf` and `build_pptx` take `palette=` and hold it in a `ContextVar` for one export. Band, severity and RAG colors and the report email header stay fixed.
 - New in-app CSS uses these variables for brand color. Colors that carry meaning (success, risk bands, severity) and pre-workspace pages stay hardcoded.
 - Text in the accent color uses `var(--accent-text)` so it turns light in dark mode. Backgrounds use `var(--accent)`.
 - Theme mode: the header switch is per person and per device. The workspace setting is only the default. `uiStore` resolves "auto" to `light` or `dark`, so `data-theme` is only ever `light` or `dark`.

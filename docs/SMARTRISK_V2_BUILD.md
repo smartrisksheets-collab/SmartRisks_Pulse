@@ -3,7 +3,7 @@
 **Product:** SmartRisk Pulse v2
 **Stack:** FastAPI + React + Supabase + Render + Vercel
 **Setup document:** SMARTRISK_V2_SETUP.md
-**Last updated:** November 17, 2026
+**Last updated:** November 21, 2026
  
 ---
  
@@ -16,8 +16,49 @@ At the end of every session Claude outputs a fresh version of this file with all
 ---
  
 **Phase:** Product polish and hardening. Pulse UI redesign rolled out (Home, Analytics, Register, Incidents, Report Builder). Ask Pulse help live. Control effectiveness scale switch still locked pending staging tests.
-**Status:** Session 31, November 16 to 17, 2026: Analytics paging and pick lists, risk evidence upload (migration 066), workspace clock for the Home greeting, no future dates, department link to the incident form, public incident form in the Pulse skin. All delivered as 4 patches on staging 532eea3. Previous: Session 30, November 15 to 16, 2026 (partner UI fixes, Ask Pulse stage 1, AI status from the matrix), pushed in 532eea3. Sessions 28 and older are in `docs/session_archive.md`.
-**Next action:** Begin next session by reading SMARTRISK_V2_SETUP.md, SMARTRISK_V2_DECISIONS.md, then this file. First task: the Session 31 incomplete list. Then confirm migrations 057, 058, 059 and 062 to 066 have run on every database (including Supabase), then the open Session 28 partner items (in `docs/session_archive.md`), then the carried-over lists there (Sessions 26 and 27).
+**Status:** Session 32, November 21, 2026: workspace brand colors in PDF and PPTX reports and in the app, pushed to staging in 246a4c2. Previous: Session 31, November 16 to 17, 2026 (Analytics paging, risk evidence upload, workspace clock, public incident form). Sessions 29 and older are in `docs/session_archive.md`.
+**Next action:** Begin next session by reading SMARTRISK_V2_SETUP.md, SMARTRISK_V2_DECISIONS.md, then this file. First task: the Session 32 incomplete list. Then the Session 31 incomplete list, then confirm migrations 057, 058, 059 and 062 to 066 have run on every database (including Supabase), then the open Session 28 partner items and the carried-over lists in `docs/session_archive.md`.
+
+---
+
+### Session 32: November 21, 2026, Workspace Brand Colors in Reports and the App
+
+Built on staging 0827b2d. Delivered as 2 patches (`fixes/brand-colors-reports.patch`, then `fixes/brand-colors-app.patch`), then committed and pushed to staging by Claude at the user's request (246a4c2).
+
+**Completed:**
+
+**1. One brand palette (`backend/app/services/brand.py`, new)**
+- `resolve_palette(workspace_settings)` is the only code that turns the stored `primary_color` and `accent_color` into colors. Missing or invalid values fall back to SmartRisk Teal and Navy.
+- It returns the fills (`primary`, `accent`), the text on them (`on_primary`, `on_accent`: white, or ink when white does not read), text shades darkened to the same floors as `src/utils/brand.ts` (`primary_text` 2.5, `accent_text` 4.5), `accent_deep` (7:1, for large panels under light text), light tints and `series_2` (a second chart color kept apart from the accent).
+- Default colors give exactly the old SmartRisk output.
+- The settings response gains `brand`, the resolved palette.
+
+**2. PDF and PPTX reports (`pdf_report.py`, `pptx_report.py`, `routes/reports.py`)**
+- Export and email load the workspace palette and pass `palette=` to `build_pdf` and `build_pptx`.
+- Both builders hold the palette in a `ContextVar` for one export, so parallel exports never share colors. The PDF named styles (`_S`) are re-colored per export.
+- Covered: cover, header bars, table headers, titles, accent lines, KPI values, trend charts, commentary markers. Band, severity and RAG colors are unchanged. The report email header stays SmartRisk branded.
+
+**3. App theming (`utils/brand.ts`, `index.css`, `types/settings.ts`, `ReportPreview.tsx`)**
+- `applyBrandColors(brand)` takes the resolved palette and sets `--on-primary`, `--on-accent`, `--brand-accent-text`, `--brand-primary-text` and `--brand-accent-deep`. Old `{ p, a }` caches still load.
+- New `:root` variables: `--on-primary`, `--on-accent`, `--accent-deep`, `--primary-text`. `--accent-text` uses the readable shade in light mode.
+- 31 rules with white text on a brand fill now use `--on-primary` or `--on-accent`. 9 dark panels (AI card, brief, toast, tooltip, inactivity and offline banners, feedback header, Help start, incident insight card) use `--accent-deep`.
+- Frameworks (`fw-`), Help (`hlp-`) and `.pl-tour-on` follow the workspace colors. The Report Builder preview uses the `BRAND_*` constants, and its bar fill moved to `style` because SVG attributes do not resolve CSS variables.
+
+**Migrations:** none. Alembic head stays 066.
+
+**Files changed this session:**
+
+Backend: `app/services/brand.py` (new), `app/services/pdf_report.py`, `app/services/pptx_report.py`, `app/services/settings.py`, `app/schemas/settings.py`, `app/api/v1/routes/reports.py`, `tests/test_brand.py` (new)
+
+Frontend: `src/utils/brand.ts`, `src/types/settings.ts`, `src/index.css`, `src/hooks/useSettings.ts`, `src/components/settings/WorkspaceSettings.tsx`, `src/components/reports/ReportPreview.tsx`
+
+Docs: `docs/SMARTRISK_V2_BUILD.md`, `docs/SMARTRISK_V2_DECISIONS.md`, `docs/SMARTRISK_V2_SETUP.md`, `docs/session_archive.md`
+
+**Checks (sandbox, fresh checkout of 0827b2d with both patches):** 169 pytest pass (11 new in `test_brand.py`, including all 25 blocks exported to PDF and PPTX with custom colors and no render errors), ruff shows no new findings, `npm ci`, `npm run lint` (0 errors) and `npm run build` pass. PDF and PPTX were rendered with a pale yellow brand and checked by eye.
+
+**Incomplete (first tasks next session):**
+1. Run the 5-step browser check in `fixes/brand-colors-app.md` (light brand, dark mode, Report Builder preview, back to defaults). The app was not checked in a browser in the sandbox.
+2. On staging, export a PDF and a PPTX with a real logo and custom colors, and send one report email through Resend (not testable in the sandbox).
 
 ---
 
@@ -137,27 +178,6 @@ Docs: `docs/SMARTRISK_V2_BUILD.md`, `docs/SMARTRISK_V2_DECISIONS.md`, `docs/sess
 4. Partner: send the 48-topic Ask Pulse document, then build Ask Pulse stage 2 (redesigned UI).
 5. Get Started step 1 still says "risk exposure index". Reword it.
 6. `.github/workflows/ci.yml` does not set `ADMIN_JWT_SECRET`, which the backend tests need. Add it to the CI env.
-
----
-
-### Session 29: November 13 to 14, 2026, Pulse UI Redesign Rollout (Steps 1 to 7)
-
-The partner's UI pack (pl- tokens and 13 screens) was built in 7 steps, each delivered as a patch with a notes file, then pushed by the user.
-
-**Completed:**
-- **Step 1, CSS foundation (staging 1728987):** pl- tokens and components added to `index.css` as a new section, mapped onto the workspace theme variables. One-time CSS scripts removed.
-- **Step 2, app shell (f969a1a):** sidebar and top bar restyled.
-- **Step 3, Analytics (24ac521):** new `/analytics` page with Overview, Correlation, Trends, Incidents and Activity tabs. Migration 062 (`062_snapshot_health_pressure`).
-- **Step 4, Home (16ab812):** `GET /api/v1/home`. Home replaces the dashboard at `/`, with a verdict hero, tiles, next actions, brief, tour and first-time setup.
-- **Step 5, Risk Register (eeac009):** migration 063 adds `risks.title`. New `GET /risks/views`, `POST /risks/score-preview` and `GET /risks/{id}/context`. Register rewritten with quick views, `RiskPanel`, and a full-page form at `/risks/new` and `/risks/:id/edit`. The Add, Edit and Detail modals and StatCards were deleted. Residual and appetite are shown as whole numbers, rounded half up in the backend (`int(v + 0.5)`).
-- **Step 6, Incidents (9a8db06, then 1c84c92 removed a stray file):** migration 064 sets the stages New, Triaged, Investigating, Remediating, Resolved, Closed (Open becomes Triaged, In Progress becomes Investigating, Under Review becomes Remediating). New `services/incident_status.py`, `GET /incidents/views`, `GET /incidents/{id}/context` and `POST /incidents/target-preview`. List rewritten with `IncidentPanel` and `IncidentFormPage` at `/incidents/new` and `/incidents/:id/edit`. The open panel is kept in the `?incident=` URL. AI page insights are rendered as text, not HTML. Security fix: recycle bin restore and purge now need `manage_risks` or `manage_incidents`. The user tested it on November 14.
-- **Step 7, Report Builder (0354ca2):** new sections appetite-breaches, decisions-needed and control-evidence in `report.py` `BLOCK_REGISTRY`, PDF and PPTX. Migration 065 `report_drafts` (one draft per tenant and account) with `GET`, `PUT` and `DELETE /reports/draft`. Security fix: `print_reports` is now required on export, email and template writes. One-screen builder with `utils/reportPresets.ts`, `hooks/useConfirm.ts`, `ReportDetails`, `ReportModals` and pl-rb- CSS.
-
-**Migrations:** 062, 063, 064, 065 (alembic head is 065).
-
-**Deferred from the pack:** Register: bulk owner and decision, action owner, AI accept and dismiss, suggested incident link, next-ID tag, likelihood and impact word labels. Incidents: draft, next-ID tag, AI accept and dismiss, owner-notified line. The old rb- CSS is still in `index.css` and can be removed.
-
-**Status:** Complete and pushed to staging (0354ca2).
 
 ---
 

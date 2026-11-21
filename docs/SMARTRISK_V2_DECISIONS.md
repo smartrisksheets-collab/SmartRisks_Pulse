@@ -8,6 +8,11 @@ Plain English record of every significant decision made during the build, who ra
 
 One line per decision, newest first. Started November 16, 2026. Decisions before Session 29 are in the log below, by session.
 
+- 2026-11-21: Claude committed and pushed Session 32 to staging at the user's request.
+- 2026-11-21: Light brand colors are made readable by derived text colors, not blocked on save.
+- 2026-11-21: The report email header stays SmartRisk branded.
+- 2026-11-21: Reports always use the workspace colors, with no on/off switch.
+- 2026-11-21: Workspace brand colors come from one backend palette (services/brand.py) used by the app, PDF and PPTX.
 - 2026-11-17: Public form headers show no fixed subtitle; the department link shows its department.
 - 2026-11-17: The public incident form shows the workspace's own severity levels and rejects others.
 - 2026-11-17: Public incident cost confidence keeps the 3 stored values; the incident date and time are stored as entered, marked UTC.
@@ -2194,3 +2199,33 @@ Why: Both forms must store data the same way, and no value is shown that has no 
 Raised by: Partner. "Risk & Compliance" was hardcoded under the workspace name on the public forms.
 Chosen: The department link shows its department (e.g. Finance). The incident form shows only the workspace name.
 Why: Every line on a public page must come from real data. The department is already sent with the link.
+
+## Session 32: November 21, 2026: Workspace Brand Colors in Reports and the App
+
+**Decision: One backend brand palette for the app, PDF and PPTX (November 21, 2026)**
+Raised by: User. Reports were always SmartRisk Navy and Teal, whatever colors the workspace chose in Settings.
+Options: Read the two hex values separately in each surface, or derive every brand color in one backend function.
+Chosen: `resolve_palette` in `services/brand.py` derives fills, text on fills, readable text shades, a deep accent for panels and a second chart color. The settings response returns it, and the reports receive it per export. Band, severity and RAG colors are not part of it.
+Why: Derived values are computed once in the backend (V2 convention). One function keeps the app, the PDF and the PPTX in step.
+
+**Decision: Reports always use the workspace colors (November 21, 2026)**
+Options: Always on, or an on/off switch in report settings.
+Chosen (user): Always on, no switch.
+Why: The colors are already a deliberate workspace setting, and a switch adds state with no clear need.
+
+**Decision: The report email header stays SmartRisk branded (November 21, 2026)**
+Chosen (user): Only the attached PDF uses the workspace colors. The email body and header in `services/email.py` are unchanged.
+Why: The email comes from SmartRisk, and its header is the product's own brand.
+
+**Decision: Light brand colors are handled by derived text colors (November 21, 2026)**
+Raised by: Claude. The backend accepts any 6-digit hex, and Settings only warns about low contrast.
+Options: Block light colors on save, or derive readable text colors.
+Chosen: Keep the chosen fill. Text on it switches to ink when white does not reach the floor (2.5 primary, 4.5 accent). Brand color used as text is darkened until it reaches the floor. Panels with several light text shades use `accent_deep` (7:1).
+Why: Existing workspaces keep their colors and nothing breaks for them. The default Teal and Navy pass every floor, so the default look does not change.
+
+**Decision: Claude committed and pushed Session 32 to staging (November 21, 2026)**
+Chosen (user): The user asked Claude to push both patches and the tracking files to staging in this session. The November 16 rule (patches only, Claude does not commit or push) still holds by default.
+
+**Status:** Complete
+
+---
