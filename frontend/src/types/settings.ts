@@ -1,5 +1,19 @@
 // src/types/settings.ts
 
+// Resolved by the backend (services/brand.py), the same colors the reports use.
+export interface BrandPalette {
+  primary: string;
+  accent: string;
+  on_primary: string;
+  on_accent: string;
+  primary_text: string;
+  accent_text: string;
+  accent_deep: string;
+  primary_tint: string;
+  accent_tint: string;
+  series_2: string;
+}
+
 export interface SettingsData {
   // Identity
   name: string;
@@ -15,6 +29,7 @@ export interface SettingsData {
   primary_color: string;
   accent_color: string;
   theme_mode: string;
+  brand: BrandPalette;
 
   // Roles
   roles_default_role: string;
@@ -78,7 +93,7 @@ export interface SettingsData {
 }
 
 export type SettingsUpdate = Partial<
-  Omit<SettingsData, "plan" | "plan_expires_at" | "modules" | "max_risks" | "max_users" | "has_pin">
+  Omit<SettingsData, "plan" | "plan_expires_at" | "modules" | "max_risks" | "max_users" | "has_pin" | "brand">
 >;
 
 export interface AppetiteThreshold {

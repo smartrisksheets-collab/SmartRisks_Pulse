@@ -19,6 +19,7 @@ from app.core.config import settings
 from app.core.security import hash_pin
 from app.models.notification_pref import NotificationPref
 from app.models.tenant import Tenant
+from app.services.brand import resolve_palette
 from app.schemas.settings import (
     NotificationPrefResponse,
     NotificationPrefUpdate,
@@ -143,6 +144,7 @@ def _build_response(tenant: Tenant) -> SettingsResponse:
         primary_color=_s("primary_color"),
         accent_color=_s("accent_color"),
         theme_mode=_s("theme_mode"),
+        brand=resolve_palette(ws).to_dict(),
         roles_default_role=_s("roles_default_role"),
         roles_access_mode=_s("roles_access_mode"),
         perm_owner_risks=_b("perm_owner_risks"),

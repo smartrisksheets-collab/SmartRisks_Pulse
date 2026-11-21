@@ -4,6 +4,27 @@ Older session summaries moved out of `SMARTRISK_V2_BUILD.md`, which keeps only t
 
 ---
 
+### Session 29: November 13 to 14, 2026, Pulse UI Redesign Rollout (Steps 1 to 7)
+
+The partner's UI pack (pl- tokens and 13 screens) was built in 7 steps, each delivered as a patch with a notes file, then pushed by the user.
+
+**Completed:**
+- **Step 1, CSS foundation (staging 1728987):** pl- tokens and components added to `index.css` as a new section, mapped onto the workspace theme variables. One-time CSS scripts removed.
+- **Step 2, app shell (f969a1a):** sidebar and top bar restyled.
+- **Step 3, Analytics (24ac521):** new `/analytics` page with Overview, Correlation, Trends, Incidents and Activity tabs. Migration 062 (`062_snapshot_health_pressure`).
+- **Step 4, Home (16ab812):** `GET /api/v1/home`. Home replaces the dashboard at `/`, with a verdict hero, tiles, next actions, brief, tour and first-time setup.
+- **Step 5, Risk Register (eeac009):** migration 063 adds `risks.title`. New `GET /risks/views`, `POST /risks/score-preview` and `GET /risks/{id}/context`. Register rewritten with quick views, `RiskPanel`, and a full-page form at `/risks/new` and `/risks/:id/edit`. The Add, Edit and Detail modals and StatCards were deleted. Residual and appetite are shown as whole numbers, rounded half up in the backend (`int(v + 0.5)`).
+- **Step 6, Incidents (9a8db06, then 1c84c92 removed a stray file):** migration 064 sets the stages New, Triaged, Investigating, Remediating, Resolved, Closed (Open becomes Triaged, In Progress becomes Investigating, Under Review becomes Remediating). New `services/incident_status.py`, `GET /incidents/views`, `GET /incidents/{id}/context` and `POST /incidents/target-preview`. List rewritten with `IncidentPanel` and `IncidentFormPage` at `/incidents/new` and `/incidents/:id/edit`. The open panel is kept in the `?incident=` URL. AI page insights are rendered as text, not HTML. Security fix: recycle bin restore and purge now need `manage_risks` or `manage_incidents`. The user tested it on November 14.
+- **Step 7, Report Builder (0354ca2):** new sections appetite-breaches, decisions-needed and control-evidence in `report.py` `BLOCK_REGISTRY`, PDF and PPTX. Migration 065 `report_drafts` (one draft per tenant and account) with `GET`, `PUT` and `DELETE /reports/draft`. Security fix: `print_reports` is now required on export, email and template writes. One-screen builder with `utils/reportPresets.ts`, `hooks/useConfirm.ts`, `ReportDetails`, `ReportModals` and pl-rb- CSS.
+
+**Migrations:** 062, 063, 064, 065 (alembic head is 065).
+
+**Deferred from the pack:** Register: bulk owner and decision, action owner, AI accept and dismiss, suggested incident link, next-ID tag, likelihood and impact word labels. Incidents: draft, next-ID tag, AI accept and dismiss, owner-notified line. The old rb- CSS is still in `index.css` and can be removed.
+
+**Status:** Complete and pushed to staging (0354ca2).
+
+---
+
 ### Session 28: November 9, 2026, AI Brief Residual Bands
 
 **Completed:**
