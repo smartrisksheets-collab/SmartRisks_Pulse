@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler # type: ignore
@@ -6,7 +7,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler #type: ignore
 from slowapi.errors import RateLimitExceeded #type: ignore
+from sqlalchemy import text
 from app.core.config import settings
+from app.db.session import AsyncSessionLocal
 from app.core.rate_limit import limiter
 from app.core.exceptions import (
     InvalidCredentialsError,
@@ -172,5 +175,15 @@ app.include_router(admin_payments_router,   prefix="/api")
 
 
 @app.get("/api/health")
-async def health():
-    return {"status": "ok", "env": settings.APP_ENV}
+@limiter.limit("60/minute")
+async def health(request: Request) -> JSONResponse:
+    """Liveness plus a database round trip, for uptime monitors."""
+    try:
+        async with AsyncSessionLocal() as db:
+            await asyncio.wait_for(db.execute(text("SELECT 1")), timeout=5)
+    except Exception:
+        return JSONResponse(
+            status_code=503,
+            content={"status": "error", "database": "unreachable", "env": settings.APP_ENV},
+        )
+    return JSONResponse(content={"status": "ok", "database": "ok", "env": settings.APP_ENV})
