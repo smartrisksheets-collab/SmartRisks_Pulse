@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 import bcrypt
 import pytest
 from httpx import AsyncClient
-from jose import jwt
+import jwt
 from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy import text
 
@@ -54,7 +54,7 @@ async def _version(aid: str) -> int:
 
 
 async def _age_revocation(tok: str, seconds: int) -> None:
-    claims = jwt.get_unverified_claims(tok)
+    claims = jwt.decode(tok, options={"verify_signature": False})
     async with AsyncSessionLocal() as s:
         await s.execute(
             text("UPDATE revoked_refresh_tokens SET revoked_at = now() - make_interval(secs => :s) WHERE jti = :j"),
@@ -122,7 +122,7 @@ async def test_tokens_issued_before_this_change_still_refresh_once(seed: dict) -
         settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM,
     )
     out = await _refresh(legacy)
-    assert "jti" in jwt.get_unverified_claims(out["refresh_token"])
+    assert "jti" in jwt.decode(out["refresh_token"], options={"verify_signature": False})
 
 
 # ── Item 15: report settings ─────────────────────────────────────────────────

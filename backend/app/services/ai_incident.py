@@ -5,7 +5,7 @@ import re
 from datetime import datetime, timezone
 from uuid import UUID
 
-from anthropic import AsyncAnthropic
+from app.services.ai_client import get_client
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -82,7 +82,7 @@ def _build_actions_prompt(inc: Incident) -> str:
 
 
 async def _call_api(system: str, prompt: str, model: str) -> str:
-    client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+    client = get_client()
     try:
         message = await client.messages.create(
             model=model,

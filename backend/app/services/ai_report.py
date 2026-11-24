@@ -13,6 +13,8 @@ import logging
 from uuid import UUID
 
 from anthropic import AsyncAnthropic
+
+from app.services.ai_client import get_client
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -420,7 +422,7 @@ async def generate_report_narrative(
     if not ai_blocks:
         return {}
 
-    client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+    client = get_client()
     results: dict[str, str | None] = {}
 
     import asyncio

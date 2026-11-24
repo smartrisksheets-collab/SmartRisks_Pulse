@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
-from jose import jwt, JWTError
+import jwt
 from app.core.config import settings
 
 ADMIN_TOKEN_TYPE = "admin_access"
@@ -32,5 +32,5 @@ def decode_admin_token(token: str) -> dict:
         if payload.get("type") != ADMIN_TOKEN_TYPE:
             return {}
         return payload
-    except JWTError:
+    except jwt.PyJWTError:
         return {}

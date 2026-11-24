@@ -14,7 +14,7 @@ import re
 from datetime import datetime, timezone
 from uuid import UUID
 
-from anthropic import AsyncAnthropic
+from app.services.ai_client import get_client
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -83,7 +83,7 @@ async def generate_unified_brief(
     if ai_cfg.get("policy"):
         system = f"{system}\n\nWorkspace Policy:\n{ai_cfg['policy']}"
 
-    client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+    client = get_client()
     try:
         msg = await client.messages.create(
             model=ai_cfg["model"],

@@ -6,6 +6,8 @@ import re
 from uuid import UUID
 
 from anthropic import AsyncAnthropic
+
+from app.services.ai_client import get_client
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -186,7 +188,7 @@ async def generate_insights(
         )
 
     # Step 2: call Anthropic concurrently, no DB ops here
-    client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+    client = get_client()
     sem    = asyncio.Semaphore(_CONCURRENCY)
 
     api_results: list[tuple[str, str | None]] = await asyncio.gather(

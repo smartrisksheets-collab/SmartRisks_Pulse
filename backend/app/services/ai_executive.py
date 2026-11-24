@@ -6,7 +6,7 @@ import re
 from collections import Counter
 from uuid import UUID
 
-from anthropic import AsyncAnthropic
+from app.services.ai_client import get_client
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -169,7 +169,7 @@ async def generate_exec_insight(
     )
     owners = sorted([str(r) for r in owners_rows.scalars().all() if r])
 
-    client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+    client = get_client()
     try:
         message = await client.messages.create(
             model='claude-haiku-4-5-20251001',
