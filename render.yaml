@@ -1,0 +1,22 @@
+# Render Blueprint for the backend. It records the settings that otherwise live
+# only in the Render dashboard. It changes nothing until the service is linked
+# to it (Render dashboard > Blueprints). When linking, make `name` match the
+# existing service so Render updates it instead of creating a new one.
+#
+# No preDeployCommand: migrations are applied by hand as SQL files in Supabase
+# (backend/alembic/versions/sql/), so an automatic `alembic upgrade head` here
+# could run them a second time or against the wrong revision record.
+#
+# Environment variables stay in the dashboard and are not listed here.
+services:
+  - type: web
+    name: smartrisk-pulse-api
+    runtime: python
+    rootDir: backend
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    # One process: APScheduler runs inside the app. Jobs are also guarded by
+    # scheduler_runs (migration 068), so a second copy during a deploy is safe.
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1
+    healthCheckPath: /api/health
+    autoDeploy: true

@@ -22,3 +22,8 @@ admin/.env
 # OS
 .DS_Store
 Thumbs.db
+
+# pytest-cov output
+.coverage
+coverage.xml
+htmlcov/

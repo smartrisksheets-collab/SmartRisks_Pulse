@@ -26,3 +26,7 @@ from app.models.api_error_log import ApiErrorLog
 from app.models.payment import Payment
 from app.models.dashboard_brief import DashboardBrief
 from app.models.report_draft import ReportDraft
+from app.models.account_identity import AccountIdentity
+from app.models.help_event import HelpEvent
+from app.models.matrix_config import MatrixConfig
+from app.models.report_template import ReportTemplate, ReportSettings

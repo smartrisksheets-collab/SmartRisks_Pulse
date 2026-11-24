@@ -8,6 +8,8 @@ Plain English record of every significant decision made during the build, who ra
 
 One line per decision, newest first. Started November 16, 2026. Decisions before Session 29 are in the log below, by session.
 
+- 2026-11-24: The nightly recycle purge also clears api_error_log (30 days), rate_limit_counters (window over 2 days), expired revoked_refresh_tokens and scheduler_runs (7 days).
+- 2026-11-24: render.yaml records the Render settings, with no preDeployCommand, because migrations stay hand-run SQL in Supabase.
 - 2026-11-24: JWTs use PyJWT (python-jose removed). The unused supabase package is removed and PyJWT is pinned on its own.
 - 2026-11-24: All AI features share one AsyncAnthropic client (services/ai_client.py) with a 30-second timeout and 2 retries.
 - 2026-11-24: Refresh tokens carry a jti and are single use. Use and logout are recorded in revoked_refresh_tokens, a reuse after a 30-second grace ends every session of the account, and POST /auth/logout-all bumps token_version (migration 070).

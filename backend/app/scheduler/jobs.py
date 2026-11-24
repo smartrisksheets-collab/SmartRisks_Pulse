@@ -97,6 +97,35 @@ async def job_recycle_purge() -> None:
     except Exception:
         logger.exception("job_recycle_purge: help events purge failed")
 
+    await purge_housekeeping_tables()
+
+
+# Tables that only hold short-lived records. Each delete runs on its own, and a
+# table that is not created yet (SQL not run on this database) is skipped.
+_HOUSEKEEPING_PURGES: list[tuple[str, str]] = [
+    ("api_error_log",          "created_at < now() - interval '30 days'"),
+    ("rate_limit_counters",    "window_start < now() - interval '2 days'"),   # longest window is 1 day
+    ("revoked_refresh_tokens", "expires_at < now()"),                         # an expired token is refused anyway
+    ("scheduler_runs",         "claimed_at < now() - interval '7 days'"),
+]
+
+
+async def purge_housekeeping_tables() -> dict[str, int]:
+    removed: dict[str, int] = {}
+    for table, condition in _HOUSEKEEPING_PURGES:
+        try:
+            async with AsyncSessionLocal() as db:
+                async with db.begin():
+                    if await db.scalar(text("SELECT to_regclass(:t)"), {"t": table}) is None:
+                        continue
+                    result = await db.execute(text(f"DELETE FROM {table} WHERE {condition}"))
+                    removed[table] = result.rowcount or 0
+        except Exception:
+            logger.exception("job_recycle_purge: %s purge failed", table)
+    if any(removed.values()):
+        logger.info("job_recycle_purge: housekeeping removed %s", removed)
+    return removed
+
 
 # ── job: Ask Pulse unanswered questions report ──────────────────────────────
 
