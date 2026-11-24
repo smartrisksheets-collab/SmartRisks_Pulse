@@ -20,7 +20,7 @@ from app.models.account import Account
 from app.models.account_identity import AccountIdentity
 from app.models.tenant import Tenant
 from app.models.workspace_member import WorkspaceMember
-from app.services import lockout
+from app.services import lockout, refresh_tokens
 
 
 
@@ -262,6 +262,8 @@ async def refresh_access_token(db: AsyncSession, refresh_token: str) -> dict:
 
     if claims.get("token_version") != account.token_version:
         raise InvalidTokenError("Token has been revoked")
+
+    await refresh_tokens.use_for_refresh(db, claims, refresh_token)
 
     result = await db.execute(
         select(WorkspaceMember, Tenant)

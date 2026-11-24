@@ -1,5 +1,6 @@
 import re
 from pydantic import BaseModel, model_validator
+from app.schemas.limits import Medium, Tiny
 
 HELP_EVENTS: frozenset[str] = frozenset({"no_results", "open", "contact"})
 HELP_QUERY_MAX = 200
@@ -37,9 +38,9 @@ class HelpEntry(BaseModel):
 
 
 class HelpEventCreate(BaseModel):
-    event:    str
-    entry_id: str | None = None
-    query:    str | None = None
+    event:    Tiny
+    entry_id: Tiny | None = None
+    query:    Medium | None = None
 
     @model_validator(mode="after")
     def _check(self) -> "HelpEventCreate":

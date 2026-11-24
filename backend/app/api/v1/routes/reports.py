@@ -345,7 +345,7 @@ async def get_report_settings(
 async def save_report_settings_route(
     payload: ReportSettingsSaveRequest,
     db:      AsyncSession = Depends(get_db),
-    claims:  dict         = Depends(get_active_tenant),
+    claims:  dict         = Depends(require_permission("print_reports")),
 ):
     tenant_id = UUID(claims["active_tenant_id"])
     try:

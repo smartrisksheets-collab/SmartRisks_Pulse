@@ -3,6 +3,7 @@
 # Derived from BriefService.gs api_buildBriefPayload() return structure.
 
 from pydantic import BaseModel
+from app.schemas.limits import Email
 
 
 class SignalRow(BaseModel):
@@ -86,4 +87,4 @@ class BriefPayload(BaseModel):
 
 
 class SendTestBriefRequest(BaseModel):
-    to_email: str
+    to_email: Email

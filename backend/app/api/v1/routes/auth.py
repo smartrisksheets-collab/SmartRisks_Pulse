@@ -1,8 +1,11 @@
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, Response, Cookie, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.dependencies import get_db, get_current_account
 from app.core.rate_limit import limiter
 from app.core.config import settings
+from app.core.security import decode_token
 from app.schemas.auth import (
     LoginRequest, RegisterRequest, WorkspaceSelectRequest,
     PINVerifyRequest, AcceptInviteRequest,
@@ -10,6 +13,7 @@ from app.schemas.auth import (
 )
 from app.services import auth as auth_service
 from app.services import invite as invite_service
+from app.services import refresh_tokens
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -93,10 +97,38 @@ async def refresh(
     return {"data": result, "error": None, "meta": {}}
 
 
-@router.post("/logout")
-async def logout(response: Response):
+def _clear_refresh(response: Response) -> None:
     response.delete_cookie("refresh_token", path="/", secure=True, httponly=True, samesite="none")
+
+
+@router.post("/logout")
+@limiter.limit("30/minute")
+async def logout(
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+    refresh_token: str | None = Cookie(default=None),
+):
+    """Ends this session: the refresh cookie is cleared and can no longer be used."""
+    claims = decode_token(refresh_token or "")
+    if claims.get("type") == "refresh" and claims.get("sub"):
+        await refresh_tokens.revoke(db, claims, refresh_token or "", "logout")
+    _clear_refresh(response)
     return {"data": {"message": "Logged out"}, "error": None, "meta": {}}
+
+
+@router.post("/logout-all")
+@limiter.limit("10/minute")
+async def logout_all(
+    request: Request,
+    response: Response,
+    claims: dict = Depends(get_current_account),
+):
+    """Ends every session of this account on every device. Access tokens already
+    issued stop working when they expire (at most 15 minutes)."""
+    await refresh_tokens.end_all_sessions(UUID(str(claims["sub"])))
+    _clear_refresh(response)
+    return {"data": {"message": "Logged out on all devices"}, "error": None, "meta": {}}
 
 
 @router.get("/validate-invite")

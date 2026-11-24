@@ -1,6 +1,14 @@
+import logging
 from datetime import date
 from pathlib import Path
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+MIN_SECRET_LENGTH = 32
+_EXAMPLE_SECRETS: frozenset[str] = frozenset({
+    "change_this_to_a_long_random_string_minimum_32_chars",
+})
 
 
 class Settings(BaseSettings):
@@ -33,6 +41,28 @@ class Settings(BaseSettings):
     # Admin JWT (separate secret from main app)
     ADMIN_JWT_SECRET: str
     ADMIN_ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+
+    @model_validator(mode="after")
+    def _strong_secrets(self) -> "Settings":
+        """Refuse to start production with a short or example signing secret.
+
+        Other environments only log a warning, so a staging box with an old
+        short secret keeps running while it is replaced.
+        """
+        weak = [
+            name for name in ("JWT_SECRET", "ADMIN_JWT_SECRET")
+            if len(getattr(self, name)) < MIN_SECRET_LENGTH
+            or getattr(self, name) in _EXAMPLE_SECRETS
+            or (name == "ADMIN_JWT_SECRET" and self.ADMIN_JWT_SECRET == self.JWT_SECRET)
+        ]
+        if weak and self.APP_ENV == "production":
+            raise ValueError(
+                f"{', '.join(weak)} must be at least {MIN_SECRET_LENGTH} random characters, "
+                "not the example value, and the two secrets must differ."
+            )
+        if weak and self.APP_ENV not in ("test", "development"):
+            logging.getLogger(__name__).critical("Weak signing secret: %s", ", ".join(weak))
+        return self
 
     @property
     def allowed_origins(self) -> list[str]:

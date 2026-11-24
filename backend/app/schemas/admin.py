@@ -1,5 +1,6 @@
 from datetime import date, datetime
 from pydantic import BaseModel, EmailStr, field_validator
+from app.schemas.limits import Long, Password, Short, Tiny
 import re
 
 _PW_RE = re.compile(
@@ -11,7 +12,7 @@ _PW_RE = re.compile(
 
 class AdminLoginRequest(BaseModel):
     email: EmailStr
-    password: str
+    password: Password
 
 
 class AdminAccountBrief(BaseModel):
@@ -31,9 +32,9 @@ class AdminTokenResponse(BaseModel):
 
 class AdminAccountCreate(BaseModel):
     email: EmailStr
-    name: str
-    password: str
-    role: str = "admin"
+    name: Short
+    password: Password
+    role: Tiny = "admin"
 
     @field_validator("password")
     @classmethod
@@ -55,9 +56,9 @@ class AdminAccountCreate(BaseModel):
 
 
 class AdminAccountUpdate(BaseModel):
-    name: str | None = None
-    role: str | None = None
-    status: str | None = None
+    name: Short | None = None
+    role: Tiny | None = None
+    status: Tiny | None = None
 
     @field_validator("role")
     @classmethod
@@ -120,15 +121,15 @@ class AdminTrialExtend(BaseModel):
 
 
 class AdminWorkspaceUpdate(BaseModel):
-    plan: str | None = None
+    plan: Tiny | None = None
     payment_active: bool | None = None
     payment_date: date | None = None
     plan_expires_at: date | None = None
     max_users: int | None = None
     max_risks: int | None = None
     modules: list[str] | None = None
-    industry: str | None = None
-    workspace_status: str | None = None   # ACTIVE, SUSPENDED (requires migration 049)
+    industry: Short | None = None
+    workspace_status: Tiny | None = None   # ACTIVE, SUSPENDED (requires migration 049)
 
     @field_validator("plan")
     @classmethod
@@ -225,20 +226,20 @@ class AdminAuditLogItem(BaseModel):
 
 class PaymentUpdate(BaseModel):
     amount: float | None = None
-    currency: str | None = None
-    method: str | None = None
-    reference: str | None = None
-    notes: str | None = None
-    paid_at: str | None = None
+    currency: Tiny | None = None
+    method: Short | None = None
+    reference: Short | None = None
+    notes: Long | None = None
+    paid_at: Tiny | None = None
 
 
 class PaymentCreate(BaseModel):
     amount: float
-    currency: str = "USD"
-    method: str | None = None
-    reference: str | None = None
-    notes: str | None = None
-    paid_at: str  # ISO date string YYYY-MM-DD
+    currency: Tiny = "USD"
+    method: Short | None = None
+    reference: Short | None = None
+    notes: Long | None = None
+    paid_at: Tiny  # ISO date string YYYY-MM-DD
 
 
 class PaymentOut(BaseModel):

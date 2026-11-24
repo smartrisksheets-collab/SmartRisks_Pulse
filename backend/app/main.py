@@ -34,6 +34,7 @@ from app.core.exceptions import (
 from app.middleware.tenant import TenantMiddleware
 from app.middleware.error_log import ErrorLogMiddleware, error_detail_for
 from app.middleware.request_id import RequestIdMiddleware
+from app.middleware.body_limit import BodyLimitMiddleware
 from app.api.v1.routes.admin_auth import router as admin_auth_router
 from app.api.v1.routes.admin_overview import router as admin_overview_router
 from app.api.v1.routes.admin_workspaces import router as admin_workspaces_router
@@ -116,6 +117,7 @@ app.state.limiter = limiter
 
 app.add_middleware(ErrorLogMiddleware)
 app.add_middleware(TenantMiddleware)
+app.add_middleware(BodyLimitMiddleware)  # inside CORS, so a 413 still carries CORS headers
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins,

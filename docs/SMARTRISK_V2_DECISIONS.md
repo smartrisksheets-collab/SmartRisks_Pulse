@@ -8,6 +8,11 @@ Plain English record of every significant decision made during the build, who ra
 
 One line per decision, newest first. Started November 16, 2026. Decisions before Session 29 are in the log below, by session.
 
+- 2026-11-24: Refresh tokens carry a jti and are single use. Use and logout are recorded in revoked_refresh_tokens, a reuse after a 30-second grace ends every session of the account, and POST /auth/logout-all bumps token_version (migration 070).
+- 2026-11-24: Saving workspace report settings needs print_reports, the same as export, email and templates.
+- 2026-11-24: Request fields have size limits (schemas/limits.py), and bodies over 5 MB (12 MB for uploads) are refused with 413.
+- 2026-11-24: Production refuses to start with a JWT secret under 32 characters, the example value, or an admin secret equal to the user secret. Other environments log a critical warning.
+- 2026-11-24: bcrypt is pinned to 5.0.0, and input is cut to 72 bytes in one helper so long passwords never error and old hashes still match.
 - 2026-11-24: Risk, incident and submission numbers come from one id_counters row per workspace and scope, taken with an atomic upsert seeded from the highest number in use. Formats are unchanged, and a deleted record's number is not reused (migration 069).
 - 2026-11-24: Submission references are unique per workspace. The index is skipped with a notice where old duplicates exist, so no emailed reference is renamed (migration 069).
 - 2026-11-24: external_submissions gets an index on (tenant_id, status) for the pending list (migration 069).
