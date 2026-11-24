@@ -6,6 +6,8 @@ import resend  # type: ignore
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.offload import run_in_background
+
 from app.core.config import settings
 from app.models.feedback import Feedback
 from app.models.tenant import Tenant
@@ -117,4 +119,4 @@ def _send_founder_email(
         "subject": f"SmartRisk Feedback \u2014 {rating}/5 \u2605 ({label})",
         "html":    html,
     }
-    resend.Emails.send(params)
+    run_in_background(resend.Emails.send, params)

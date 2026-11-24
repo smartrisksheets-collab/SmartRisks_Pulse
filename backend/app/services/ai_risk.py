@@ -6,11 +6,13 @@ import re
 from uuid import UUID
 
 from anthropic import AsyncAnthropic
+
+from app.services.ai_client import get_client
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.exceptions import ResourceNotFoundError
+from app.core.exceptions import ResourceNotFoundError, ServerError, ValidationError
 from app.models.risk import Risk
 from app.models.audit_log import AuditLog
 from app.schemas.risk import AIInsightRequest, AIInsightResponse
@@ -144,11 +146,11 @@ async def generate_insights(
     user_email: str,
 ) -> AIInsightResponse:
     if not settings.ANTHROPIC_API_KEY:
-        raise ValueError('ANTHROPIC_API_KEY is not configured')
+        raise ServerError('AI is not available right now. Please try again later.')
 
     ai_cfg = await get_ai_config(db, tenant_id)
     if not ai_cfg['enabled']:
-        raise ValueError('AI is disabled for this workspace.')
+        raise ValidationError('AI is disabled for this workspace.')
 
     model      = ai_cfg['model']
     confidence = payload.confidence or ai_cfg['confidence']
@@ -186,7 +188,7 @@ async def generate_insights(
         )
 
     # Step 2: call Anthropic concurrently, no DB ops here
-    client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+    client = get_client()
     sem    = asyncio.Semaphore(_CONCURRENCY)
 
     api_results: list[tuple[str, str | None]] = await asyncio.gather(

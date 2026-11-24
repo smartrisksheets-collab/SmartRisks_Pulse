@@ -6,7 +6,7 @@ import re
 from collections import Counter
 from uuid import UUID
 
-from anthropic import AsyncAnthropic
+from app.services.ai_client import get_client
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,6 +15,7 @@ from app.models.risk import Risk
 from app.core.config import settings
 from app.schemas.dashboard import ActionItem, ExecInsightResponse
 from app.services.dashboard import get_dashboard
+from app.core.exceptions import ValidationError, ServerError
 
 logger = logging.getLogger(__name__)
 
@@ -156,7 +157,7 @@ async def generate_exec_insight(
     days: int = 90,
 ) -> ExecInsightResponse:
     if not settings.ANTHROPIC_API_KEY:
-        raise ValueError('ANTHROPIC_API_KEY is not configured.')
+        raise ServerError('AI is not available right now. Please try again later.')
 
     data = await get_dashboard(db, tenant_id, days=days)
     inputs = _derive_inputs(data)
@@ -168,7 +169,7 @@ async def generate_exec_insight(
     )
     owners = sorted([str(r) for r in owners_rows.scalars().all() if r])
 
-    client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+    client = get_client()
     try:
         message = await client.messages.create(
             model='claude-haiku-4-5-20251001',
@@ -179,7 +180,7 @@ async def generate_exec_insight(
         raw = message.content[0].text.strip()
     except Exception as exc:
         logger.error('ai_executive._call failed: %s', exc)
-        raise ValueError(
+        raise ValidationError(
             'Executive insight is temporarily unavailable. Please try again in a few moments.'
         ) from exc
 
@@ -187,7 +188,7 @@ async def generate_exec_insight(
         summary, action_items = _parse_response(raw)
     except Exception as exc:
         logger.error('exec_insight parse failed: %s | raw: %s', exc, raw[:200])
-        raise ValueError('Failed to parse executive insight response.') from exc
+        raise ValidationError('Failed to parse executive insight response.') from exc
 
     return ExecInsightResponse(
         summary=summary,

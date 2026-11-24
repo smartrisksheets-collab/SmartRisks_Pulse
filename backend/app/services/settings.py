@@ -1,5 +1,6 @@
 # app/services/settings.py
 
+import asyncio
 import time
 import uuid
 from typing import TypedDict
@@ -309,7 +310,7 @@ async def set_pin(
     db: AsyncSession, tenant_id: UUID, payload: PINSet
 ) -> dict:
     tenant = await _get_tenant(db, tenant_id)
-    tenant.pin_hash = hash_pin(payload.new_pin)  # type: ignore[assignment]
+    tenant.pin_hash = await asyncio.to_thread(hash_pin, payload.new_pin)  # type: ignore[assignment]
     tenant.pin_attempts = 0  # type: ignore[assignment]
     tenant.pin_locked_until = None  # type: ignore[assignment]
     await db.flush()

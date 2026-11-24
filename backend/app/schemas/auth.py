@@ -1,4 +1,5 @@
 from pydantic import BaseModel, EmailStr, field_validator
+from app.schemas.limits import Password, Short, Tiny, TokenText
 import re
 
 _PW_RE = re.compile(
@@ -17,17 +18,17 @@ def _validate_password(v: str) -> str:
 
 class LoginRequest(BaseModel):
     email: EmailStr
-    password: str
+    password: Password
 
 
 class WorkspaceSelectRequest(BaseModel):
-    tenant_id: str
+    tenant_id: Tiny
 
 
 class RegisterRequest(BaseModel):
-    name: str
+    name: Short
     email: EmailStr
-    password: str
+    password: Password
 
     @field_validator("password")
     @classmethod
@@ -36,7 +37,7 @@ class RegisterRequest(BaseModel):
 
 
 class PINVerifyRequest(BaseModel):
-    pin: str
+    pin: Tiny
 
 
 class WorkspaceInfo(BaseModel):
@@ -63,8 +64,8 @@ class ValidateInviteResponse(BaseModel):
 
 
 class AcceptInviteRequest(BaseModel):
-    token:    str
-    password: str
+    token:    TokenText
+    password: Password
 
     @field_validator("password")
     @classmethod
@@ -77,8 +78,8 @@ class ForgotPasswordRequest(BaseModel):
 
 
 class ResetPasswordRequest(BaseModel):
-    token:    str
-    password: str
+    token:    TokenText
+    password: Password
 
     @field_validator("password")
     @classmethod
@@ -87,4 +88,4 @@ class ResetPasswordRequest(BaseModel):
 
 
 class GoogleAuthRequest(BaseModel):
-    access_token: str
+    access_token: TokenText

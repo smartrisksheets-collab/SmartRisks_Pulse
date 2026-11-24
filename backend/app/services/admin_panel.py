@@ -1,3 +1,4 @@
+import asyncio
 from datetime import date, datetime, timezone, timedelta
 from uuid import UUID
 
@@ -377,7 +378,7 @@ async def create_admin_account(
     admin = AdminAccount(
         email=payload.email.lower(),
         name=payload.name,
-        password_hash=hash_password(payload.password),
+        password_hash=await asyncio.to_thread(hash_password, payload.password),
         role=payload.role,
         status="ACTIVE",
         created_by=UUID(creator_id),

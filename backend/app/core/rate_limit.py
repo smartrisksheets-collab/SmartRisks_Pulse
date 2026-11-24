@@ -32,4 +32,9 @@ def _rate_limit_key(request: Request) -> str:
     return client_host
 
 
+def client_ip(request: Request) -> str:
+    """The caller's IP, trusting X-Forwarded-For only from a known proxy."""
+    return _rate_limit_key(request)
+
+
 limiter = Limiter(key_func=_rate_limit_key)

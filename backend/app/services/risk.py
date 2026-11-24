@@ -22,7 +22,8 @@ from app.schemas.risk import (
     RiskContext, RiskHistoryItem, RiskLinkedIncident,
 )
 from app.core.config import settings
-from app.core.exceptions import ResourceNotFoundError, QuotaExceededError
+from app.core.exceptions import QuotaExceededError, ResourceNotFoundError, ValidationError
+from app.services.id_counter import next_number
 from app.models.appetite_threshold import AppetiteThreshold
 from app.models.matrix_config import MatrixConfig
 from app.services.matrix_config import _get_or_create as _get_matrix
@@ -79,8 +80,8 @@ async def _next_id(db: AsyncSession, tenant_id: UUID) -> str:
         """),
         {'tid': str(tenant_id)},
     )
-    max_num = result.scalar() or 0
-    return f'R-{max_num + 1:03d}'
+    max_num = int(result.scalar() or 0)
+    return f'R-{await next_number(db, tenant_id, "risk", max_num):03d}'
 
 
 async def _quota(db: AsyncSession, tenant_id: UUID) -> RiskQuotaInfo:
@@ -751,7 +752,7 @@ async def score_preview(db: AsyncSession, tenant_id: UUID, payload: ScorePreview
     cfg = await _get_matrix(db, tenant_id)
     scale = int(cfg.ce_scale)  # type: ignore[arg-type]
     if payload.control_effectiveness is not None and payload.control_effectiveness > scale:
-        raise ValueError(f'Control effectiveness {payload.control_effectiveness} is outside 0 to {scale}.')
+        raise ValidationError(f'Control effectiveness {payload.control_effectiveness} is outside 0 to {scale}.')
     scored = _score(payload.likelihood, payload.impact_score, payload.control_effectiveness, cfg)
     return _breakdown(
         severity=float(scored['severity']),

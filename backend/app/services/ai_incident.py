@@ -5,12 +5,12 @@ import re
 from datetime import datetime, timezone
 from uuid import UUID
 
-from anthropic import AsyncAnthropic
+from app.services.ai_client import get_client
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.exceptions import ResourceNotFoundError
+from app.core.exceptions import ResourceNotFoundError, ServerError, ValidationError
 from app.models.incident import Incident
 from app.schemas.incident import AIIncidentResponse, AIIncidentSuggestResponse
 from app.services.settings import get_ai_config
@@ -82,7 +82,7 @@ def _build_actions_prompt(inc: Incident) -> str:
 
 
 async def _call_api(system: str, prompt: str, model: str) -> str:
-    client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+    client = get_client()
     try:
         message = await client.messages.create(
             model=model,
@@ -93,7 +93,7 @@ async def _call_api(system: str, prompt: str, model: str) -> str:
         return _enforce_word_count(message.content[0].text.strip())
     except Exception as exc:
         logger.error('ai_incident._call_api failed: %s', exc)
-        raise ValueError(
+        raise ValidationError(
             'AI analysis is temporarily unavailable. Please try again in a few moments.'
         ) from exc
 
@@ -107,11 +107,11 @@ async def generate_impact(
     force: bool = False,
 ) -> AIIncidentResponse:
     if not settings.ANTHROPIC_API_KEY:
-        raise ValueError('ANTHROPIC_API_KEY is not configured')
+        raise ServerError('AI is not available right now. Please try again later.')
 
     ai_cfg = await get_ai_config(db, tenant_id)
     if not ai_cfg['enabled']:
-        raise ValueError('AI is disabled for this workspace.')
+        raise ValidationError('AI is disabled for this workspace.')
 
     result = await db.execute(
         select(Incident)
@@ -124,7 +124,7 @@ async def generate_impact(
         raise ResourceNotFoundError(f'Incident {incident_id} not found')
 
     if inc.ai_impact and not force:
-        raise ValueError('AI impact already exists. Pass force=true to overwrite.')
+        raise ValidationError('AI impact already exists. Pass force=true to overwrite.')
 
     system = _IMPACT_SYSTEM
     if ai_cfg['policy']:
@@ -147,7 +147,7 @@ async def generate_actions(
     force: bool = False,
 ) -> AIIncidentResponse:
     if not settings.ANTHROPIC_API_KEY:
-        raise ValueError('ANTHROPIC_API_KEY is not configured')
+        raise ServerError('AI is not available right now. Please try again later.')
 
     result = await db.execute(
         select(Incident)
@@ -160,11 +160,11 @@ async def generate_actions(
         raise ResourceNotFoundError(f'Incident {incident_id} not found')
 
     if inc.ai_actions and not force:
-        raise ValueError('AI actions already exist. Pass force=true to overwrite.')
+        raise ValidationError('AI actions already exist. Pass force=true to overwrite.')
 
     ai_cfg = await get_ai_config(db, tenant_id)
     if not ai_cfg['enabled']:
-        raise ValueError('AI is disabled for this workspace.')
+        raise ValidationError('AI is disabled for this workspace.')
 
     system = _ACTIONS_SYSTEM
     if ai_cfg['policy']:
@@ -186,11 +186,11 @@ async def suggest_category(
     description: str,
 ) -> AIIncidentSuggestResponse:
     if not settings.ANTHROPIC_API_KEY:
-        raise ValueError('ANTHROPIC_API_KEY is not configured')
+        raise ServerError('AI is not available right now. Please try again later.')
 
     ai_cfg = await get_ai_config(db, tenant_id)
     if not ai_cfg['enabled']:
-        raise ValueError('AI is disabled for this workspace.')
+        raise ValidationError('AI is disabled for this workspace.')
 
     system = (
         'You are SmartRisk AI for incident categorization. '
@@ -219,11 +219,11 @@ async def suggest_severity(
     description: str,
 ) -> AIIncidentSuggestResponse:
     if not settings.ANTHROPIC_API_KEY:
-        raise ValueError('ANTHROPIC_API_KEY is not configured')
+        raise ServerError('AI is not available right now. Please try again later.')
 
     ai_cfg = await get_ai_config(db, tenant_id)
     if not ai_cfg['enabled']:
-        raise ValueError('AI is disabled for this workspace.')
+        raise ValidationError('AI is disabled for this workspace.')
 
     system = (
         'You are SmartRisk AI for severity assessment. '

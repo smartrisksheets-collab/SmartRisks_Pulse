@@ -8,6 +8,7 @@ Future phases (Brief engine, Phase 10) will add more functions here.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import date
 from html import escape as _esc
@@ -15,7 +16,10 @@ from urllib.parse import quote as _url_quote
 
 import resend
 
+from app.services.offload import run_in_background
+
 from app.core.config import settings
+from app.core.exceptions import ServerError
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 def _init() -> None:
     if not settings.RESEND_API_KEY:
-        raise ValueError("RESEND_API_KEY is not configured")
+        raise ServerError("Email sending is not set up on the server.")
     resend.api_key = settings.RESEND_API_KEY
 
 
@@ -232,7 +236,7 @@ async def send_report_email(
     """
     _init()
     if not settings.RESEND_FROM_EMAIL:
-        raise ValueError("RESEND_FROM_EMAIL is not configured")
+        raise ServerError("Email sending is not set up on the server.")
 
     today_str  = f"{date.today().day} {date.today().strftime('%B %Y')}"
     html_body  = _build_email_html(title, block_data, ai_data, org_name, today_str)
@@ -256,7 +260,7 @@ async def send_report_email(
     if cc:
         params["cc"] = cc  # type: ignore[typeddict-unknown-key]
 
-    resend.Emails.send(params)
+    await asyncio.to_thread(resend.Emails.send, params)
     logger.info("Report email sent | to=%s | cc=%d | subject=%s", to, len(cc or []), subject)
 
 
@@ -322,7 +326,7 @@ def send_submission_confirmation(
     """
     _init()
     if not settings.RESEND_FROM_EMAIL:
-        raise ValueError("RESEND_FROM_EMAIL is not configured")
+        raise ServerError("Email sending is not set up on the server.")
 
     label = "Risk" if submission_type == "risk" else "Incident"
     body = (
@@ -349,7 +353,7 @@ def send_submission_confirmation(
         "subject": f"{label} Submission Confirmed — {submission_id}",
         "html":    _ext_wrap(org_name, body),
     }
-    resend.Emails.send(params)
+    run_in_background(resend.Emails.send, params)
     logger.info("Submission confirmation sent | to=%s | id=%s", to, submission_id)
 
 
@@ -367,7 +371,7 @@ def send_approval_email(
     """
     _init()
     if not settings.RESEND_FROM_EMAIL:
-        raise ValueError("RESEND_FROM_EMAIL is not configured")
+        raise ServerError("Email sending is not set up on the server.")
 
     body = (
         f'<tr><td style="padding:36px;">'
@@ -392,7 +396,7 @@ def send_approval_email(
         "subject": f"Submission Approved — {org_name}",
         "html":    _ext_wrap(org_name, body),
     }
-    resend.Emails.send(params)
+    run_in_background(resend.Emails.send, params)
     logger.info("Approval email sent | to=%s | created_id=%s", to, created_id)
 
 
@@ -410,7 +414,7 @@ def send_return_email(
     """
     _init()
     if not settings.RESEND_FROM_EMAIL:
-        raise ValueError("RESEND_FROM_EMAIL is not configured")
+        raise ServerError("Email sending is not set up on the server.")
 
     safe_message = return_message.replace("\n", "<br>")
     body = (
@@ -440,7 +444,7 @@ def send_return_email(
         "subject": f"Submission Returned — {org_name}",
         "html":    _ext_wrap(org_name, body),
     }
-    resend.Emails.send(params)
+    run_in_background(resend.Emails.send, params)
     logger.info("Return email sent | to=%s", to)
 
 
@@ -807,7 +811,7 @@ def send_invite_email(
     """
     _init()
     if not settings.RESEND_FROM_EMAIL:
-        raise ValueError("RESEND_FROM_EMAIL is not configured")
+        raise ServerError("Email sending is not set up on the server.")
 
     display_name = invitee_name.strip() if invitee_name.strip() else "there"
     role_display = "Admin" if role == "Owner" else role
@@ -839,7 +843,7 @@ def send_invite_email(
         "subject": f"You've been added to {workspace_name} on SmartRisk",
         "html":    _ext_wrap(workspace_name, body),
     }
-    resend.Emails.send(params)
+    run_in_background(resend.Emails.send, params)
     logger.info("Invite email sent | to=%s | workspace=%s", to, workspace_name)
 
 
@@ -858,7 +862,7 @@ def send_reset_email(to: str, reset_link: str, set_password: bool = False) -> No
     subject = "Set your SmartRisk Pulse password" if set_password else "Reset your SmartRisk Pulse password"
     _init()
     if not settings.RESEND_FROM_EMAIL:
-        raise ValueError("RESEND_FROM_EMAIL is not configured")
+        raise ServerError("Email sending is not set up on the server.")
     body = (
         f'<tr><td style="padding:36px;">'
         f'<p style="font-size:15px;color:#1e293b;margin:0 0 16px;">Hi there,</p>'
@@ -882,7 +886,7 @@ def send_reset_email(to: str, reset_link: str, set_password: bool = False) -> No
         "subject": subject,
         "html":    _ext_wrap("SmartRisk Pulse", body),
     }
-    resend.Emails.send(params)
+    run_in_background(resend.Emails.send, params)
     logger.info("Reset email sent | to=%s", to)
 
 
@@ -892,8 +896,8 @@ def send_escalation_alert(
     severity: str,
     age_hours: float,
     tenant_name: str,
-) -> None:
-    """Send SLA breach escalation notification via Resend."""
+) -> bool:
+    """Send SLA breach escalation notification via Resend. True when sent."""
     _init()
     age_display = f"{int(age_hours)}h" if age_hours < 24 else f"{round(age_hours / 24, 1)}d"
     html = (
@@ -916,6 +920,8 @@ def send_escalation_alert(
         })
     except Exception:
         logger.warning("send_escalation_alert failed for incident=%s to=%s", incident_id, to)
+        return False
+    return True
 
 
 async def send_brief_email(
@@ -930,7 +936,7 @@ async def send_brief_email(
     """
     _init()
     if not settings.RESEND_FROM_EMAIL:
-        raise ValueError("RESEND_FROM_EMAIL is not configured")
+        raise ServerError("Email sending is not set up on the server.")
 
     params: resend.Emails.SendParams = {
         "from":    settings.RESEND_FROM_EMAIL,
@@ -941,7 +947,7 @@ async def send_brief_email(
     if bcc:
         params["bcc"] = bcc  # type: ignore[typeddict-unknown-key]
 
-    resend.Emails.send(params)
+    await asyncio.to_thread(resend.Emails.send, params)
     logger.info("Brief email sent | to=%s | subject=%s", to, subject)
 
 def send_payment_receipt_email(
@@ -959,7 +965,7 @@ def send_payment_receipt_email(
     import base64
     _init()
     if not settings.RESEND_FROM_EMAIL:
-        raise ValueError("RESEND_FROM_EMAIL is not configured")
+        raise ServerError("Email sending is not set up on the server.")
 
     amount_str = f"{currency} {amount:,.2f}"
     html_body  = f"""
@@ -998,7 +1004,7 @@ def send_payment_receipt_email(
             }
         ],
     }
-    resend.Emails.send(params)
+    run_in_background(resend.Emails.send, params)
     logger.info("Receipt email sent | to=%s | workspace=%s", to, workspace_name)
 
 def send_trial_expiry_reminder(
@@ -1009,7 +1015,7 @@ def send_trial_expiry_reminder(
 ) -> None:
     _init()
     if not settings.RESEND_FROM_EMAIL:
-        raise ValueError("RESEND_FROM_EMAIL is not configured")
+        raise ServerError("Email sending is not set up on the server.")
 
     day_word = "day" if days_remaining == 1 else "days"
     subject = f"Action required: your SmartRisk trial for {workspace_name} has expired"
@@ -1057,7 +1063,7 @@ def send_trial_expiry_reminder(
         "subject": subject,
         "html":    html_body,
     }
-    resend.Emails.send(params)
+    run_in_background(resend.Emails.send, params)
     logger.info(
         "Trial expiry reminder sent | to=%s | workspace=%s | reminder=%d | days_remaining=%d",
         to, workspace_name, reminder_num, days_remaining,
@@ -1091,12 +1097,12 @@ def build_help_gaps_html(gaps: list, days: int) -> str:
 def send_help_gaps_email(to: str, gaps: list, days: int) -> None:
     _init()
     if not settings.RESEND_FROM_EMAIL:
-        raise ValueError("RESEND_FROM_EMAIL is not configured")
+        raise ServerError("Email sending is not set up on the server.")
     params: resend.Emails.SendParams = {
         "from":    settings.RESEND_FROM_EMAIL,
         "to":      [to],
         "subject": f"Ask Pulse: {len(gaps)} unanswered question{'s' if len(gaps) != 1 else ''} this week",
         "html":    _ext_wrap("SmartRisk Pulse", build_help_gaps_html(gaps, days)),
     }
-    resend.Emails.send(params)
+    run_in_background(resend.Emails.send, params)
     logger.info("Help gaps email sent | to=%s | gaps=%d", to, len(gaps))

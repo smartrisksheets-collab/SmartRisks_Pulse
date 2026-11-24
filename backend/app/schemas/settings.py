@@ -4,6 +4,7 @@ import re
 from datetime import date
 
 from pydantic import BaseModel, field_validator
+from app.schemas.limits import Long, Medium, Recipients, Short, Tiny
 
 from app.core.config import settings as app_settings
 
@@ -92,23 +93,23 @@ class SettingsResponse(BaseModel):
 
 class SettingsUpdate(BaseModel):
     # Identity
-    name: str | None = None
-    organization: str | None = None
-    industry: str | None = None
-    framework: str | None = None
-    timezone: str | None = None
-    date_format: str | None = None
-    currency_symbol: str | None = None
-    logo_url: str | None = None
+    name: Short | None = None
+    organization: Short | None = None
+    industry: Short | None = None
+    framework: Short | None = None
+    timezone: Tiny | None = None
+    date_format: Tiny | None = None
+    currency_symbol: Tiny | None = None
+    logo_url: Medium | None = None
 
     # Brand
-    primary_color: str | None = None
-    accent_color: str | None = None
-    theme_mode: str | None = None
+    primary_color: Tiny | None = None
+    accent_color: Tiny | None = None
+    theme_mode: Tiny | None = None
 
     # Roles
-    roles_default_role: str | None = None
-    roles_access_mode: str | None = None
+    roles_default_role: Tiny | None = None
+    roles_access_mode: Tiny | None = None
     perm_owner_risks: bool | None = None
     perm_mgr_risks: bool | None = None
     perm_analyst_risks: bool | None = None
@@ -126,29 +127,29 @@ class SettingsUpdate(BaseModel):
     perm_analyst_users: bool | None = None
 
     # AI
-    ai_enabled: str | None = None
-    ai_model: str | None = None
-    ai_confidence: str | None = None
-    ai_auto_run: str | None = None
-    ai_policy: str | None = None
-    ai_policy_industry: str | None = None
-    ai_policy_tone: str | None = None
-    ai_policy_sensitivity: str | None = None
-    ai_policy_extra: str | None = None
+    ai_enabled: Tiny | None = None
+    ai_model: Tiny | None = None
+    ai_confidence: Tiny | None = None
+    ai_auto_run: Tiny | None = None
+    ai_policy: Long | None = None
+    ai_policy_industry: Tiny | None = None
+    ai_policy_tone: Tiny | None = None
+    ai_policy_sensitivity: Tiny | None = None
+    ai_policy_extra: Long | None = None
 
     # Alerts
     alert_high_threshold: int | None = None
     alert_very_high_threshold: int | None = None
-    alert_incident_notify: str | None = None
-    alert_resolved_notify: str | None = None
-    alert_recipients: str | None = None
-    alert_digest: str | None = None
-    alert_digest_time: str | None = None
+    alert_incident_notify: Tiny | None = None
+    alert_resolved_notify: Tiny | None = None
+    alert_recipients: Recipients | None = None
+    alert_digest: Tiny | None = None
+    alert_digest_time: Tiny | None = None
 
     # Brief
-    brief_enabled: str | None = None
-    brief_send_time: str | None = None
-    brief_recipients: str | None = None
+    brief_enabled: Tiny | None = None
+    brief_send_time: Tiny | None = None
+    brief_recipients: Recipients | None = None
     brief_weekly_enabled: bool | None = None
     brief_monthly_enabled: bool | None = None
     brief_quarterly_enabled: bool | None = None
@@ -189,7 +190,7 @@ class SettingsUpdate(BaseModel):
 
 
 class PINSet(BaseModel):
-    new_pin: str
+    new_pin: Tiny
 
     @field_validator("new_pin")
     @classmethod
@@ -205,5 +206,5 @@ class NotificationPrefResponse(BaseModel):
 
 
 class NotificationPrefUpdate(BaseModel):
-    brief_frequency: str | None = None
+    brief_frequency: Tiny | None = None
     opted_out: bool | None = None

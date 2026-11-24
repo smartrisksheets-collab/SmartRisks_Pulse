@@ -104,7 +104,9 @@ async def test_approve_carries_title_confidence_and_time(session: AsyncSession, 
     res = await ext_svc.submit_incident(session, tid, _payload(
         title="Payroll outage", impact_confidence="Confirmed", incident_date="2026-11-10", incident_time="14:35",
     ))
-    await ext_svc.approve_submission(session, tid, res.id, "reviewer@example.com")
+    await ext_svc.approve_submission(
+        session, tid, res.id, "reviewer@example.com", {"manage_incidents": True},
+    )
     await session.commit()
     inc = (await session.execute(select(Incident).where(Incident.tenant_id == tid))).scalar_one()
     assert inc.title == "Payroll outage"

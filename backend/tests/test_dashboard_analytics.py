@@ -12,7 +12,7 @@ Each test uses its own tenant, so rows from other test files cannot leak in.
 
 import os
 import uuid
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 
 import pytest
 import pytest_asyncio
@@ -79,7 +79,9 @@ async def _incident(
         """),
         {
             "id": iid, "t": str(tid), "title": f"{iid} title", "cat": category, "sev": severity,
-            "status": status, "rep": reported, "res": resolved, "cost": cost,
+            "status": status, "rep": reported, "cost": cost,
+            # resolved_at is timestamptz: give midnight UTC, or asyncpg uses the machine's local zone
+            "res": datetime.combine(resolved, time(), timezone.utc) if resolved else None,
             "conf": confidence, "link": linked,
         },
     )

@@ -1,6 +1,7 @@
 # app/services/invite.py
 # Invite token lifecycle: generate → email → validate → accept.
 
+import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
@@ -90,7 +91,7 @@ async def accept_invite(db: AsyncSession, token: str, password: str) -> dict:
     if not member:
         raise InvalidTokenError("Invite is no longer valid. Contact your workspace admin.")
 
-    account.password_hash = hash_password(password)  # type: ignore[assignment]
+    account.password_hash = await asyncio.to_thread(hash_password, password)  # type: ignore[assignment]
     account.last_login = datetime.now(timezone.utc)  # type: ignore[assignment]
     await db.flush()
     await record_identity(db, account.id, "password")  # type: ignore[arg-type]

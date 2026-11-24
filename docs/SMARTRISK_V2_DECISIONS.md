@@ -8,6 +8,35 @@ Plain English record of every significant decision made during the build, who ra
 
 One line per decision, newest first. Started November 16, 2026. Decisions before Session 29 are in the log below, by session.
 
+- 2026-11-24: The nightly recycle purge also clears api_error_log (30 days), rate_limit_counters (window over 2 days), expired revoked_refresh_tokens and scheduler_runs (7 days).
+- 2026-11-24: render.yaml records the Render settings, with no preDeployCommand, because migrations stay hand-run SQL in Supabase.
+- 2026-11-24: JWTs use PyJWT (python-jose removed). The unused supabase package is removed and PyJWT is pinned on its own.
+- 2026-11-24: All AI features share one AsyncAnthropic client (services/ai_client.py) with a 30-second timeout and 2 retries.
+- 2026-11-24: Refresh tokens carry a jti and are single use. Use and logout are recorded in revoked_refresh_tokens, a reuse after a 30-second grace ends every session of the account, and POST /auth/logout-all bumps token_version (migration 070).
+- 2026-11-24: Saving workspace report settings needs print_reports, the same as export, email and templates.
+- 2026-11-24: Request fields have size limits (schemas/limits.py), and bodies over 5 MB (12 MB for uploads) are refused with 413.
+- 2026-11-24: Production refuses to start with a JWT secret under 32 characters, the example value, or an admin secret equal to the user secret. Other environments log a critical warning.
+- 2026-11-24: bcrypt is pinned to 5.0.0, and input is cut to 72 bytes in one helper so long passwords never error and old hashes still match.
+- 2026-11-24: Risk, incident and submission numbers come from one id_counters row per workspace and scope, taken with an atomic upsert seeded from the highest number in use. Formats are unchanged, and a deleted record's number is not reused (migration 069).
+- 2026-11-24: Submission references are unique per workspace. The index is skipped with a notice where old duplicates exist, so no emailed reference is renamed (migration 069).
+- 2026-11-24: external_submissions gets an index on (tenant_id, status) for the pending list (migration 069).
+- 2026-11-24: A plain ValueError is no longer sent to users; it is logged and answered with the generic 500. User-facing errors raise ValidationError, which now subclasses ValueError. This replaces the 2026-09-10 ValueError to 422 mapping.
+- 2026-11-24: Missing AI or email configuration raises ServerError with a plain message, not the variable name.
+- 2026-11-24: Every error reply uses the envelope: HTTPException, request validation (readable "field: problem" text, raw input left out), rate limit (429) and IntegrityError (409).
+- 2026-11-24: Logging is set up once at startup (time, level, logger, request id), and X-Request-ID is returned on every reply. Sentry is not added.
+- 2026-11-24: The error log blanks any field whose name contains token, password, pin, secret, key, otp, credential or authorization, at any depth, and records crashes with the error type and first line.
+- 2026-11-24: Request emails are sent from a worker thread (services/offload.py run_in_background); scheduled emails and the report and brief sends are awaited with asyncio.to_thread.
+- 2026-11-24: bcrypt hashing and checks, and PDF and PPTX building, run in worker threads with asyncio.to_thread. No job queue is added.
+- 2026-11-24: An SLA breach alert is sent once per incident, recorded in incidents.escalated_at; a failed send retries next hour (migration 068).
+- 2026-11-24: Each scheduled job slot is claimed in scheduler_runs (job id + nearest minute) so it runs once across app copies; advisory locks were not used because of the transaction pooler (migration 068).
+- 2026-11-24: Claude pushes each gap map batch to staging directly, with a .md notes file, at the user's request.
+- 2026-11-24: PIN lockout counts per member (workspace_members.pin_attempts, pin_locked_until), replacing the per-workspace lock in setup section 28 (migration 067).
+- 2026-11-24: Failed PIN and admin sign-in attempts are written in their own committed session (services/lockout.py), so the request rollback cannot undo them.
+- 2026-11-24: Admin sign-in is limited to 5 per minute per IP and locks the admin for 15 minutes after 5 wrong passwords (migration 067).
+- 2026-11-24: Approving or returning an outside submission needs manage_risks (risk) or manage_incidents (incident); the pending list and count show only types the member can review.
+- 2026-11-24: Reviewer and actor columns store the email. Old account ids are backfilled only where the account is a member of that workspace, with a backup table for the downgrade.
+- 2026-11-24: The public form reads the caller IP through client_ip (trusted proxies only) and is limited by slowapi on top of the DB counters.
+- 2026-11-24: Sign-in with an unknown email still runs one bcrypt check, so reply time does not reveal which emails exist.
 - 2026-11-21: Claude committed and pushed Session 32 to staging at the user's request.
 - 2026-11-21: Light brand colors are made readable by derived text colors, not blocked on save.
 - 2026-11-21: The report email header stays SmartRisk branded.

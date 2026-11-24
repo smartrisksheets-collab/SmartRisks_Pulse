@@ -13,7 +13,7 @@ from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.exceptions import DuplicateResourceError, ResourceNotFoundError
+from app.core.exceptions import DuplicateResourceError, ResourceNotFoundError, ServerError
 from app.models.account import Account
 from app.models.tenant import Tenant
 from app.models.incident import Incident
@@ -39,6 +39,8 @@ from app.schemas.submission import (
 from app.services import incident as incident_svc
 from app.services import lookup as lookup_svc
 from app.services import risk as risk_svc
+from app.services.id_counter import next_number
+from app.services.offload import run_in_background
 
 logger = logging.getLogger(__name__)
 
@@ -104,19 +106,27 @@ def _token_is_active(t: SubmissionToken) -> bool:
 
 async def _generate_reference(db: AsyncSession, workspace_id: UUID) -> str:
     year = datetime.now(timezone.utc).strftime('%Y')
-    result = await db.execute(
-        select(func.count()).select_from(RiskSubmission)
-        .where(RiskSubmission.workspace_id == workspace_id)
-    )
-    count = result.scalar_one() or 0
-    return f"SUB-{year}-{str(count + 1).zfill(4)}"
+    # One sequence across years (SUB-2026-0041 is followed by SUB-2027-0042),
+    # as before. Seeded from the highest number and the row count, since old
+    # count-based references may have gaps.
+    row = (await db.execute(
+        text("""
+            SELECT COALESCE(MAX(CAST(SUBSTRING(reference FROM '^SUB-[0-9]{4}-([0-9]+)$') AS INTEGER)), 0),
+                   COUNT(*)
+            FROM risk_submissions
+            WHERE workspace_id = :w
+        """),
+        {"w": str(workspace_id)},
+    )).one()
+    n = await next_number(db, workspace_id, "submission", max(int(row[0] or 0), int(row[1] or 0)))
+    return f"SUB-{year}-{str(n).zfill(4)}"
 
 
 # ── Notification emails ───────────────────────────────────────────────────────
 
 def _init_resend() -> None:
     if not settings.RESEND_API_KEY:
-        raise ValueError("RESEND_API_KEY is not configured")
+        raise ServerError("Email sending is not set up on the server.")
     resend.api_key = settings.RESEND_API_KEY
 
 
@@ -147,7 +157,7 @@ def _send_acknowledgement(sub: RiskSubmission) -> None:
             "subject": f"Submission received — {str(sub.reference or '')}",
             "html":    html,
         }
-        resend.Emails.send(params)
+        run_in_background(resend.Emails.send, params)
     except Exception:
         logger.exception("Failed to send acknowledgement email | ref=%s", sub.reference)
 
@@ -186,7 +196,7 @@ def _send_outcome_email(
             "subject": f"Submission outcome — {str(sub.reference or '')}",
             "html":    html,
         }
-        resend.Emails.send(params)
+        run_in_background(resend.Emails.send, params)
     except Exception:
         logger.exception("Failed to send outcome email | ref=%s", sub.reference)
 

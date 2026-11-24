@@ -1,5 +1,6 @@
 # app/api/v1/routes/reports.py
 
+import asyncio
 import logging
 from datetime import date, datetime
 from uuid import UUID
@@ -163,7 +164,10 @@ async def export_report(
         _logo   = await _fetch_logo_bytes(db, tenant_id)
         _pal    = await _get_palette(db, tenant_id)
         builder = pptx_report.build_pptx if fmt == "pptx" else pdf_report.build_pdf
-        file_bytes = builder(
+        # PDF and PPTX building is CPU work; a worker thread keeps the server
+        # answering other users meanwhile. The palette ContextVar is copied in.
+        file_bytes = await asyncio.to_thread(
+            builder,
             blocks=payload.blocks,
             block_data=payload.block_data,
             ai_data=payload.ai_data,
@@ -214,7 +218,8 @@ async def email_report(
         _org, _ = await _get_tenant_name(db, tenant_id)
         _logo   = await _fetch_logo_bytes(db, tenant_id)
         _pal    = await _get_palette(db, tenant_id)
-        pdf_bytes = pdf_report.build_pdf(
+        pdf_bytes = await asyncio.to_thread(
+            pdf_report.build_pdf,
             blocks=payload.blocks,
             block_data=payload.block_data,
             ai_data=payload.ai_data,
@@ -340,7 +345,7 @@ async def get_report_settings(
 async def save_report_settings_route(
     payload: ReportSettingsSaveRequest,
     db:      AsyncSession = Depends(get_db),
-    claims:  dict         = Depends(get_active_tenant),
+    claims:  dict         = Depends(require_permission("print_reports")),
 ):
     tenant_id = UUID(claims["active_tenant_id"])
     try:

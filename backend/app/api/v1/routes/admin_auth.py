@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_db
 from app.core.admin_deps import get_current_admin
+from app.core.rate_limit import limiter
 from app.models.admin_account import AdminAccount
 from app.schemas.admin import AdminLoginRequest, AdminTokenResponse
 from app.services import admin_auth as admin_auth_service
@@ -11,7 +12,9 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 
 @router.post("/auth/login")
+@limiter.limit("5/minute")
 async def login(
+    request: Request,
     payload: AdminLoginRequest,
     db: AsyncSession = Depends(get_db),
 ):

@@ -13,10 +13,13 @@ import logging
 from uuid import UUID
 
 from anthropic import AsyncAnthropic
+
+from app.services.ai_client import get_client
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.services.settings import get_ai_config
+from app.core.exceptions import ValidationError, ServerError
 
 logger = logging.getLogger(__name__)
 
@@ -393,11 +396,11 @@ async def generate_report_narrative(
     Returns a dict of {block_key: narrative_text}.
     """
     if not settings.ANTHROPIC_API_KEY:
-        raise ValueError("ANTHROPIC_API_KEY is not configured")
+        raise ServerError('AI is not available right now. Please try again later.')
 
     ai_cfg = await get_ai_config(db, tenant_id)
     if not ai_cfg['enabled']:
-        raise ValueError('AI is disabled for this workspace.')
+        raise ValidationError('AI is disabled for this workspace.')
 
     model       = ai_cfg['model']
     temperature = _CONFIDENCE_TEMPERATURE.get(ai_cfg['confidence'], 0.5)
@@ -419,7 +422,7 @@ async def generate_report_narrative(
     if not ai_blocks:
         return {}
 
-    client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+    client = get_client()
     results: dict[str, str | None] = {}
 
     import asyncio

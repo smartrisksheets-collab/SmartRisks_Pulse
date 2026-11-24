@@ -1,4 +1,5 @@
 from pydantic import BaseModel, EmailStr, field_validator
+from app.schemas.limits import Short, Tiny
 from uuid import UUID
 
 _ROLES: frozenset[str] = frozenset({"Owner", "Manager", "Analyst"})
@@ -6,8 +7,8 @@ _ROLES: frozenset[str] = frozenset({"Owner", "Manager", "Analyst"})
 
 class AddMemberRequest(BaseModel):
     email: EmailStr
-    name: str
-    role: str = "Analyst"
+    name: Short
+    role: Tiny = "Analyst"
 
     @field_validator("role")
     @classmethod
@@ -18,8 +19,8 @@ class AddMemberRequest(BaseModel):
 
 
 class UpdateMemberRequest(BaseModel):
-    name: str | None = None
-    role: str | None = None
+    name: Short | None = None
+    role: Tiny | None = None
     permissions: dict[str, bool] | None = None
     reset_permissions: bool = False
 
@@ -45,14 +46,14 @@ class WorkspaceMemberResponse(BaseModel):
 
 
 class CreateWorkspaceRequest(BaseModel):
-    name: str
-    org_name: str | None = None
-    industry: str | None = None
-    org_size: str | None = None
-    framework: str | None = None
-    timezone: str | None = None
-    date_format: str | None = None
-    currency: str | None = None
+    name: Short
+    org_name: Short | None = None
+    industry: Short | None = None
+    org_size: Tiny | None = None
+    framework: Short | None = None
+    timezone: Tiny | None = None
+    date_format: Tiny | None = None
+    currency: Tiny | None = None
 
 
 class WorkspaceResponse(BaseModel):
