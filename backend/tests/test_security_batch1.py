@@ -176,6 +176,22 @@ async def test_pin_inactive_member_and_removed_pin(session: AsyncSession, seed: 
 
 # ── Item 2: admin sign-in ────────────────────────────────────────────────────
 
+@pytest.mark.asyncio
+async def test_new_or_removed_pin_clears_every_member_lock(session: AsyncSession, seed: dict) -> None:
+    from app.schemas.settings import PINSet
+    from app.services import settings as settings_svc
+    tid = await _pin_workspace(session, seed)
+    aid, _ = await _account(session)
+    mid = await _member(session, tid, aid)
+    lock = text("UPDATE workspace_members SET pin_attempts = 5, pin_locked_until = now() + interval '15 minutes' WHERE id = :id")
+    state = text("SELECT pin_attempts, pin_locked_until FROM workspace_members WHERE id = :id")
+    for change in (lambda: settings_svc.set_pin(session, uuid.UUID(tid), PINSet(new_pin="654321")),
+                   lambda: settings_svc.remove_pin(session, uuid.UUID(tid), "Owner")):
+        await session.execute(lock, {"id": mid})
+        await change()
+        assert tuple((await session.execute(state, {"id": mid})).one()) == (0, None)
+
+
 async def _admin(s: AsyncSession, status: str = "ACTIVE") -> str:
     email = f"admin-{uuid.uuid4().hex[:8]}@example.com"
     pw = bcrypt.hashpw(b"AdminPass1!", bcrypt.gensalt(4)).decode()
