@@ -15,6 +15,7 @@ Reminder schedule (days into grace):
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import date
 from uuid import UUID
@@ -108,7 +109,8 @@ async def run_trial_cleanup(db: AsyncSession) -> None:
             continue
 
         try:
-            send_trial_expiry_reminder(
+            await asyncio.to_thread(
+                send_trial_expiry_reminder,
                 to=str(owner.email),
                 workspace_name=str(tenant.name or "your workspace"),
                 days_remaining=days_remaining,

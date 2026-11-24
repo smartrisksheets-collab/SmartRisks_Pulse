@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import httpx
 
@@ -119,9 +120,9 @@ async def login(db: AsyncSession, email: str, password: str) -> dict:
         "or use Forgot password to set a password."
     )
     if not account or not account.password_hash:
-        burn_password_check(password)
+        await asyncio.to_thread(burn_password_check, password)
         raise InvalidCredentialsError(_bad_login)
-    if not verify_password(password, str(account.password_hash)):
+    if not await asyncio.to_thread(verify_password, password, str(account.password_hash)):
         raise InvalidCredentialsError(_bad_login)
 
     account.last_login = datetime.now(timezone.utc)  # type: ignore[assignment]
@@ -227,7 +228,7 @@ async def verify_pin_and_issue_token(db: AsyncSession, claims: dict, pin: str) -
             f"{mins} minute{'s' if mins != 1 else ''}."
         )
 
-    if not verify_pin(pin, str(tenant.pin_hash or "")):
+    if not await asyncio.to_thread(verify_pin, pin, str(tenant.pin_hash or "")):
         remaining = await lockout.record_failure(
             "member_pin", member_id, settings.PIN_MAX_ATTEMPTS, settings.PIN_LOCK_MINUTES,
         )
@@ -339,7 +340,7 @@ async def reset_password(db: AsyncSession, token: str, new_password: str) -> dic
         raise InvalidTokenError("This reset link has already been used. Request a new one.")
     if str(claims.get("email", "")).lower() != str(account.email or "").lower():
         raise InvalidTokenError("Invalid or expired reset link.")
-    account.password_hash = hash_password(new_password)  # type: ignore[assignment]
+    account.password_hash = await asyncio.to_thread(hash_password, new_password)  # type: ignore[assignment]
     account.token_version = (int(account.token_version or 1)) + 1  # type: ignore[assignment]
     db.add(account)
     await db.flush()
@@ -363,7 +364,7 @@ async def register(db: AsyncSession, email: str, password: str, name: str) -> di
     account = Account(
         email=email.lower(),
         name=name,
-        password_hash=hash_password(password),
+        password_hash=await asyncio.to_thread(hash_password, password),
         created_via="register",
         last_login=datetime.now(timezone.utc),
     )

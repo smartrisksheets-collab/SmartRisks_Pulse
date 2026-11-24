@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import io
 import logging
+import threading
 from contextvars import ContextVar
 from datetime import date
 from typing import Any
@@ -348,6 +349,7 @@ def _kpi_table(kpis: list[dict], col_width: float = 50 * mm) -> Table:
 # ── Jakarta font migration ─────────────────────────────────────────────────────
 
 _JAKARTA_APPLIED = False
+_JAKARTA_LOCK = threading.Lock()
 
 def _apply_jakarta_fonts() -> None:
     """
@@ -356,6 +358,13 @@ def _apply_jakarta_fonts() -> None:
     Inline styles created inside renderer functions are migrated when
     those renderers are rewritten during the visual upgrade phases.
     """
+    # Exports run in worker threads; the lock makes two first exports wait
+    # for one full style migration instead of one seeing it half done.
+    with _JAKARTA_LOCK:
+        _apply_jakarta_fonts_once()
+
+
+def _apply_jakarta_fonts_once() -> None:
     global _JAKARTA_APPLIED
     if _JAKARTA_APPLIED:
         return

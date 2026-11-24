@@ -65,24 +65,26 @@ async def lifespan(_app: FastAPI):
     from app.services.report_fonts import register_fonts
     register_fonts()
 
+    from app.scheduler.single_run import single_run
+
     scheduler = AsyncIOScheduler()
 
     # Daily per-risk snapshot — midnight UTC
-    scheduler.add_job(job_daily_snapshot,   "cron", hour=0,  minute=0,  id="daily_snapshot")
+    scheduler.add_job(single_run("daily_snapshot", job_daily_snapshot),   "cron", hour=0,  minute=0,  id="daily_snapshot")
     # Monthly aggregate snapshot — 00:05 on 1st of month
-    scheduler.add_job(job_monthly_snapshot, "cron", hour=0,  minute=5,  day=1, id="monthly_snapshot")
+    scheduler.add_job(single_run("monthly_snapshot", job_monthly_snapshot), "cron", hour=0,  minute=5,  day=1, id="monthly_snapshot")
     # Recycle bin purge — 02:00 UTC
-    scheduler.add_job(job_recycle_purge,    "cron", hour=2,  minute=0,  id="recycle_purge")
+    scheduler.add_job(single_run("recycle_purge", job_recycle_purge),    "cron", hour=2,  minute=0,  id="recycle_purge")
     # Orphaned logo sweep, 03:00 UTC on Sundays
-    scheduler.add_job(job_orphan_logo_sweep, "cron", day_of_week="sun", hour=3, minute=0, id="orphan_logo_sweep")
+    scheduler.add_job(single_run("orphan_logo_sweep", job_orphan_logo_sweep), "cron", day_of_week="sun", hour=3, minute=0, id="orphan_logo_sweep")
     # Freshness recompute — 06:00 UTC
-    scheduler.add_job(job_freshness_update, "cron", hour=6,  minute=0,  id="freshness_update")
+    scheduler.add_job(single_run("freshness_update", job_freshness_update), "cron", hour=6,  minute=0,  id="freshness_update")
     # Brief dispatch — every hour 07:00 to 10:00 UTC; each job checks per-tenant send time
-    scheduler.add_job(job_brief_send,        "cron", minute=0,  id="brief_send")
-    scheduler.add_job(job_incident_escalation, "cron", minute=0,              id="incident_escalation")
-    scheduler.add_job(job_trial_cleanup,        "cron", hour=5, minute=0,      id="trial_cleanup")
+    scheduler.add_job(single_run("brief_send", job_brief_send),        "cron", minute=0,  id="brief_send")
+    scheduler.add_job(single_run("incident_escalation", job_incident_escalation), "cron", minute=0,              id="incident_escalation")
+    scheduler.add_job(single_run("trial_cleanup", job_trial_cleanup),        "cron", hour=5, minute=0,      id="trial_cleanup")
     # Ask Pulse unanswered questions, 07:30 UTC on Mondays
-    scheduler.add_job(job_help_gaps_report, "cron", day_of_week="mon", hour=7, minute=30, id="help_gaps_report")
+    scheduler.add_job(single_run("help_gaps_report", job_help_gaps_report), "cron", day_of_week="mon", hour=7, minute=30, id="help_gaps_report")
 
     scheduler.start()
     yield

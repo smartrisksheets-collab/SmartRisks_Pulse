@@ -8,12 +8,15 @@ Future phases (Brief engine, Phase 10) will add more functions here.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import date
 from html import escape as _esc
 from urllib.parse import quote as _url_quote
 
 import resend
+
+from app.services.offload import run_in_background
 
 from app.core.config import settings
 
@@ -256,7 +259,7 @@ async def send_report_email(
     if cc:
         params["cc"] = cc  # type: ignore[typeddict-unknown-key]
 
-    resend.Emails.send(params)
+    await asyncio.to_thread(resend.Emails.send, params)
     logger.info("Report email sent | to=%s | cc=%d | subject=%s", to, len(cc or []), subject)
 
 
@@ -349,7 +352,7 @@ def send_submission_confirmation(
         "subject": f"{label} Submission Confirmed — {submission_id}",
         "html":    _ext_wrap(org_name, body),
     }
-    resend.Emails.send(params)
+    run_in_background(resend.Emails.send, params)
     logger.info("Submission confirmation sent | to=%s | id=%s", to, submission_id)
 
 
@@ -392,7 +395,7 @@ def send_approval_email(
         "subject": f"Submission Approved — {org_name}",
         "html":    _ext_wrap(org_name, body),
     }
-    resend.Emails.send(params)
+    run_in_background(resend.Emails.send, params)
     logger.info("Approval email sent | to=%s | created_id=%s", to, created_id)
 
 
@@ -440,7 +443,7 @@ def send_return_email(
         "subject": f"Submission Returned — {org_name}",
         "html":    _ext_wrap(org_name, body),
     }
-    resend.Emails.send(params)
+    run_in_background(resend.Emails.send, params)
     logger.info("Return email sent | to=%s", to)
 
 
@@ -839,7 +842,7 @@ def send_invite_email(
         "subject": f"You've been added to {workspace_name} on SmartRisk",
         "html":    _ext_wrap(workspace_name, body),
     }
-    resend.Emails.send(params)
+    run_in_background(resend.Emails.send, params)
     logger.info("Invite email sent | to=%s | workspace=%s", to, workspace_name)
 
 
@@ -882,7 +885,7 @@ def send_reset_email(to: str, reset_link: str, set_password: bool = False) -> No
         "subject": subject,
         "html":    _ext_wrap("SmartRisk Pulse", body),
     }
-    resend.Emails.send(params)
+    run_in_background(resend.Emails.send, params)
     logger.info("Reset email sent | to=%s", to)
 
 
@@ -892,8 +895,8 @@ def send_escalation_alert(
     severity: str,
     age_hours: float,
     tenant_name: str,
-) -> None:
-    """Send SLA breach escalation notification via Resend."""
+) -> bool:
+    """Send SLA breach escalation notification via Resend. True when sent."""
     _init()
     age_display = f"{int(age_hours)}h" if age_hours < 24 else f"{round(age_hours / 24, 1)}d"
     html = (
@@ -916,6 +919,8 @@ def send_escalation_alert(
         })
     except Exception:
         logger.warning("send_escalation_alert failed for incident=%s to=%s", incident_id, to)
+        return False
+    return True
 
 
 async def send_brief_email(
@@ -941,7 +946,7 @@ async def send_brief_email(
     if bcc:
         params["bcc"] = bcc  # type: ignore[typeddict-unknown-key]
 
-    resend.Emails.send(params)
+    await asyncio.to_thread(resend.Emails.send, params)
     logger.info("Brief email sent | to=%s | subject=%s", to, subject)
 
 def send_payment_receipt_email(
@@ -998,7 +1003,7 @@ def send_payment_receipt_email(
             }
         ],
     }
-    resend.Emails.send(params)
+    run_in_background(resend.Emails.send, params)
     logger.info("Receipt email sent | to=%s | workspace=%s", to, workspace_name)
 
 def send_trial_expiry_reminder(
@@ -1057,7 +1062,7 @@ def send_trial_expiry_reminder(
         "subject": subject,
         "html":    html_body,
     }
-    resend.Emails.send(params)
+    run_in_background(resend.Emails.send, params)
     logger.info(
         "Trial expiry reminder sent | to=%s | workspace=%s | reminder=%d | days_remaining=%d",
         to, workspace_name, reminder_num, days_remaining,
@@ -1098,5 +1103,5 @@ def send_help_gaps_email(to: str, gaps: list, days: int) -> None:
         "subject": f"Ask Pulse: {len(gaps)} unanswered question{'s' if len(gaps) != 1 else ''} this week",
         "html":    _ext_wrap("SmartRisk Pulse", build_help_gaps_html(gaps, days)),
     }
-    resend.Emails.send(params)
+    run_in_background(resend.Emails.send, params)
     logger.info("Help gaps email sent | to=%s | gaps=%d", to, len(gaps))

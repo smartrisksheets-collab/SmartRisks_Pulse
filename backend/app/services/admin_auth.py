@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,7 +25,7 @@ async def login(
     admin = result.scalar_one_or_none()
 
     if not admin:
-        burn_password_check(password)
+        await asyncio.to_thread(burn_password_check, password)
         raise InvalidCredentialsError("Invalid email or password.")
 
     admin_id = str(admin.id)
@@ -36,7 +37,7 @@ async def login(
             f"{mins} minute{'s' if mins != 1 else ''}."
         )
 
-    if not verify_password(password, str(admin.password_hash)):
+    if not await asyncio.to_thread(verify_password, password, str(admin.password_hash)):
         await lockout.record_failure(
             "admin_login", admin_id,
             settings.ADMIN_LOGIN_MAX_ATTEMPTS, settings.ADMIN_LOCK_MINUTES,

@@ -8,6 +8,10 @@ Plain English record of every significant decision made during the build, who ra
 
 One line per decision, newest first. Started November 16, 2026. Decisions before Session 29 are in the log below, by session.
 
+- 2026-11-24: Request emails are sent from a worker thread (services/offload.py run_in_background); scheduled emails and the report and brief sends are awaited with asyncio.to_thread.
+- 2026-11-24: bcrypt hashing and checks, and PDF and PPTX building, run in worker threads with asyncio.to_thread. No job queue is added.
+- 2026-11-24: An SLA breach alert is sent once per incident, recorded in incidents.escalated_at; a failed send retries next hour (migration 068).
+- 2026-11-24: Each scheduled job slot is claimed in scheduler_runs (job id + nearest minute) so it runs once across app copies; advisory locks were not used because of the transaction pooler (migration 068).
 - 2026-11-24: Claude pushes each gap map batch to staging directly, with a .md notes file, at the user's request.
 - 2026-11-24: PIN lockout counts per member (workspace_members.pin_attempts, pin_locked_until), replacing the per-workspace lock in setup section 28 (migration 067).
 - 2026-11-24: Failed PIN and admin sign-in attempts are written in their own committed session (services/lockout.py), so the request rollback cannot undo them.

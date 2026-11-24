@@ -39,6 +39,7 @@ from app.schemas.submission import (
 from app.services import incident as incident_svc
 from app.services import lookup as lookup_svc
 from app.services import risk as risk_svc
+from app.services.offload import run_in_background
 
 logger = logging.getLogger(__name__)
 
@@ -147,7 +148,7 @@ def _send_acknowledgement(sub: RiskSubmission) -> None:
             "subject": f"Submission received — {str(sub.reference or '')}",
             "html":    html,
         }
-        resend.Emails.send(params)
+        run_in_background(resend.Emails.send, params)
     except Exception:
         logger.exception("Failed to send acknowledgement email | ref=%s", sub.reference)
 
@@ -186,7 +187,7 @@ def _send_outcome_email(
             "subject": f"Submission outcome — {str(sub.reference or '')}",
             "html":    html,
         }
-        resend.Emails.send(params)
+        run_in_background(resend.Emails.send, params)
     except Exception:
         logger.exception("Failed to send outcome email | ref=%s", sub.reference)
 

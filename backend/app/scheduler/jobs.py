@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timezone, date
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -114,7 +115,7 @@ async def job_help_gaps_report() -> None:
         async with AsyncSessionLocal() as db:
             gaps = await unanswered_questions(db, settings.HELP_REPORT_DAYS)
         if gaps:
-            send_help_gaps_email(settings.HELP_REPORT_EMAIL, gaps, settings.HELP_REPORT_DAYS)
+            await asyncio.to_thread(send_help_gaps_email, settings.HELP_REPORT_EMAIL, gaps, settings.HELP_REPORT_DAYS)
     except Exception:
         logger.exception("job_help_gaps_report failed")
 
@@ -293,6 +294,15 @@ async def job_incident_escalation() -> None:
                         .limit(1)
                     )).scalar_one_or_none()
 
+                    # Incidents already alerted. Read with SQL text so the ORM
+                    # model stays usable before migration 068 has run.
+                    escalated = {
+                        str(r[0]) for r in (await db.execute(
+                            text("SELECT id FROM incidents WHERE tenant_id = :t AND escalated_at IS NOT NULL"),
+                            {"t": str(tid)},
+                        )).all()
+                    }
+
                     for inc in incidents:
                         if inc.created_at is None:
                             continue
@@ -310,14 +320,23 @@ async def job_incident_escalation() -> None:
                             and target_h is not None
                             and compute_breach(age_hours, target_h)
                             and owner_email_row
+                            and str(inc.id) not in escalated
                         ):
-                            send_escalation_alert(
+                            sent = await asyncio.to_thread(
+                                send_escalation_alert,
                                 to=str(owner_email_row),
                                 incident_id=str(inc.id or ''),
                                 severity=severity_label,
                                 age_hours=age_hours,
                                 tenant_name=tenant_name,
                             )
+                            if sent:
+                                # Sent once per incident; a failed send retries next hour.
+                                await db.execute(
+                                    text("UPDATE incidents SET escalated_at = now() "
+                                         "WHERE tenant_id = :t AND id = :id"),
+                                    {"t": str(tid), "id": str(inc.id)},
+                                )
 
                         flag_hours = rule.flag_unowned_after_hours
                         if (
@@ -426,4 +445,4 @@ async def job_brief_send() -> None:
                     logger.info("job_brief_send: sent for tenant=%s to=%d recipients", tenant.id, len(recipient_list))
 
         except Exception:
-            logger.exception("job_brief_send failed for tenant=%s", tenant.id)
+            logger.exception("job_brief_send failed for tenant=%s", tenant.id)
