@@ -8,6 +8,9 @@ Plain English record of every significant decision made during the build, who ra
 
 One line per decision, newest first. Started November 16, 2026. Decisions before Session 29 are in the log below, by session.
 
+- 2026-11-24: Risk, incident and submission numbers come from one id_counters row per workspace and scope, taken with an atomic upsert seeded from the highest number in use. Formats are unchanged, and a deleted record's number is not reused (migration 069).
+- 2026-11-24: Submission references are unique per workspace. The index is skipped with a notice where old duplicates exist, so no emailed reference is renamed (migration 069).
+- 2026-11-24: external_submissions gets an index on (tenant_id, status) for the pending list (migration 069).
 - 2026-11-24: A plain ValueError is no longer sent to users; it is logged and answered with the generic 500. User-facing errors raise ValidationError, which now subclasses ValueError. This replaces the 2026-09-10 ValueError to 422 mapping.
 - 2026-11-24: Missing AI or email configuration raises ServerError with a plain message, not the variable name.
 - 2026-11-24: Every error reply uses the envelope: HTTPException, request validation (readable "field: problem" text, raw input left out), rate limit (429) and IntegrityError (409).

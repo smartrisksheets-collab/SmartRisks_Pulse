@@ -7,10 +7,11 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select, delete, func
+from sqlalchemy import select, delete, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import ResourceNotFoundError, ValidationError
+from app.services.id_counter import next_number
 from app.models.incident import Incident
 from app.models.risk import Risk
 from app.models.audit_log import AuditLog
@@ -108,18 +109,16 @@ async def _audit(
 async def _generate_id(db: AsyncSession, tenant_id: UUID) -> str:
     year = datetime.now(timezone.utc).strftime('%Y')
     prefix = f'INC-{year}-'
-    result = await db.execute(
-        select(Incident.id)
-        .where(Incident.tenant_id == tenant_id)
-        .where(Incident.id.like(f'{prefix}%'))
+    max_n = await db.scalar(
+        text("""
+            SELECT COALESCE(MAX(CAST(SUBSTRING(id FROM '^INC-[0-9]{4}-([0-9]+)$') AS INTEGER)), 0)
+            FROM incidents
+            WHERE tenant_id = :tid AND id LIKE :prefix
+        """),
+        {'tid': str(tenant_id), 'prefix': f'{prefix}%'},
     )
-    existing = result.scalars().all()
-    max_n = 0
-    for inc_id in existing:
-        m = re.match(r'^INC-\d{4}-(\d+)$', str(inc_id))
-        if m:
-            max_n = max(max_n, int(m.group(1)))
-    return f'{prefix}{str(max_n + 1).zfill(3)}'
+    n = await next_number(db, tenant_id, f'incident:{year}', int(max_n or 0))
+    return f'{prefix}{str(n).zfill(3)}'
 
 
 async def _validate_linked_risk(db: AsyncSession, tenant_id: UUID, risk_id: str) -> None:
