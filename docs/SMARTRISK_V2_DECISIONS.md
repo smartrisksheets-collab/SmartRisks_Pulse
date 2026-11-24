@@ -8,6 +8,11 @@ Plain English record of every significant decision made during the build, who ra
 
 One line per decision, newest first. Started November 16, 2026. Decisions before Session 29 are in the log below, by session.
 
+- 2026-11-24: A plain ValueError is no longer sent to users; it is logged and answered with the generic 500. User-facing errors raise ValidationError, which now subclasses ValueError. This replaces the 2026-09-10 ValueError to 422 mapping.
+- 2026-11-24: Missing AI or email configuration raises ServerError with a plain message, not the variable name.
+- 2026-11-24: Every error reply uses the envelope: HTTPException, request validation (readable "field: problem" text, raw input left out), rate limit (429) and IntegrityError (409).
+- 2026-11-24: Logging is set up once at startup (time, level, logger, request id), and X-Request-ID is returned on every reply. Sentry is not added.
+- 2026-11-24: The error log blanks any field whose name contains token, password, pin, secret, key, otp, credential or authorization, at any depth, and records crashes with the error type and first line.
 - 2026-11-24: Request emails are sent from a worker thread (services/offload.py run_in_background); scheduled emails and the report and brief sends are awaited with asyncio.to_thread.
 - 2026-11-24: bcrypt hashing and checks, and PDF and PPTX building, run in worker threads with asyncio.to_thread. No job queue is added.
 - 2026-11-24: An SLA breach alert is sent once per incident, recorded in incidents.escalated_at; a failed send retries next hour (migration 068).

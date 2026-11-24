@@ -23,6 +23,7 @@ from app.schemas.dashboard import UnifiedBriefResponse
 from app.services.brief_facts import brief_facts, facts_hash
 from app.services.dashboard import get_dashboard
 from app.services.settings import get_ai_config
+from app.core.exceptions import ValidationError, ServerError
 
 logger = logging.getLogger(__name__)
 
@@ -65,15 +66,15 @@ async def generate_unified_brief(
     user_email: str | None,
 ) -> UnifiedBriefResponse:
     if not settings.ANTHROPIC_API_KEY:
-        raise ValueError("ANTHROPIC_API_KEY is not configured.")
+        raise ServerError('AI is not available right now. Please try again later.')
 
     ai_cfg = await get_ai_config(db, tenant_id)
     if not ai_cfg["enabled"]:
-        raise ValueError("AI is not enabled for this workspace.")
+        raise ValidationError("AI is not enabled for this workspace.")
 
     data = await get_dashboard(db, tenant_id)
     if data.correlation.risks_total == 0 and data.correlation.incidents_total == 0:
-        raise ValueError("There is no risk or incident data to summarise yet.")
+        raise ValidationError("There is no risk or incident data to summarise yet.")
 
     facts = brief_facts(data)
     fingerprint = facts_hash(facts)
@@ -93,16 +94,16 @@ async def generate_unified_brief(
         raw = msg.content[0].text.strip()
     except Exception as exc:
         logger.error("ai_unified.generate_unified_brief failed: %s", exc)
-        raise ValueError("The executive brief is temporarily unavailable.") from exc
+        raise ValidationError("The executive brief is temporarily unavailable.") from exc
 
     try:
         paragraphs = _parse(raw)
     except Exception as exc:
         logger.error("ai_unified parse failed: %s | raw: %s", exc, raw[:200])
-        raise ValueError("The executive brief could not be read. Please try again.") from exc
+        raise ValidationError("The executive brief could not be read. Please try again.") from exc
 
     if not paragraphs:
-        raise ValueError("The executive brief came back empty. Please try again.")
+        raise ValidationError("The executive brief came back empty. Please try again.")
 
     now = datetime.now(timezone.utc)
     row = await db.get(DashboardBrief, tenant_id)

@@ -22,7 +22,7 @@ from app.schemas.risk import (
     RiskContext, RiskHistoryItem, RiskLinkedIncident,
 )
 from app.core.config import settings
-from app.core.exceptions import ResourceNotFoundError, QuotaExceededError
+from app.core.exceptions import QuotaExceededError, ResourceNotFoundError, ValidationError
 from app.models.appetite_threshold import AppetiteThreshold
 from app.models.matrix_config import MatrixConfig
 from app.services.matrix_config import _get_or_create as _get_matrix
@@ -751,7 +751,7 @@ async def score_preview(db: AsyncSession, tenant_id: UUID, payload: ScorePreview
     cfg = await _get_matrix(db, tenant_id)
     scale = int(cfg.ce_scale)  # type: ignore[arg-type]
     if payload.control_effectiveness is not None and payload.control_effectiveness > scale:
-        raise ValueError(f'Control effectiveness {payload.control_effectiveness} is outside 0 to {scale}.')
+        raise ValidationError(f'Control effectiveness {payload.control_effectiveness} is outside 0 to {scale}.')
     scored = _score(payload.likelihood, payload.impact_score, payload.control_effectiveness, cfg)
     return _breakdown(
         severity=float(scored['severity']),

@@ -26,6 +26,7 @@ class Settings(BaseSettings):
 
     # App
     APP_ENV: str = "development"
+    LOG_LEVEL: str = "INFO"
     FRONTEND_URL: str = "http://localhost:5173"
     ADMIN_FRONTEND_URL: str = "http://localhost:5174"
 

@@ -19,6 +19,7 @@ import resend
 from app.services.offload import run_in_background
 
 from app.core.config import settings
+from app.core.exceptions import ServerError
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 def _init() -> None:
     if not settings.RESEND_API_KEY:
-        raise ValueError("RESEND_API_KEY is not configured")
+        raise ServerError("Email sending is not set up on the server.")
     resend.api_key = settings.RESEND_API_KEY
 
 
@@ -235,7 +236,7 @@ async def send_report_email(
     """
     _init()
     if not settings.RESEND_FROM_EMAIL:
-        raise ValueError("RESEND_FROM_EMAIL is not configured")
+        raise ServerError("Email sending is not set up on the server.")
 
     today_str  = f"{date.today().day} {date.today().strftime('%B %Y')}"
     html_body  = _build_email_html(title, block_data, ai_data, org_name, today_str)
@@ -325,7 +326,7 @@ def send_submission_confirmation(
     """
     _init()
     if not settings.RESEND_FROM_EMAIL:
-        raise ValueError("RESEND_FROM_EMAIL is not configured")
+        raise ServerError("Email sending is not set up on the server.")
 
     label = "Risk" if submission_type == "risk" else "Incident"
     body = (
@@ -370,7 +371,7 @@ def send_approval_email(
     """
     _init()
     if not settings.RESEND_FROM_EMAIL:
-        raise ValueError("RESEND_FROM_EMAIL is not configured")
+        raise ServerError("Email sending is not set up on the server.")
 
     body = (
         f'<tr><td style="padding:36px;">'
@@ -413,7 +414,7 @@ def send_return_email(
     """
     _init()
     if not settings.RESEND_FROM_EMAIL:
-        raise ValueError("RESEND_FROM_EMAIL is not configured")
+        raise ServerError("Email sending is not set up on the server.")
 
     safe_message = return_message.replace("\n", "<br>")
     body = (
@@ -810,7 +811,7 @@ def send_invite_email(
     """
     _init()
     if not settings.RESEND_FROM_EMAIL:
-        raise ValueError("RESEND_FROM_EMAIL is not configured")
+        raise ServerError("Email sending is not set up on the server.")
 
     display_name = invitee_name.strip() if invitee_name.strip() else "there"
     role_display = "Admin" if role == "Owner" else role
@@ -861,7 +862,7 @@ def send_reset_email(to: str, reset_link: str, set_password: bool = False) -> No
     subject = "Set your SmartRisk Pulse password" if set_password else "Reset your SmartRisk Pulse password"
     _init()
     if not settings.RESEND_FROM_EMAIL:
-        raise ValueError("RESEND_FROM_EMAIL is not configured")
+        raise ServerError("Email sending is not set up on the server.")
     body = (
         f'<tr><td style="padding:36px;">'
         f'<p style="font-size:15px;color:#1e293b;margin:0 0 16px;">Hi there,</p>'
@@ -935,7 +936,7 @@ async def send_brief_email(
     """
     _init()
     if not settings.RESEND_FROM_EMAIL:
-        raise ValueError("RESEND_FROM_EMAIL is not configured")
+        raise ServerError("Email sending is not set up on the server.")
 
     params: resend.Emails.SendParams = {
         "from":    settings.RESEND_FROM_EMAIL,
@@ -964,7 +965,7 @@ def send_payment_receipt_email(
     import base64
     _init()
     if not settings.RESEND_FROM_EMAIL:
-        raise ValueError("RESEND_FROM_EMAIL is not configured")
+        raise ServerError("Email sending is not set up on the server.")
 
     amount_str = f"{currency} {amount:,.2f}"
     html_body  = f"""
@@ -1014,7 +1015,7 @@ def send_trial_expiry_reminder(
 ) -> None:
     _init()
     if not settings.RESEND_FROM_EMAIL:
-        raise ValueError("RESEND_FROM_EMAIL is not configured")
+        raise ServerError("Email sending is not set up on the server.")
 
     day_word = "day" if days_remaining == 1 else "days"
     subject = f"Action required: your SmartRisk trial for {workspace_name} has expired"
@@ -1096,7 +1097,7 @@ def build_help_gaps_html(gaps: list, days: int) -> str:
 def send_help_gaps_email(to: str, gaps: list, days: int) -> None:
     _init()
     if not settings.RESEND_FROM_EMAIL:
-        raise ValueError("RESEND_FROM_EMAIL is not configured")
+        raise ServerError("Email sending is not set up on the server.")
     params: resend.Emails.SendParams = {
         "from":    settings.RESEND_FROM_EMAIL,
         "to":      [to],

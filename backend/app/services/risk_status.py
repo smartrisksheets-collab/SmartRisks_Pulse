@@ -13,6 +13,7 @@ from datetime import date, datetime, timedelta
 
 from app.models.matrix_config import MatrixConfig
 from app.services.phase_one import compute_freshness
+from app.core.exceptions import ValidationError
 
 OPEN_MITIGATION = frozenset({"Open", "In Progress"})
 EVIDENCE_WINDOW_DAYS = 365
@@ -169,9 +170,9 @@ def ce_fraction(level: int | None, scale: int) -> float | None:
     if level is None:
         return None
     if scale not in CE_SCALES:
-        raise ValueError(f"Unsupported control effectiveness scale: {scale}")
+        raise ValidationError(f"Unsupported control effectiveness scale: {scale}")
     if level < 0 or level > scale:
-        raise ValueError(f"Control effectiveness {level} is outside 0 to {scale}")
+        raise ValidationError(f"Control effectiveness {level} is outside 0 to {scale}")
     return level / scale
 
 
@@ -224,10 +225,10 @@ def resolve_ce_input(raw: int | str | None, scale: int, labels: dict[str, str]) 
             if v.strip() and v.strip().casefold() == text.casefold() and int(k) <= scale
         ]
         if not matches:
-            raise ValueError(f'Control effectiveness "{text}" is not a level or label in this workspace.')
+            raise ValidationError(f'Control effectiveness "{text}" is not a level or label in this workspace.')
         level = matches[0]
     if level < 0 or level > scale:
-        raise ValueError(f'Control effectiveness {level} is outside 0 to {scale}.')
+        raise ValidationError(f'Control effectiveness {level} is outside 0 to {scale}.')
     return level
 
 

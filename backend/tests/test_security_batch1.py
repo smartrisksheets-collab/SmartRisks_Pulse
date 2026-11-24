@@ -225,6 +225,7 @@ async def test_admin_login_route_is_rate_limited(client: AsyncClient) -> None:
         codes.append(r.status_code)
     assert codes[:5] == [401] * 5
     assert codes[5] == 429
+    assert r.json() == {"data": None, "error": "Too many requests. Please wait a minute and try again.", "meta": {}}
 
 
 # ── Item 25: sign-in timing ──────────────────────────────────────────────────

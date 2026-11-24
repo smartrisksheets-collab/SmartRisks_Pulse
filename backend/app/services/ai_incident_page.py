@@ -12,6 +12,7 @@ from app.core.config import settings
 from app.schemas.incident import IncidentInsightAction, IncidentPageInsightResponse
 from app.services.incident import get_stats
 from app.services.settings import get_ai_config
+from app.core.exceptions import ValidationError, ServerError
 
 logger = logging.getLogger(__name__)
 
@@ -77,11 +78,11 @@ async def generate_page_insights(
     tenant_id: UUID,
 ) -> IncidentPageInsightResponse:
     if not settings.ANTHROPIC_API_KEY:
-        raise ValueError('ANTHROPIC_API_KEY is not configured.')
+        raise ServerError('AI is not available right now. Please try again later.')
 
     ai_cfg = await get_ai_config(db, tenant_id)
     if not ai_cfg['enabled']:
-        raise ValueError('AI is not enabled for this workspace.')
+        raise ValidationError('AI is not enabled for this workspace.')
 
     stats = await get_stats(db, tenant_id)
 
@@ -100,12 +101,12 @@ async def generate_page_insights(
         raw = msg.content[0].text.strip()
     except Exception as exc:
         logger.error('ai_incident_page.generate_page_insights failed: %s', exc)
-        raise ValueError('Incident insights are temporarily unavailable.') from exc
+        raise ValidationError('Incident insights are temporarily unavailable.') from exc
 
     try:
         actions = _parse(raw)
     except Exception as exc:
         logger.error('ai_incident_page parse failed: %s | raw: %s', exc, raw[:200])
-        raise ValueError('Failed to parse incident insights response.') from exc
+        raise ValidationError('Failed to parse incident insights response.') from exc
 
     return IncidentPageInsightResponse(actions=actions)
