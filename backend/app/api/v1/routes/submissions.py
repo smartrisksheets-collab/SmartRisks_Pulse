@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_active_tenant, get_db, require_permission
 from app.core.exceptions import ResourceNotFoundError
+from app.core.rate_limit import client_ip, limiter
 from app.schemas.submission import (
     PromoteRequest,
     PublicSubmitRequest,
@@ -23,7 +24,9 @@ router = APIRouter(tags=["submissions"])
 # ── Public endpoints (no JWT) ─────────────────────────────────────────────────
 
 @router.get("/submissions/form/{token}")
+@limiter.limit("30/minute")
 async def resolve_token(
+    request: Request,
     token: str,
     db:    AsyncSession = Depends(get_db),
 ):
@@ -35,13 +38,16 @@ async def resolve_token(
 
 
 @router.post("/submissions/form/{token}")
+@limiter.limit("10/minute")
 async def submit_form(
     token:   str,
     payload: PublicSubmitRequest,
     request: Request,
     db:      AsyncSession = Depends(get_db),
 ):
-    submitter_ip = request.headers.get("x-forwarded-for", request.client.host if request.client else "unknown")
+    # Same proxy-aware IP as the slowapi limiter: X-Forwarded-For is trusted
+    # only when the direct caller is a known proxy, so it cannot be faked.
+    submitter_ip = client_ip(request)
     try:
         result = await svc.create_submission(db, token, payload, submitter_ip)
         return {"data": result.model_dump(), "error": None, "meta": {}}

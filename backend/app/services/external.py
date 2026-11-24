@@ -17,7 +17,7 @@ from uuid import UUID
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import ResourceNotFoundError, ValidationError
+from app.core.exceptions import PermissionDeniedError, ResourceNotFoundError, ValidationError
 from app.models.external_submission import ExternalSubmission
 from app.models.tenant import Tenant
 from app.schemas.external import (
@@ -154,16 +154,39 @@ def _incident_dt(day: str, at: str) -> datetime | None:
     return datetime(d.year, d.month, d.day, hh, mm, tzinfo=timezone.utc)
 
 
+# Which permission reviews which submission type. One place, used by the
+# list, the count, approve and return.
+_REVIEW_PERMISSION: dict[str, str] = {
+    "risk":     "manage_risks",
+    "incident": "manage_incidents",
+}
+
+
+def reviewable_types(permissions: dict[str, Any]) -> list[str]:
+    """Submission types this member may see and review."""
+    return [t for t, perm in _REVIEW_PERMISSION.items() if permissions.get(perm)]
+
+
+def _require_review_permission(sub_type: str, permissions: dict[str, Any]) -> None:
+    perm = _REVIEW_PERMISSION.get(sub_type, "manage_risks")
+    if not permissions.get(perm):
+        raise PermissionDeniedError(f"Permission denied: {perm} required to review this submission")
+
+
 async def list_pending(
     db:        AsyncSession,
     tenant_id: UUID,
+    types:     list[str],
 ) -> PendingListResponse:
-    """Return all PENDING submissions for a tenant, newest first."""
+    """Return PENDING submissions of the given types for a tenant, newest first."""
+    if not types:
+        return PendingListResponse(items=[], total=0)
     result = await db.execute(
         select(ExternalSubmission)
         .where(
             ExternalSubmission.tenant_id == tenant_id,
             ExternalSubmission.status == "PENDING",
+            func.coalesce(ExternalSubmission.submission_type, "risk").in_(types),
         )
         .order_by(ExternalSubmission.created_at.desc())
     )
@@ -190,13 +213,17 @@ async def list_pending(
 async def get_pending_count(
     db:        AsyncSession,
     tenant_id: UUID,
+    types:     list[str],
 ) -> PendingCountResponse:
-    """Return count of PENDING submissions for the notification badge."""
+    """Return count of PENDING submissions of the given types for the badge."""
+    if not types:
+        return PendingCountResponse(count=0)
     result = await db.execute(
         select(func.count()).select_from(ExternalSubmission)
         .where(
             ExternalSubmission.tenant_id == tenant_id,
             ExternalSubmission.status == "PENDING",
+            func.coalesce(ExternalSubmission.submission_type, "risk").in_(types),
         )
     )
     count = result.scalar_one()
@@ -208,6 +235,7 @@ async def approve_submission(
     tenant_id:      UUID,
     submission_id:  str,
     reviewer_email: str,
+    permissions:    dict[str, Any],
     reviewer_notes: str = "",
 ) -> dict[str, Any]:
     """
@@ -228,6 +256,7 @@ async def approve_submission(
 
     p: dict[str, Any] = dict(sub.payload) if sub.payload is not None else {}  # type: ignore[arg-type]
     sub_type = str(sub.submission_type or "risk")
+    _require_review_permission(sub_type, permissions)
     created_id: str
 
     if sub_type == "risk":
@@ -330,6 +359,7 @@ async def return_submission(
     submission_id:  str,
     reviewer_email: str,
     return_message: str,
+    permissions:    dict[str, Any],
 ) -> None:
     """
     Mark a submission as Returned and email the submitter.
@@ -345,6 +375,7 @@ async def return_submission(
     sub = result.scalar_one_or_none()
     if sub is None:
         raise ResourceNotFoundError("Submission not found or already reviewed")
+    _require_review_permission(str(sub.submission_type or "risk"), permissions)
 
     p: dict[str, Any] = dict(sub.payload) if sub.payload is not None else {}  # type: ignore[arg-type]
 

@@ -5,10 +5,12 @@ from sqlalchemy import select
 
 from app.core.admin_security import create_admin_token
 from app.core.exceptions import InvalidCredentialsError
-from app.core.security import verify_password
+from app.core.config import settings
+from app.core.security import burn_password_check, verify_password
 from app.models.admin_account import AdminAccount
 from app.models.admin_audit_log import AdminAuditLog
 from app.schemas.admin import AdminTokenResponse, AdminAccountBrief
+from app.services import lockout
 
 
 async def login(
@@ -21,12 +23,30 @@ async def login(
     )
     admin = result.scalar_one_or_none()
 
-    if not admin or not verify_password(password, str(admin.password_hash)):
+    if not admin:
+        burn_password_check(password)
+        raise InvalidCredentialsError("Invalid email or password.")
+
+    admin_id = str(admin.id)
+    locked = await lockout.locked_seconds(db, "admin_login", admin_id)
+    if locked > 0:
+        mins = lockout.minutes_left(locked)
+        raise InvalidCredentialsError(
+            f"Too many failed sign-in attempts. Try again in "
+            f"{mins} minute{'s' if mins != 1 else ''}."
+        )
+
+    if not verify_password(password, str(admin.password_hash)):
+        await lockout.record_failure(
+            "admin_login", admin_id,
+            settings.ADMIN_LOGIN_MAX_ATTEMPTS, settings.ADMIN_LOCK_MINUTES,
+        )
         raise InvalidCredentialsError("Invalid email or password.")
 
     if str(admin.status) != "ACTIVE":
         raise InvalidCredentialsError("Admin account is inactive.")
 
+    await lockout.clear(db, "admin_login", admin_id)
     admin.last_login = datetime.now(timezone.utc)
     await db.flush()
 

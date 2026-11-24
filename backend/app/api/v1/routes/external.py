@@ -119,7 +119,8 @@ async def get_pending_count(
     db:     AsyncSession = Depends(get_db),
 ):
     tenant_id = UUID(str(claims["active_tenant_id"]))
-    result = await ext_svc.get_pending_count(db, tenant_id)
+    types     = ext_svc.reviewable_types(dict(claims.get("permissions") or {}))
+    result = await ext_svc.get_pending_count(db, tenant_id, types)
     return {"data": result.model_dump(), "error": None, "meta": {}}
 
 
@@ -129,7 +130,8 @@ async def list_pending(
     db:     AsyncSession = Depends(get_db),
 ):
     tenant_id = UUID(str(claims["active_tenant_id"]))
-    result = await ext_svc.list_pending(db, tenant_id)
+    types     = ext_svc.reviewable_types(dict(claims.get("permissions") or {}))
+    result = await ext_svc.list_pending(db, tenant_id, types)
     return {"data": result.model_dump(), "error": None, "meta": {}}
 
 
@@ -141,10 +143,11 @@ async def approve_submission(
     db:            AsyncSession = Depends(get_db),
 ):
     tenant_id      = UUID(str(claims["active_tenant_id"]))
-    reviewer_email = str(claims.get("sub", ""))
+    reviewer_email = str(claims.get("email") or "")
+    permissions    = dict(claims.get("permissions") or {})
     try:
         result = await ext_svc.approve_submission(
-            db, tenant_id, submission_id, reviewer_email, body.reviewer_notes
+            db, tenant_id, submission_id, reviewer_email, permissions, body.reviewer_notes
         )
         return {"data": result, "error": None, "meta": {}}
     except ResourceNotFoundError as exc:
@@ -159,10 +162,11 @@ async def return_submission(
     db:            AsyncSession = Depends(get_db),
 ):
     tenant_id      = UUID(str(claims["active_tenant_id"]))
-    reviewer_email = str(claims.get("sub", ""))
+    reviewer_email = str(claims.get("email") or "")
+    permissions    = dict(claims.get("permissions") or {})
     try:
         await ext_svc.return_submission(
-            db, tenant_id, submission_id, reviewer_email, body.return_message
+            db, tenant_id, submission_id, reviewer_email, body.return_message, permissions
         )
         return {"data": {"ok": True}, "error": None, "meta": {}}
     except ResourceNotFoundError as exc:

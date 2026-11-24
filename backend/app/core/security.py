@@ -21,6 +21,19 @@ def verify_password(plain: str, hashed: str) -> bool:
     return bcrypt.checkpw(plain.encode(), hashed.encode())
 
 
+# A real bcrypt hash of a throwaway value, at the same cost as stored hashes.
+_DUMMY_HASH = "$2b$12$skBtdgUoc5sZJBoZBXAfLu0vtCqO4zO9QS3kACJ7TQyfTXCdhOanq"
+
+
+def burn_password_check(plain: str) -> None:
+    """Spend the same time as a real check when there is no hash to check.
+
+    Sign-in for an unknown email would otherwise reply faster, which tells a
+    caller which emails have accounts.
+    """
+    bcrypt.checkpw(plain.encode(), _DUMMY_HASH.encode())
+
+
 def create_reset_token(account_id: str, email: str, token_version: int) -> str:
     expire = datetime.now(timezone.utc) + timedelta(minutes=15)
     return jwt.encode(

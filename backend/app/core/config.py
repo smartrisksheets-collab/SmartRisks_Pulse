@@ -61,6 +61,12 @@ class Settings(BaseSettings):
     # Recycle bin
     RECYCLE_BIN_TTL_DAYS: int = 30
 
+    # Failed-attempt lockouts (workspace PIN per member, admin sign-in per admin)
+    PIN_MAX_ATTEMPTS: int = 5
+    PIN_LOCK_MINUTES: int = 15
+    ADMIN_LOGIN_MAX_ATTEMPTS: int = 5
+    ADMIN_LOCK_MINUTES: int = 15
+
     # Ask Pulse: weekly email of questions help could not answer. Empty disables it.
     HELP_REPORT_EMAIL: str = "info@smartrisksheets.com"
     HELP_REPORT_DAYS: int = 7

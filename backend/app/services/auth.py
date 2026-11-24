@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 from datetime import datetime, timezone
 from uuid import UUID
 from app.core.config import settings
-from app.core.security import create_access_token, create_refresh_token, create_reset_token, verify_pin, decode_token, hash_password, verify_password
+from app.core.security import create_access_token, create_refresh_token, create_reset_token, verify_pin, decode_token, hash_password, verify_password, burn_password_check
 from app.core.exceptions import (
     InvalidCredentialsError, ResourceNotFoundError,
     InvalidPINError, WorkspaceLimitError, InvalidTokenError,
@@ -19,6 +19,7 @@ from app.models.account import Account
 from app.models.account_identity import AccountIdentity
 from app.models.tenant import Tenant
 from app.models.workspace_member import WorkspaceMember
+from app.services import lockout
 
 
 
@@ -118,6 +119,7 @@ async def login(db: AsyncSession, email: str, password: str) -> dict:
         "or use Forgot password to set a password."
     )
     if not account or not account.password_hash:
+        burn_password_check(password)
         raise InvalidCredentialsError(_bad_login)
     if not verify_password(password, str(account.password_hash)):
         raise InvalidCredentialsError(_bad_login)
@@ -196,7 +198,6 @@ async def select_workspace(db: AsyncSession, claims: dict, tenant_id: str) -> di
 
 
 async def verify_pin_and_issue_token(db: AsyncSession, claims: dict, pin: str) -> dict:
-    from datetime import datetime, timezone, timedelta
     tenant_id = claims.get("pending_tenant_id")
     if not tenant_id:
         raise InvalidTokenError("No pending workspace in token")
@@ -207,39 +208,38 @@ async def verify_pin_and_issue_token(db: AsyncSession, claims: dict, pin: str) -
         .join(Tenant, Tenant.id == WorkspaceMember.tenant_id)
         .where(WorkspaceMember.account_id == account_id)
         .where(WorkspaceMember.tenant_id == UUID(tenant_id))
+        .where(WorkspaceMember.status == "ACTIVE")
     )
     row = result.first()
     if not row:
         raise ResourceNotFoundError("Workspace not found")
 
     member, tenant = row
+    if tenant.pin_hash is None or not str(tenant.pin_hash):
+        raise InvalidTokenError("This workspace no longer uses a PIN. Please sign in again.")
 
-    if tenant.pin_locked_until and tenant.pin_locked_until > datetime.now(timezone.utc):
-        remaining_secs = int((tenant.pin_locked_until - datetime.now(timezone.utc)).total_seconds())
-        remaining_mins = max(1, (remaining_secs + 59) // 60)
+    member_id = str(member.id)
+    locked = await lockout.locked_seconds(db, "member_pin", member_id)
+    if locked > 0:
+        mins = lockout.minutes_left(locked)
         raise InvalidPINError(
-            f"This workspace is locked. Try again in "
-            f"{remaining_mins} minute{'s' if remaining_mins != 1 else ''}."
+            f"Too many wrong PIN attempts. Try again in "
+            f"{mins} minute{'s' if mins != 1 else ''}."
         )
 
     if not verify_pin(pin, str(tenant.pin_hash or "")):
-        tenant.pin_attempts = (tenant.pin_attempts or 0) + 1
-        if int(tenant.pin_attempts) >= 5:  # type: ignore[arg-type]
-            tenant.pin_locked_until = datetime.now(timezone.utc) + timedelta(minutes=15)
-            tenant.pin_attempts = 0
-            await db.flush()
+        remaining = await lockout.record_failure(
+            "member_pin", member_id, settings.PIN_MAX_ATTEMPTS, settings.PIN_LOCK_MINUTES,
+        )
+        if remaining == 0:
             raise InvalidPINError(
-                "Incorrect PIN. This workspace is now locked for 15 minutes."
+                f"Incorrect PIN. You are locked out for {settings.PIN_LOCK_MINUTES} minutes."
             )
-        remaining = 5 - int(tenant.pin_attempts)  # type: ignore[arg-type]
-        await db.flush()
         raise InvalidPINError(
             f"Incorrect PIN. {remaining} attempt{'s' if remaining != 1 else ''} remaining before lockout."
         )
 
-    tenant.pin_attempts = 0
-    tenant.pin_locked_until = None
-    await db.flush()
+    await lockout.clear(db, "member_pin", member_id)
 
     account = await db.get(Account, account_id)
     token = _build_workspace_token(account, member, tenant)

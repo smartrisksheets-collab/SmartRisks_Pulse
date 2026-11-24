@@ -8,6 +8,14 @@ Plain English record of every significant decision made during the build, who ra
 
 One line per decision, newest first. Started November 16, 2026. Decisions before Session 29 are in the log below, by session.
 
+- 2026-11-24: Claude pushes each gap map batch to staging directly, with a .md notes file, at the user's request.
+- 2026-11-24: PIN lockout counts per member (workspace_members.pin_attempts, pin_locked_until), replacing the per-workspace lock in setup section 28 (migration 067).
+- 2026-11-24: Failed PIN and admin sign-in attempts are written in their own committed session (services/lockout.py), so the request rollback cannot undo them.
+- 2026-11-24: Admin sign-in is limited to 5 per minute per IP and locks the admin for 15 minutes after 5 wrong passwords (migration 067).
+- 2026-11-24: Approving or returning an outside submission needs manage_risks (risk) or manage_incidents (incident); the pending list and count show only types the member can review.
+- 2026-11-24: Reviewer and actor columns store the email. Old account ids are backfilled only where the account is a member of that workspace, with a backup table for the downgrade.
+- 2026-11-24: The public form reads the caller IP through client_ip (trusted proxies only) and is limited by slowapi on top of the DB counters.
+- 2026-11-24: Sign-in with an unknown email still runs one bcrypt check, so reply time does not reveal which emails exist.
 - 2026-11-21: Claude committed and pushed Session 32 to staging at the user's request.
 - 2026-11-21: Light brand colors are made readable by derived text colors, not blocked on save.
 - 2026-11-21: The report email header stays SmartRisk branded.
