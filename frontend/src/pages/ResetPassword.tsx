@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSearchParams } from 'react-router-dom';
 import { apiPost } from '../services/api';
+import { SrLogo } from '../components/layout/SrLogo';
 import {
   validatePassword, validateConfirm,
   getPasswordStrength, type PasswordStrength,
@@ -66,12 +67,7 @@ export default function ResetPassword() {
     <div className="auth-shell">
       <div className="auth-left">
         <div className="auth-left-brand">
-          <div className="auth-brand-icon">
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-              <path d="M10 2L2 7l8 5 8-5-8-5zM2 13l8 5 8-5M2 10l8 5 8-5"
-                stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-          </div>
+          <SrLogo size={36} borderRadius={8} />
           <span className="auth-brand-name">SmartRisk Pulse</span>
         </div>
         <p className="auth-eyebrow">Account Security</p>
