@@ -8,7 +8,7 @@ from uuid import UUID
 
 import httpx
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import (
@@ -306,13 +306,20 @@ async def update_settings(
     return _build_response(tenant)
 
 
+async def _reset_member_pin_locks(db: AsyncSession, tenant_id: UUID) -> None:
+    """A new or removed PIN starts every member's failed-attempt count afresh."""
+    await db.execute(
+        text("UPDATE workspace_members SET pin_attempts = 0, pin_locked_until = NULL WHERE tenant_id = :t"),
+        {"t": str(tenant_id)},
+    )
+
+
 async def set_pin(
     db: AsyncSession, tenant_id: UUID, payload: PINSet
 ) -> dict:
     tenant = await _get_tenant(db, tenant_id)
     tenant.pin_hash = await asyncio.to_thread(hash_pin, payload.new_pin)  # type: ignore[assignment]
-    tenant.pin_attempts = 0  # type: ignore[assignment]
-    tenant.pin_locked_until = None  # type: ignore[assignment]
+    await _reset_member_pin_locks(db, tenant_id)
     await db.flush()
     return {"has_pin": True}
 
@@ -322,8 +329,7 @@ async def remove_pin(db: AsyncSession, tenant_id: UUID, role: str) -> dict:
         raise PermissionDeniedError("Only the workspace Owner can remove the PIN")
     tenant = await _get_tenant(db, tenant_id)
     tenant.pin_hash = None  # type: ignore[assignment]
-    tenant.pin_attempts = 0  # type: ignore[assignment]
-    tenant.pin_locked_until = None  # type: ignore[assignment]
+    await _reset_member_pin_locks(db, tenant_id)
     await db.flush()
     return {"has_pin": False}
 

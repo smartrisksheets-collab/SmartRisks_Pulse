@@ -30,8 +30,6 @@ class Tenant(Base):
     workspace_settings = Column(JSONB)
     perm_version = Column(Integer, nullable=False, server_default="1")
     pin_hash = Column(String)
-    pin_attempts = Column(Integer, nullable=False, server_default="0")
-    pin_locked_until = Column(DateTime(timezone=True))
     status = Column(String, nullable=False, server_default="ACTIVE")
     created_by = Column(PG_UUID(as_uuid=True), ForeignKey("accounts.id"), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
