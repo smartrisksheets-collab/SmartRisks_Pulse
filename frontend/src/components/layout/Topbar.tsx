@@ -1,26 +1,18 @@
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Moon, Sun, Monitor } from 'lucide-react';
 import { useUIStore } from '../../store/uiStore';
 import { useAuthStore } from '../../store/authStore';
 import { useAuth } from '../../hooks/useAuth';
 import { usePresence } from '../../hooks/usePresence';
-import GetStartedDrawer from './GetStartedDrawer';
+import SetupStatusPanel from './SetupStatusPanel';
 import { roleLabel } from '../../utils/roles';
 import { useHome } from '../../hooks/useHome';
+import { useProfile } from '../../services/profile';
 import { PROFILE_NAME_FALLBACK } from '../../utils/constants';
+import { SETUP_STATUS_LABEL } from '../../utils/setupSteps';
 import { initialsOf } from '../home/links';
 import AskPulse from '../help/AskPulse';
-
-function computeGsPulse(tid: string): boolean {
-  if (!tid) return false;
-  try {
-    const never    = localStorage.getItem(`gs_never_${tid}`) === '1';
-    const raw      = JSON.parse(localStorage.getItem(`gs_steps_${tid}`) ?? '{}') as Record<string, boolean>;
-    const complete = Object.values(raw).filter(Boolean).length >= 8;
-    return !never && !complete;
-  } catch { return false; }
-}
 
 interface TopbarProps { title?: string; }
 
@@ -57,31 +49,18 @@ export default function Topbar({ title = 'Dashboard' }: TopbarProps) {
   const presenceShown  = presenceEmails.slice(0, 5);
   const presenceExtra  = presenceEmails.length - 5;
 
-  // Get Started
-  const [gsOpen,        setGsOpen]        = useState(false);
-  const [pulseVersion,  setPulseVersion]   = useState(0);
-  const gsPulse = useMemo(() => computeGsPulse(tenantId), [tenantId, pulseVersion]);
+  // Setup status pill: the same steps and percent as Home, from GET /api/v1/home.
+  // Opens only when clicked, and leaves the top bar once every step is done.
+  const [setupOpen, setSetupOpen] = useState(false);
+  const closeSetup = () => setSetupOpen(false);
 
-  useEffect(() => {
-    if (!tenantId) return;
-    const never    = localStorage.getItem(`gs_never_${tenantId}`) === '1';
-    const seen     = localStorage.getItem(`gs_seen_${tenantId}`) === '1';
-    const raw      = JSON.parse(localStorage.getItem(`gs_steps_${tenantId}`) ?? '{}') as Record<string, boolean>;
-    const complete = Object.values(raw).filter(Boolean).length >= 8;
-    if (!never && !seen && !complete) {
-      try { localStorage.setItem(`gs_seen_${tenantId}`, '1'); } catch { /* noop */ }
-      setTimeout(() => setGsOpen(true), 1200);
-    }
-  }, [tenantId]);
-
-  function handleGsClose() {
-    setGsOpen(false);
-    setPulseVersion((v) => v + 1);
-  }
   // The profile menu shows the account name only. The email is never rendered on screen.
   const { data: home } = useHome();
-  const profileName = home?.first_name || PROFILE_NAME_FALLBACK;
-  const initials    = initialsOf(home?.first_name ?? claims?.email);
+  const { data: me }   = useProfile();
+  const profileName = me?.first_name || home?.first_name || PROFILE_NAME_FALLBACK;
+  const initials    = initialsOf(me ? `${me.first_name} ${me.last_name}` : home?.first_name ?? claims?.email);
+  const setup       = home?.setup;
+  const showSetup   = !!setup && setup.total > 0 && setup.percent < 100;
 
   return (
     <>
@@ -133,10 +112,18 @@ export default function Topbar({ title = 'Dashboard' }: TopbarProps) {
         >
           <ThemeIcon size={15} />
         </button>
-        <button className="pl-btn pl-btn-secondary topbar-btn topbar-gs" onClick={() => setGsOpen(true)}>
-          Get Started
-          {gsPulse && <span className="gs-pulse" />}
-        </button>
+        {showSetup && setup && (
+          <button
+            type="button"
+            className={`pl-status-pill${setupOpen ? ' pl-on' : ''}`}
+            onClick={() => setSetupOpen(v => !v)}
+            aria-expanded={setupOpen}
+            aria-haspopup="dialog"
+          >
+            {SETUP_STATUS_LABEL} {setup.percent}%
+            <span className="pl-bar" aria-hidden="true"><span style={{ ['--pl-fill' as string]: `${setup.percent}%` }} /></span>
+          </button>
+        )}
 
         {/* Workspace dropdown */}
         <div className="topbar-dd-wrap" ref={wsRef}>
@@ -190,7 +177,9 @@ export default function Topbar({ title = 'Dashboard' }: TopbarProps) {
 
         <div className="topbar-dd-wrap" ref={menuRef}>
           <button className="topbar-user-btn" onClick={() => setMenuOpen((v) => !v)}>
-            <div className="topbar-avatar">{initials}</div>
+            {me?.avatar_url
+              ? <img className="topbar-avatar" src={me.avatar_url} alt="" />
+              : <div className="topbar-avatar">{initials}</div>}
             <span>{roleLabel(claims?.role)}</span>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
               stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -204,10 +193,18 @@ export default function Topbar({ title = 'Dashboard' }: TopbarProps) {
               <div className="topbar-dropdown-divider" />
               <button
                 className="topbar-dropdown-item"
-                onClick={() => { setMenuOpen(false); navigate('/settings'); }}
+                onClick={() => { setMenuOpen(false); navigate('/profile'); }}
               >
-                Settings
+                My profile
               </button>
+              {claims?.permissions?.manage_settings && (
+                <button
+                  className="topbar-dropdown-item"
+                  onClick={() => { setMenuOpen(false); navigate('/settings'); }}
+                >
+                  Settings
+                </button>
+              )}
               <div className="topbar-dropdown-divider" />
               <button className="topbar-dropdown-item danger" onClick={logout}>
                 Sign out
@@ -217,7 +214,7 @@ export default function Topbar({ title = 'Dashboard' }: TopbarProps) {
         </div>
       </div>
     </div>
-    <GetStartedDrawer key={tenantId} open={gsOpen} onClose={handleGsClose} tenantId={tenantId} />
+    {setupOpen && showSetup && setup && <SetupStatusPanel setup={setup} permissions={claims?.permissions} onClose={closeSetup} />}
   </>
   );
-}
+}

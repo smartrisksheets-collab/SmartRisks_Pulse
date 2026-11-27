@@ -12,6 +12,7 @@ from app.models.tenant import Tenant
 from app.models.audit_log import AuditLog
 from app.schemas.user import AddMemberRequest, UpdateMemberRequest
 from app.core.exceptions import ResourceNotFoundError, DuplicateResourceError, QuotaExceededError, PermissionDeniedError, ValidationError
+from app.services.account_name import set_account_full_name
 from app.services.auth import _PERM_MAP, _role_permissions
 from app.core.config import settings
 from app.services.email import send_invite_email
@@ -115,7 +116,8 @@ async def add_member(
 
     account = await db.scalar(select(Account).where(Account.email == payload.email.lower()))
     if not account:
-        account = Account(email=payload.email.lower(), name=payload.name, created_via="invite")
+        account = Account(email=payload.email.lower(), created_via="invite")
+        set_account_full_name(account, payload.name)
         db.add(account)
         await db.flush()
 
@@ -202,7 +204,7 @@ async def update_member(
     if payload.name is not None:
         account = await db.get(Account, member.account_id)
         if account:
-            account.name = payload.name or None  # type: ignore[assignment]
+            set_account_full_name(account, payload.name)
 
     db.add(AuditLog(
         tenant_id=tenant_id,

@@ -8,6 +8,20 @@ Plain English record of every significant decision made during the build, who ra
 
 One line per decision, newest first. Started November 16, 2026. Decisions before Session 29 are in the log below, by session.
 
+- 2026-11-27: Claude delivered the onboarding redesign as 7 patches; the user applies and pushes. A fix to a patch the user already applied ships as a new patch on top, never as an edited patch.
+- 2026-11-27: Every new table's SQL turns RLS on and revokes anon and authenticated in the same migration (onboarding_drafts was fixed in 074).
+- 2026-11-27: New workspaces start from SmartRisk suggested thresholds per sector (Eddu's November 2026 guide), shown as "SmartRisk suggested thresholds. Set in line with your board-approved risk appetite." Categories the user adds start at 13.
+- 2026-11-27: Picking a sector pre-fills its suggested categories. The picks replace the 6 defaults; categories the user added are kept.
+- 2026-11-27: The sector list is 10: Banking, Microfinance, Asset management, Other Financial Services, Oil & gas, Manufacturing, Technology, Government, Energy, Other. Finance moved to Other Financial Services; Healthcare removed; Insurance and Fintech fall under Other Financial Services.
+- 2026-11-27: Join by email domain is off by default, switched on by an Admin for their own sign-in domain only, never for personal email domains, and every join needs Admin approval as Analyst or Manager.
+- 2026-11-27: Profile photos live in the workspace-logos bucket under avatars/; the orphan sweep keeps files an account points at. Photos are never used in reports.
+- 2026-11-27: The Risk Brief and Home greet by accounts.first_name.
+- 2026-11-27: The top bar menu shows Settings only to members with manage_settings.
+- 2026-11-27: Setup saves a server-side draft per account at each step (onboarding_drafts); the workspace is still created in one transaction at Finish. The 2026-08-23 atomic submit stands.
+- 2026-11-27: Setup status is computed in the backend (home.build_setup) as one percent for the whole workspace; the matrix step is done once non-blank categories are saved; the label is "Setup status".
+- 2026-11-27: accounts gains first_name and last_name (072); name is kept and written with them through one helper. Last name is required at sign-up.
+- 2026-11-27: Appetite set, change and delete are written to the Audit Log.
+- 2026-11-27: For the onboarding redesign: SrLogo stays, band 4 stays Critical, band colours come from the matrix config, mockup sample values are not used, and gradients in the partner's screens are allowed as designed.
 - 2026-11-25: tenants.pin_attempts and pin_locked_until are dropped (migration 071). Setting or removing the PIN resets every member's PIN lock.
 - 2026-11-24: The nightly recycle purge also clears api_error_log (30 days), rate_limit_counters (window over 2 days), expired revoked_refresh_tokens and scheduler_runs (7 days).
 - 2026-11-24: render.yaml records the Render settings, with no preDeployCommand, because migrations stay hand-run SQL in Supabase.
@@ -2259,3 +2273,50 @@ Chosen (user): The user asked Claude to push both patches and the tracking files
 **Status:** Complete
 
 ---
+
+## Session 33: November 27, 2026: Onboarding Redesign
+
+**Decision: Partner screens are built with SmartRisk's own rules (November 27, 2026)**
+Raised by: Claude, reviewing Eddu's 7 onboarding screens against staging 7d97d38.
+Chosen (user): Keep SrLogo, not the mock logo. Band 4 stays Critical, not Extreme. Band colours come from the workspace matrix config. Mockup sample values are not used. Gradients in the partner's redesign screens are allowed as designed.
+Why: The product's logo, band names and colours are already decided, and the screens are a layout, not a data source.
+
+**Decision: Setup saves a server draft; the workspace is still created at Finish (November 27, 2026)**
+Raised by: Claude. The mock saves after each step, which conflicts with the 2026-08-23 atomic submit.
+Options: Create the workspace at step 1 and fill it in later, keep everything in the browser, or save a draft on the server.
+Chosen (user): One `onboarding_drafts` row per account, saved at each step, resumed on any device, purged after 30 days. Finish creates the workspace, categories and thresholds in one transaction and deletes the draft.
+Why: Resume works on any device without half-made workspaces, and the atomic submit decision stands.
+
+**Decision: Setup status comes from the backend (November 27, 2026)**
+Chosen (user): `home.build_setup` returns the steps and one percent for the whole workspace. Admin-only steps show to others with an admin note. The matrix step is done once non-blank categories are saved. The label is "Setup status". GetStartedDrawer is removed.
+Why: Derived values are computed in the backend (V2 convention), and every member sees the same number.
+
+**Decision: First and last name on accounts (November 27, 2026)**
+Options: Keep one name and split it for greetings, or store first and last name.
+Chosen (user): Migration 072 adds both, backfilled from `name`, which is kept and written with them through `services/account_name.py`. Last name is required at sign-up. Home and the Risk Brief greet by first name.
+Why: Splitting one name guesses wrong for names like "Mary Jane".
+
+**Decision: Appetite changes are audited (November 27, 2026)**
+Chosen (user): Set, change and delete each write an Audit Log row with the old and new value.
+Why: Appetite is a board-level setting, and it had no trail.
+
+**Decision: Sector list and suggested appetite (November 27, 2026)**
+Raised by: Eddu. His first reply said the mock numbers were not recommendations; his later answers and PDF guide replaced that.
+Chosen (Eddu, confirmed by user): 10 sectors (Banking, Microfinance, Asset management, Other Financial Services, Oil & gas, Manufacturing, Technology, Government, Energy, Other). Finance moves to Other Financial Services; Healthcare is removed as not a target market. Picking a sector pre-fills its suggested categories, and step 3 starts at SmartRisk's suggested thresholds, labelled "SmartRisk suggested thresholds. Set in line with your board-approved risk appetite." The guide PDF is linked in setup and in Settings.
+Why: The figures come from SmartRisk's own experience on the default 5 x 5 matrix. They are starting points for the board to approve, not regulatory limits.
+
+**Decision: My profile and photos (November 27, 2026)**
+Chosen (user): A My profile page for first and last name and a photo; email is read-only. Photos go in the existing `workspace-logos` bucket under `avatars/`, so no new bucket is needed, and the orphan sweep keeps them. Photos are never used in reports.
+Why: One upload path and no Supabase setup step.
+
+**Decision: Join by email domain (November 27, 2026)**
+Options: Who approves, whether it is on by default, and which domains count.
+Chosen (user, on Claude's recommendation): Admins approve; off until an Admin switches it on; it uses the Admin's own sign-in domain; personal email domains are never allowed; approval gives Analyst or Manager, never Admin; the user limit applies. No emails yet.
+Why: Sign-up does not verify email ownership, so Admin approval is the control.
+
+**Decision: Fixes to applied patches go on top, and new tables lock down RLS (November 27, 2026)**
+Raised by: User, after applying batch 3 before the RLS fix.
+Chosen (user): A fix to a patch already applied is a new patch on top (074 for onboarding_drafts RLS). Every new table's SQL turns RLS on and revokes anon and authenticated.
+Why: The user's tree must never differ from what a delivered patch says, and the anon key is public.
+
+**Status:** Complete

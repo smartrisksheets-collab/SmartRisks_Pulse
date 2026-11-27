@@ -15,7 +15,7 @@ from httpx import AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.services.home import get_home
+from app.services.home import build_setup, get_home
 
 
 @pytest_asyncio.fixture
@@ -122,6 +122,8 @@ async def test_home_full_workspace(session: AsyncSession, seed: dict) -> None:
 
     assert home.setup.first_run is False
     assert (home.setup.appetite, home.setup.risks, home.setup.incidents, home.setup.team) == (True, True, True, False)
+    # No saved category list, so matrix and categories is still open: 4 of 6.
+    assert (home.setup.matrix, home.setup.done_count, home.setup.percent) == (False, 4, 67)
 
 
 @pytest.mark.asyncio
@@ -133,6 +135,9 @@ async def test_home_empty_workspace_is_first_run(session: AsyncSession, seed: di
     assert home.first_name is None
     assert home.setup.first_run is True
     assert (home.setup.appetite, home.setup.risks, home.setup.incidents, home.setup.team) == (False, False, False, False)
+    assert home.setup.matrix is False
+    assert [st.key for st in home.setup.steps] == ["workspace", "matrix", "appetite", "risks", "incidents", "team"]
+    assert (home.setup.done_count, home.setup.total, home.setup.percent) == (1, 6, 17)
     assert home.actions == [] and home.top_risks == [] and home.open_incidents == []
 
 
@@ -157,3 +162,60 @@ async def test_home_endpoint(client: AsyncClient, owner_headers: dict) -> None:
     data = r.json()["data"]
     for key in ("verdict", "tiles", "actions", "top_risks", "open_incidents", "setup", "first_name"):
         assert key in data
+    for key in ("steps", "done_count", "total", "percent", "matrix"):
+        assert key in data["setup"]
+
+
+@pytest.mark.asyncio
+async def test_setup_after_wizard_is_half_done(session: AsyncSession, seed: dict) -> None:
+    """A workspace with its own categories and appetite, but no risks, incidents
+    or team yet, sits at 3 of 6 (50%)."""
+    tid = await _tenant(session, seed)
+    await session.execute(
+        text("INSERT INTO lookups (id, tenant_id, category) VALUES (:id, :t, ARRAY['Credit','Fraud','Regulatory'])"),
+        {"id": str(uuid.uuid4()), "t": str(tid)},
+    )
+    await session.execute(
+        text("INSERT INTO appetite_thresholds (tenant_id, category, threshold) VALUES (:t, 'Credit', 8)"),
+        {"t": str(tid)},
+    )
+    await session.commit()
+    home = await get_home(session, tid, None, ["risk", "incident"])
+
+    assert home.setup.matrix is True and home.setup.appetite is True
+    assert (home.setup.done_count, home.setup.total, home.setup.percent) == (3, 6, 50)
+    assert home.setup.first_run is True
+    assert [st.key for st in home.setup.steps if not st.done] == ["risks", "incidents", "team"]
+
+
+@pytest.mark.asyncio
+async def test_setup_blank_category_list_is_not_done(session: AsyncSession, seed: dict) -> None:
+    tid = await _tenant(session, seed)
+    await session.execute(
+        text("INSERT INTO lookups (id, tenant_id, category) VALUES (:id, :t, ARRAY['', '  '])"),
+        {"id": str(uuid.uuid4()), "t": str(tid)},
+    )
+    await session.commit()
+    home = await get_home(session, tid, None, ["risk", "incident"])
+    assert home.setup.matrix is False
+
+
+@pytest.mark.asyncio
+async def test_setup_incident_only_skips_risk_steps(session: AsyncSession, seed: dict) -> None:
+    tid = await _tenant(session, seed)
+    await _populate(session, tid)
+    home = await get_home(session, tid, None, ["incident"])
+    assert [st.key for st in home.setup.steps] == ["workspace", "incidents", "team"]
+    assert (home.setup.done_count, home.setup.total, home.setup.percent) == (2, 3, 67)
+
+
+def test_build_setup_all_done_is_100() -> None:
+    s = build_setup(has_risk=True, has_incident=True, matrix=True, appetite=True, risks=True, incidents=True, team=True)
+    assert (s.done_count, s.total, s.percent) == (6, 6, 100)
+    assert s.first_run is False
+
+
+def test_build_setup_risk_only() -> None:
+    s = build_setup(has_risk=True, has_incident=False, matrix=True, appetite=False, risks=False, incidents=True, team=False)
+    assert [st.key for st in s.steps] == ["workspace", "matrix", "appetite", "risks", "team"]
+    assert (s.done_count, s.total, s.percent) == (2, 5, 40)

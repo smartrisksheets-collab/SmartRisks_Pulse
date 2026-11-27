@@ -107,6 +107,7 @@ _HOUSEKEEPING_PURGES: list[tuple[str, str]] = [
     ("rate_limit_counters",    "window_start < now() - interval '2 days'"),   # longest window is 1 day
     ("revoked_refresh_tokens", "expires_at < now()"),                         # an expired token is refused anyway
     ("scheduler_runs",         "claimed_at < now() - interval '7 days'"),
+    ("onboarding_drafts",      "updated_at < now() - interval '30 days'"),  # setup never finished
 ]
 
 
@@ -160,6 +161,10 @@ _ORPHAN_LOGO_SQL = text(
       AND NOT EXISTS (
           SELECT 1 FROM tenants t
           WHERE t.logo_url LIKE '%' || o.name
+      )
+      AND NOT EXISTS (
+          SELECT 1 FROM accounts a
+          WHERE a.avatar_url LIKE '%' || o.name
       )
     ORDER BY o.created_at
     LIMIT 200

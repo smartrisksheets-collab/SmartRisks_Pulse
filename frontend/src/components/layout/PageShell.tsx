@@ -16,6 +16,7 @@ const ROUTE_META: Record<string, string> = {
   '/audit':       'Audit Log',
   '/settings':    'Settings',
   '/help':        'Help',
+  '/profile':     'My profile',
 };
 import { useAuthStore } from '../../store/authStore';
 import Sidebar from './Sidebar';

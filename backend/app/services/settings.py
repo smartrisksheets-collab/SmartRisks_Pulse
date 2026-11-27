@@ -229,12 +229,18 @@ def _sniff_logo_type(data: bytes) -> str | None:
 
 
 async def upload_logo(file_content: bytes, tenant_id: str) -> str:
+    return await upload_image(file_content, f"logos/{tenant_id}", "Logo")
+
+
+async def upload_image(file_content: bytes, folder: str, what: str) -> str:
+    """Upload a PNG, JPEG or WebP (2 MB max) to the workspace-logos bucket
+    under folder/ and return its public URL. Used for logos and profile photos."""
     if len(file_content) > LOGO_MAX_BYTES:
-        raise ValidationError("Logo must be 2 MB or smaller.")
+        raise ValidationError(f"{what} must be 2 MB or smaller.")
     content_type = _sniff_logo_type(file_content)
     if content_type is None:
-        raise ValidationError("Logo must be a PNG, JPEG or WebP image.")
-    path = f"logos/{tenant_id}/{int(time.time() * 1000)}_{uuid.uuid4().hex}.{_LOGO_EXT[content_type]}"
+        raise ValidationError(f"{what} must be a PNG, JPEG or WebP image.")
+    path = f"{folder}/{int(time.time() * 1000)}_{uuid.uuid4().hex}.{_LOGO_EXT[content_type]}"
     url = f"{settings.SUPABASE_URL}/storage/v1/object/workspace-logos/{path}"
     headers = {
         "Authorization": f"Bearer {settings.SUPABASE_SERVICE_KEY}",

@@ -9,12 +9,9 @@ import {
 import { useSettings } from "../../hooks/useSettings";
 import UnsavedBanner from "./UnsavedBanner";
 import { uploadLogo } from "../../services/settings";
+import { useOnboardingOptions } from "../../services/onboarding";
 import type { SettingsData, SettingsUpdate } from "../../types/settings";
 
-const INDUSTRIES = [
-  "Finance","Healthcare","Technology","Government",
-  "Manufacturing","Retail","Education","Energy","Oil & gas","Other",
-];
 const FRAMEWORKS = ["ISO 31000","NIST CSF","COSO ERM","COBIT","ISO 27001","Custom"];
 const TIMEZONES = [
   { value: "UTC", label: "UTC" },
@@ -45,6 +42,9 @@ interface Props {
 
 export default function WorkspaceSettings({ settings }: Props) {
   const { update, setPinMutation, removePinMutation } = useSettings();
+  // The sector list comes from the backend, the same list the setup wizard shows.
+  // A value saved before the list changed stays selectable, so it never shows blank.
+  const sectors = useOnboardingOptions().data?.sectors ?? [];
 
   // ── identity form state ──────────────────────────────────────────────
   const [form, setForm] = useState<SettingsUpdate>({
@@ -319,10 +319,13 @@ export default function WorkspaceSettings({ settings }: Props) {
 
         <div className="row2">
           <div className="field">
-            <label>Industry</label>
+            <label>Sector</label>
             <select value={form.industry ?? ""} onChange={(e) => field("industry", e.target.value)}>
               <option value="">Select…</option>
-              {INDUSTRIES.map((i) => <option key={i} value={i}>{i}</option>)}
+              {form.industry && !sectors.includes(form.industry) && (
+                <option value={form.industry}>{form.industry}</option>
+              )}
+              {sectors.map((i) => <option key={i} value={i}>{i}</option>)}
             </select>
           </div>
           <div className="field">

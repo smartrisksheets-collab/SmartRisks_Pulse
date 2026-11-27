@@ -22,6 +22,8 @@ import {
 import { planLabel } from "../utils/constants";
 import { usePaged } from "../hooks/usePaged";
 import { Pager } from "../components/ui/Pager";
+import { initialsOf } from "../components/home/links";
+import JoinByDomainPanel from "../components/users/JoinByDomainPanel";
 
 // ── local toast hook ──────────────────────────────────────────────────────
 
@@ -508,7 +510,12 @@ export default function Users() {
               ) : paged.rows.map((m) => (
                 <tr key={m.id}>
                   <td style={{ fontWeight: 600 }}>
-                    {m.name || "—"}
+                    <span className="users-who">
+                      {m.avatar_url
+                        ? <img className="users-photo" src={m.avatar_url} alt="" />
+                        : <span className="users-photo" aria-hidden="true">{initialsOf(m.name || m.email)}</span>}
+                      {m.name || "—"}
+                    </span>
                     {m.account_id === selfId && (
                       <span className="badge-you">You</span>
                     )}
@@ -541,6 +548,10 @@ export default function Users() {
           Users here populate the "Dept/Risk Owner" dropdown in the Risk Register.
         </p>
       </div>
+
+      {claims?.permissions?.manage_settings && (
+        <JoinByDomainPanel defaultRole={settingsQuery.data?.roles_default_role} toast={toast} />
+      )}
 
       {showInvite && <InviteModal onClose={() => setShowInvite(false)} toast={toast} />}
       {editTarget  && (

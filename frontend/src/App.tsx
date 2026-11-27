@@ -18,6 +18,7 @@ import ResetPassword  from './pages/ResetPassword';
 import WorkspacePicker from './pages/WorkspacePicker';
 import VerifyPin      from './pages/VerifyPin';
 import CreateWorkspace from './pages/CreateWorkspace';
+import SetupReady     from './pages/SetupReady';
 import AcceptInvite   from './pages/AcceptInvite';
 import PlanExpired    from './pages/PlanExpired';
 import Home           from './pages/Home';
@@ -35,6 +36,7 @@ const Analytics        = lazy(() => import('./pages/Analytics'));
 const Settings         = lazy(() => import('./pages/Settings'));
 const Frameworks       = lazy(() => import('./pages/Frameworks'));
 const Help             = lazy(() => import('./pages/Help'));
+const MyProfile        = lazy(() => import('./pages/MyProfile'));
 const AuditLog         = lazy(() => import('./pages/AuditLog'));
 const Users            = lazy(() => import('./pages/Users'));
 const ExternalRisk     = lazy(() => import('./pages/ExternalRisk'));
@@ -119,6 +121,10 @@ export default function App() {
             <RequireToken><CreateWorkspace /></RequireToken>
           } />
 
+          <Route path="/workspaces/ready" element={
+            <RequireAuth><SetupReady /></RequireAuth>
+          } />
+
           <Route path="/*" element={
             <RequireAuth>
               <PageShell>
@@ -140,6 +146,7 @@ export default function App() {
                     <Route path="/risks/submission-links"  element={<RequireModule module="risk"><RequirePermission permission="manage_risks"><TokenManager /></RequirePermission></RequireModule>} />
                     <Route path="/frameworks" element={<Frameworks />} />
                     <Route path="/help"       element={<Help />} />
+                    <Route path="/profile"    element={<MyProfile />} />
                     <Route path="*"           element={<NotFound />} />
                   </Routes>
                 </Suspense>

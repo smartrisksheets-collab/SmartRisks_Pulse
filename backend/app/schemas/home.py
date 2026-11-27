@@ -52,11 +52,24 @@ class HomeFocus(BaseModel):
     id: str = ""
 
 
+class HomeSetupStep(BaseModel):
+    # workspace | matrix | appetite | risks | incidents | team
+    key: str
+    done: bool = False
+
+
 class HomeSetup(BaseModel):
+    matrix: bool = False
     appetite: bool = False
     risks: bool = False
     incidents: bool = False
     team: bool = False
+    # Setup status: the steps that apply to this workspace's modules, in order,
+    # and the share done. Home, the top bar pill and the Ready screen all read these.
+    steps: list[HomeSetupStep] = Field(default_factory=list)
+    done_count: int = 0
+    total: int = 0
+    percent: int = 0
     # True while the workspace has no risks and no incidents: Home shows the setup view.
     first_run: bool = True
 

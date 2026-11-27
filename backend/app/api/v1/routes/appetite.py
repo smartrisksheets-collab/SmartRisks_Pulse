@@ -51,7 +51,8 @@ async def delete_appetite(
     _: None = Depends(require_permission("manage_settings")),
 ) -> dict:
     tenant_id = UUID(claims["active_tenant_id"])
-    deleted = await appetite_svc.delete_appetite(db, tenant_id, category)
+    user_email = str(claims.get("email", ""))
+    deleted = await appetite_svc.delete_appetite(db, tenant_id, category, user_email)
     if not deleted:
         raise ResourceNotFoundError("Threshold not found for this category.")
     return {"data": {"deleted": True}, "error": None, "meta": {}}

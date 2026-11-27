@@ -16,7 +16,9 @@ import { NextActions, RecentActivity, Tiles, WhereLists } from '../components/ho
 import BriefCard from '../components/home/BriefCard';
 import Tour from '../components/home/Tour';
 import SetupView from '../components/home/SetupView';
-import { TOUR_STEPS, incidentPath, initialsOf, localDateLine, riskPath, setupProgress } from '../components/home/links';
+import { TOUR_STEPS, incidentPath, initialsOf, localDateLine, riskPath } from '../components/home/links';
+import { useProfile } from '../services/profile';
+import { SETUP_STATUS_LABEL } from '../utils/setupSteps';
 
 // The verdict sentence comes from the backend as "<workspace name> is <status>. ...".
 // The hero reads it as "<organization>'s risk posture is <status>." with the opening in bold.
@@ -43,12 +45,9 @@ export default function Home() {
   const hasRisk = modules.includes('risk');
   const hasIncident = modules.includes('incident');
   const canGenerate = useCanDo('generate_ai');
-  const perms = {
-    settings: useCanDo('manage_settings'),
-    risks: useCanDo('manage_risks'),
-    users: useCanDo('manage_users'),
-  };
+  const canSeeAudit = useCanDo('manage_settings');
   const { data, isLoading, isError, refetch } = useHome();
+  const { data: me } = useProfile();
   const { query: settingsQuery } = useSettings();
 
   const [tour, setTour] = useState(-1);
@@ -73,20 +72,21 @@ export default function Home() {
   const part = data.day_part;
   const greeting = data.first_name ? `Good ${part}, ${data.first_name}` : `Good ${part}`;
   const dateLine = localDateLine(data.local_date);
-  const initials = initialsOf(data.first_name ?? claims?.email);
+  // Same initials and photo as the top bar (My profile).
+  const initials = initialsOf(me ? `${me.first_name} ${me.last_name}` : data.first_name ?? claims?.email);
 
   if (data.setup.first_run) {
-    const pct = setupProgress(data.setup, hasRisk, hasIncident);
+    const { percent: pct, done_count: doneCount, total } = data.setup;
     return (
       <div className="pl-app pl-an-page">
-        <SkyHero part={part} initials={initials} dateLine={dateLine} greeting={greeting}>
+        <SkyHero part={part} initials={initials} photoUrl={me?.avatar_url} dateLine={dateLine} greeting={greeting}>
           <p className="pl-hero-text">
             Welcome to Pulse. This page becomes your 60-second view of {data.workspace} once your
             {hasRisk && hasIncident ? ' risks and incidents are' : hasRisk ? ' risks are' : ' incidents are'} in.
             A few steps get you there.
           </p>
           <div className="pl-stack-xs pl-hero-progress">
-            <div className="pl-an-head pl-hero-text-s"><span>Setup progress</span><span className="pl-num">{pct}%</span></div>
+            <div className="pl-an-head pl-hero-text-s"><span>{SETUP_STATUS_LABEL} · {doneCount} of {total} done</span><span className="pl-num">{pct}%</span></div>
             <span className="pl-bar pl-hero-track" aria-hidden="true"><span style={{ ['--pl-fill' as string]: `${pct}%` }} /></span>
           </div>
           <div className="pl-inline">
@@ -98,7 +98,6 @@ export default function Home() {
           setup={data.setup}
           hasRisk={hasRisk}
           hasIncident={hasIncident}
-          perms={perms}
           workspaceId={claims?.active_tenant_id ?? ''}
         />
       </div>
@@ -115,7 +114,7 @@ export default function Home() {
 
   return (
     <div className="pl-app pl-an-page">
-      <SkyHero part={part} initials={initials} dateLine={dateLine} greeting={greeting} tourOn={onStep('sec-verdict')}>
+      <SkyHero part={part} initials={initials} photoUrl={me?.avatar_url} dateLine={dateLine} greeting={greeting} tourOn={onStep('sec-verdict')}>
         <Verdict
           verdict={data.verdict}
           workspace={data.workspace}
@@ -142,7 +141,7 @@ export default function Home() {
         {showBrief && (
           <BriefCard stored={data.brief} confidence={data.confidence} canGenerate={canGenerate} tourOn={onStep('sec-brief')} />
         )}
-        <RecentActivity data={data} showAuditLink={perms.settings} />
+        <RecentActivity data={data} showAuditLink={canSeeAudit} />
       </div>
 
       {tour >= 0 && steps[tour] && <Tour steps={steps} index={tour} onGo={setTour} onClose={closeTour} />}

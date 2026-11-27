@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import ValidationError
 from app.models.appetite_threshold import AppetiteThreshold
+from app.models.audit_log import AuditLog
 from app.schemas.appetite import AppetiteThresholdResponse, AppetiteThresholdUpsert
 from app.services.matrix_config import get_config as get_matrix_config
 
@@ -45,6 +46,8 @@ async def upsert_appetite(
         )
     )
     row = result.scalar_one_or_none()
+    old_threshold = int(row.threshold) if row is not None else None  # type: ignore[arg-type]
+    old_rationale = str(row.rationale or "") if row is not None else ""
     if row is None:
         row = AppetiteThreshold(
             tenant_id=tenant_id,
@@ -60,6 +63,26 @@ async def upsert_appetite(
         row.set_by = user_email            # type: ignore[assignment]
     await db.flush()
     await db.refresh(row)
+
+    # Every appetite change is kept in the Audit Log, with the old and new value.
+    new_threshold = int(payload.threshold)
+    if old_threshold is None:
+        action, summary = "APPETITE_SET", f"Appetite for {payload.category} set to {new_threshold}"
+    elif old_threshold != new_threshold:
+        action, summary = "APPETITE_UPDATE", f"Appetite for {payload.category} changed from {old_threshold} to {new_threshold}"
+    else:
+        action, summary = "APPETITE_UPDATE", f"Appetite for {payload.category} kept at {new_threshold}"
+    if old_threshold is not None and old_rationale != str(payload.rationale or ""):
+        summary += "; rationale updated"
+    db.add(AuditLog(
+        tenant_id=tenant_id,
+        user_email=user_email,
+        action=action,
+        module="Settings",
+        record_id=payload.category,
+        summary=summary,
+    ))
+    await db.flush()
     return AppetiteThresholdResponse.model_validate(row)
 
 
@@ -67,12 +90,29 @@ async def delete_appetite(
     db: AsyncSession,
     tenant_id: UUID,
     category: str,
+    user_email: str,
 ) -> bool:
-    result = await db.execute(
+    old = (await db.execute(
+        select(AppetiteThreshold.threshold).where(
+            AppetiteThreshold.tenant_id == tenant_id,
+            AppetiteThreshold.category == category,
+        )
+    )).scalar_one_or_none()
+    if old is None:
+        return False
+    await db.execute(
         delete(AppetiteThreshold).where(
             AppetiteThreshold.tenant_id == tenant_id,
             AppetiteThreshold.category == category,
         )
     )
+    db.add(AuditLog(
+        tenant_id=tenant_id,
+        user_email=user_email,
+        action="APPETITE_DELETE",
+        module="Settings",
+        record_id=category,
+        summary=f"Appetite for {category} removed (was {int(old)})",
+    ))
     await db.flush()
-    return result.rowcount > 0  # type: ignore[union-attr]
+    return True

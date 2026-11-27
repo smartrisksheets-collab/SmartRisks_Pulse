@@ -6,60 +6,50 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Check } from 'lucide-react';
 import type { HomeSetup } from '../../types/home';
+import { useAuthStore } from '../../store/authStore';
+import { SETUP_ADMIN_NOTE, SETUP_STATUS_LABEL, SETUP_STEP_COPY } from '../../utils/setupSteps';
 import { MAILTO_DEMO } from '../../utils/constants';
 import IncidentExternalLinkModal from '../incidents/IncidentExternalLinkModal';
 
 interface Cta { label: string; to?: string; onClick?: () => void }
-interface StepDef { key: string; title: string; text: string; done: boolean; doneNote: string; cta?: Cta; alt?: Cta; note?: string }
 
-export default function SetupView({ workspace, setup, hasRisk, hasIncident, perms, workspaceId }: {
+export default function SetupView({ workspace, setup, hasRisk, hasIncident, workspaceId }: {
   workspace: string;
   setup: HomeSetup;
   hasRisk: boolean;
   hasIncident: boolean;
-  perms: { settings: boolean; risks: boolean; users: boolean };
   workspaceId: string;
 }) {
   const [showIncLink, setShowIncLink] = useState(false);
-  const adminNote = 'Your workspace admin does this step.';
+  const permissions = useAuthStore(s => s.claims?.permissions);
 
-  const defs: StepDef[] = [
-    { key: 'ws', title: 'Create your workspace', text: `${workspace} is set up.`, done: true, doneNote: 'Done' },
-    ...(hasRisk ? [{
-      key: 'matrix', title: 'Set your risk matrix and appetite',
-      text: 'Pick the SmartRisk default scale or your own, then set how much risk each category can carry.',
-      done: setup.appetite, doneNote: 'Appetite saved',
-      cta: perms.settings ? { label: 'Open risk settings', to: '/settings?tab=appetite' } : undefined,
-      note: perms.settings ? undefined : adminNote,
-    }, {
-      key: 'risks', title: 'Add your first risks',
-      text: 'Type them in yourself, or share a submission link so departments can send risks without logging in.',
-      done: setup.risks, doneNote: 'Risks added to the register',
-      cta: perms.risks ? { label: 'Add a risk', to: '/risks?new=1' } : undefined,
-      alt: perms.risks ? { label: 'Share submission link', to: '/risks/submission-links' } : undefined,
-      note: perms.risks ? undefined : adminNote,
-    }] : []),
-    ...(hasIncident ? [{
-      key: 'incidents', title: 'Record incidents',
-      text: 'Log an incident, or share the external link so staff can report one as it happens.',
-      done: setup.incidents, doneNote: 'Incident log started',
-      cta: { label: 'Log an incident', to: '/incidents' },
-      alt: { label: 'Share incident link', onClick: () => setShowIncLink(true) },
-    }] : []),
-    {
-      key: 'team', title: 'Invite your risk owners',
-      text: 'Actions on Home go to named owners, so add the people who own each risk.',
-      done: setup.team, doneNote: 'Team members added',
-      cta: perms.users ? { label: 'Invite people', to: '/users' } : undefined,
-      note: perms.users ? undefined : adminNote,
-    },
-  ];
+  // Steps and their done flags come from the backend, in order, for this workspace's modules.
+  const defs = setup.steps.map(st => {
+    const copy = SETUP_STEP_COPY[st.key];
+    const allowed = copy.perm === null || permissions?.[copy.perm] === true;
+    const cta: Cta | undefined = allowed && copy.cta ? copy.cta : undefined;
+    const alt: Cta | undefined = !allowed || !copy.alt
+      ? undefined
+      : copy.incidentLinkAlt
+        ? { label: copy.alt.label, onClick: () => setShowIncLink(true) }
+        : copy.alt;
+    return {
+      key: st.key,
+      done: st.done,
+      title: copy.title,
+      text: st.key === 'workspace' ? `${workspace} is set up.` : copy.text,
+      doneNote: copy.doneNote,
+      cta,
+      alt,
+      note: allowed ? undefined : SETUP_ADMIN_NOTE,
+    };
+  });
 
   const nextKey = defs.find(d => !d.done)?.key;
 
   const tiles = [
     ...(hasRisk ? [
-      { label: 'Health score', ready: setup.appetite && setup.risks, needs: 'Needs a matrix and scored risks' },
+      { label: 'Health score', ready: setup.matrix && setup.risks, needs: 'Needs categories and scored risks' },
       { label: 'Outside appetite', ready: setup.appetite && setup.risks, needs: 'Needs appetite and risks' },
     ] : []),
     ...(hasIncident ? [{ label: 'Open incidents', ready: setup.incidents, needs: 'Needs your incident log' }] : []),
@@ -79,7 +69,7 @@ export default function SetupView({ workspace, setup, hasRisk, hasIncident, perm
         <section id="sec-setup" className="pl-card pl-stack-xs pl-setup-main" aria-label="Setup checklist">
           <div className="pl-stack-xs pl-home-list-head">
             <h2 className="pl-section">Get {workspace} ready</h2>
-            <p className="pl-intro">Do these in order. Each one switches on part of your Home.</p>
+            <p className="pl-intro">The same list as {SETUP_STATUS_LABEL} in the top bar. Each step switches on part of your Home.</p>
           </div>
           {defs.map((d, i) => {
             const isNext = d.key === nextKey;

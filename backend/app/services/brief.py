@@ -9,9 +9,10 @@ import urllib.parse
 from datetime import date, datetime, timezone, timedelta
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.account import Account
 from app.models.incident import Incident
 from app.models.matrix_config import MatrixConfig
 from app.models.risk import Risk
@@ -27,6 +28,7 @@ from app.schemas.brief import (
     SignalRow,
     WeeklyDigest,
 )
+from app.services.account_name import first_name_of
 from app.services.clock import greeting, local_now
 from app.services.matrix_config import _get_or_create as _get_matrix
 from app.services.risk_status import (
@@ -146,7 +148,9 @@ async def build_brief_payload(
     outreach        = _build_suggested_outreach(risks, delta_list, ws, bands)
     signal_rows     = _build_signal_rows(daily_section, control_metrics, incidents, today)
     rec_action      = _build_recommended_action(daily_section, control_metrics, stale_metrics, outreach, bands)
-    first_name      = _first_name_from_email(reader_email) if reader_email else str(ws.get("name") or "there")
+    first_name      = (
+        await _reader_first_name(db, reader_email) if reader_email else str(ws.get("name") or "there")
+    )
     workspace_name  = str(tenant.name or "SmartRisk")
 
     weekly_obj: WeeklyDigest | None = None
@@ -830,6 +834,15 @@ def _days_since(val: object) -> int:
         return (date.today() - parsed).days
     except (ValueError, TypeError):
         return 9999
+
+
+async def _reader_first_name(db: AsyncSession, email: str) -> str:
+    """The reader's saved first name (072), else a guess from the email."""
+    row = (await db.execute(
+        select(Account.first_name, Account.name).where(func.lower(Account.email) == email.strip().lower())
+    )).first()
+    name = first_name_of(row.first_name, row.name) if row else None
+    return name or _first_name_from_email(email)
 
 
 def _first_name_from_email(email: str) -> str:

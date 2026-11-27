@@ -20,6 +20,9 @@ function fmtDate(iso: string | null): string {
   return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
+// SmartRisk's sector guide, the same file the setup wizard links to.
+const APPETITE_GUIDE_URL = '/docs/smartrisk-suggested-appetite-thresholds.pdf';
+
 // ── Guide panel ───────────────────────────────────────────────────────────────
 
 function GuidePanel({ unsetCount, total }: { unsetCount: number; total: number }) {
@@ -270,6 +273,14 @@ export default function AppetiteSettings() {
       </div>
 
       <GuidePanel unsetCount={unsetCount} total={categories.length} />
+
+      <p className="muted small apt-suggest-link">
+        Starting points by sector:{' '}
+        <a href={APPETITE_GUIDE_URL} target="_blank" rel="noopener noreferrer">
+          SmartRisk suggested appetite thresholds (PDF)
+        </a>
+        . Not regulatory limits. Set yours in line with your board-approved risk appetite.
+      </p>
 
       {query.isLoading && <p className="muted small" style={{ paddingTop: 16 }}>Loading&hellip;</p>}
 

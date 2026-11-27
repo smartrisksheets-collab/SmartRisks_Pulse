@@ -20,18 +20,21 @@ const SKY: Record<DayPart, ReactNode> = {
 interface Props {
   part: DayPart;
   initials: string;
+  photoUrl?: string | null;
   dateLine: string;
   greeting: string;
   children: ReactNode;
   tourOn?: boolean;
 }
 
-export default function SkyHero({ part, initials, dateLine, greeting, children, tourOn }: Props) {
+export default function SkyHero({ part, initials, photoUrl, dateLine, greeting, children, tourOn }: Props) {
   return (
     <section id="sec-verdict" className={`pl-hero pl-hero-${part}${tourOn ? ' pl-tour-on' : ''}`} aria-label="Greeting and overall verdict">
       <div className="pl-hero-body">
         <div className="pl-hero-who">
-          <span className="pl-avatar pl-lg pl-hero-avatar">{initials}</span>
+          {photoUrl
+            ? <img className="pl-avatar pl-lg pl-hero-avatar" src={photoUrl} alt="" />
+            : <span className="pl-avatar pl-lg pl-hero-avatar">{initials}</span>}
           <div className="pl-stack-0">
             <p className="pl-hero-date">{dateLine}</p>
             <h1 className="pl-hero-title">{greeting}</h1>

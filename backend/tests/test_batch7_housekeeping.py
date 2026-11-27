@@ -40,7 +40,9 @@ async def test_purge_removes_only_old_rows(seed: dict) -> None:
         await s.commit()
 
     removed = await purge_housekeeping_tables()
-    assert set(removed) == {"api_error_log", "rate_limit_counters", "revoked_refresh_tokens", "scheduler_runs"}
+    assert set(removed) == {
+        "api_error_log", "rate_limit_counters", "revoked_refresh_tokens", "scheduler_runs", "onboarding_drafts",
+    }
 
     assert await _count("SELECT count(*) FROM api_error_log WHERE path = :e", {"e": f"/t/{tag}"}) == 1
     assert await _count("SELECT count(*) FROM rate_limit_counters WHERE key LIKE :k", {"k": f"%:{tag}"}) == 1

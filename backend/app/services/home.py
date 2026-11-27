@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.account import Account
 from app.models.appetite_threshold import AppetiteThreshold
 from app.models.incident import Incident
+from app.models.lookup import Lookup
 from app.models.risk import Risk
 from app.models.tenant import Tenant
 from app.models.workspace_member import WorkspaceMember
@@ -27,9 +28,11 @@ from app.schemas.home import (
     HomeResponse,
     HomeRiskRow,
     HomeSetup,
+    HomeSetupStep,
     HomeTile,
     HomeTiles,
 )
+from app.services.account_name import first_name_of
 from app.services.clock import day_part, local_now, zone_name
 from app.services.dashboard import get_dashboard
 from app.services.incident_severity import (
@@ -112,6 +115,42 @@ def merge_actions(data: DashboardResponse) -> list[HomeAction]:
     return [HomeAction(**a.model_dump(), target_kind=_target_kind(a)) for _, a in ordered]
 
 
+def build_setup(
+    *,
+    has_risk: bool,
+    has_incident: bool,
+    matrix: bool,
+    appetite: bool,
+    risks: bool,
+    incidents: bool,
+    team: bool,
+) -> HomeSetup:
+    """The one place Setup status is worked out. Steps for a module the
+    workspace does not use are left out, so the percent only counts what applies."""
+    flags: list[tuple[str, bool]] = [("workspace", True)]
+    if has_risk:
+        flags += [("matrix", matrix), ("appetite", appetite), ("risks", risks)]
+    if has_incident:
+        flags.append(("incidents", incidents))
+    flags.append(("team", team))
+
+    done = sum(1 for _, ok in flags if ok)
+    total = len(flags)
+    return HomeSetup(
+        matrix=matrix,
+        appetite=appetite,
+        risks=risks,
+        incidents=incidents,
+        team=team,
+        steps=[HomeSetupStep(key=k, done=ok) for k, ok in flags],
+        done_count=done,
+        total=total,
+        # Rounded half up, so 1 of 6 shows 17 and 5 of 6 shows 83.
+        percent=(done * 200 + total) // (2 * total),
+        first_run=not risks and not incidents,
+    )
+
+
 async def get_home(
     db: AsyncSession,
     tenant_id: UUID,
@@ -130,9 +169,11 @@ async def get_home(
     local = local_now(tenant)
     first_name: str | None = None
     if account_id is not None:
-        full = (await db.execute(select(Account.name).where(Account.id == account_id))).scalar_one_or_none()
-        parts = str(full or "").split()
-        first_name = parts[0] if parts else None
+        names = (await db.execute(
+            select(Account.first_name, Account.name).where(Account.id == account_id)
+        )).first()
+        if names is not None:
+            first_name = first_name_of(names.first_name, names.name)
 
     members = int((await db.execute(
         select(func.count(WorkspaceMember.id)).where(
@@ -307,13 +348,20 @@ async def get_home(
         open_actions=HomeTile(value=len(actions), note=act_note),
     )
 
-    setup = HomeSetup(
+    # Matrix and categories count as done once the workspace has saved its own
+    # category list. The matrix itself always has the SmartRisk default.
+    saved_categories = (await db.execute(
+        select(Lookup.category).where(Lookup.tenant_id == tenant_id)
+    )).scalar_one_or_none()
+    setup = build_setup(
+        has_risk=has_risk,
+        has_incident=has_incident,
+        matrix=any(str(c or "").strip() for c in (saved_categories or [])),
         appetite=data.kpis.appetite_configured,
         risks=data.kpis.total_risks > 0,
         incidents=data.total_incidents.count > 0,
         team=members > 1,
     )
-    setup.first_run = not setup.risks and not setup.incidents
 
     return HomeResponse(
         first_name=first_name,

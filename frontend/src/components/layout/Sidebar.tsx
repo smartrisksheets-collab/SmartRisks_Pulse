@@ -4,6 +4,7 @@ import { useAuthStore } from '../../store/authStore';
 import { useAuth } from '../../hooks/useAuth';
 import { useSettings } from '../../hooks/useSettings';
 import { useHome } from '../../hooks/useHome';
+import { useProfile } from '../../services/profile';
 import { planLabel, PROFILE_NAME_FALLBACK } from '../../utils/constants';
 import { initialsOf } from '../home/links';
 import { useSettingsStore } from '../../store/settingsStore';
@@ -52,8 +53,9 @@ export default function Sidebar() {
   const { logout } = useAuth();
   // The profile shows the account name only. The email is never rendered on screen.
   const { data: home } = useHome();
-  const profileName = home?.first_name || PROFILE_NAME_FALLBACK;
-  const initials    = initialsOf(home?.first_name ?? claims?.email);
+  const { data: me }   = useProfile();
+  const profileName = me?.first_name || home?.first_name || PROFILE_NAME_FALLBACK;
+  const initials    = initialsOf(me ? `${me.first_name} ${me.last_name}` : home?.first_name ?? claims?.email);
 
   const workspaceName = useAuthStore((s) =>
     s.workspaces.find((w) => w.tenant_id === s.claims?.active_tenant_id)?.name ?? 'SmartRisk'
@@ -141,7 +143,9 @@ export default function Sidebar() {
 
         <div className="sidebar-foot">
           <div className="sidebar-profile" title={profileName}>
-            <span className="pl-avatar" aria-hidden="true">{initials}</span>
+            {me?.avatar_url
+              ? <img className="pl-avatar" src={me.avatar_url} alt="" />
+              : <span className="pl-avatar" aria-hidden="true">{initials}</span>}
             <div className="sidebar-profile-text">
               <span className="sidebar-profile-name">{profileName}</span>
               <span className="sidebar-profile-meta">

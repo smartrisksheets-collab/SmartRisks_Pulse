@@ -10,7 +10,10 @@ class Account(Base):
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     email = Column(String, nullable=False, unique=True)
-    name = Column(String)
+    name = Column(String)  # full name, written with first_name and last_name
+    first_name = Column(String)
+    last_name = Column(String)
+    avatar_url = Column(String)  # profile photo, public URL in workspace-logos/avatars/
     last_login = Column(DateTime(timezone=True))
     last_seen = Column(DateTime(timezone=True))
     supabase_uid  = Column(String, unique=True, nullable=True)

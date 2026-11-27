@@ -7,6 +7,7 @@ export interface WorkspaceMember {
   account_id:  string;
   email:       string;
   name:        string | null;
+  avatar_url?: string | null;
   role:        string;
   status:      string;
   permissions: Record<string, boolean> | null;

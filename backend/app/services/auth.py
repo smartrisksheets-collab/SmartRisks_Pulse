@@ -21,6 +21,7 @@ from app.models.account_identity import AccountIdentity
 from app.models.tenant import Tenant
 from app.models.workspace_member import WorkspaceMember
 from app.services import lockout, refresh_tokens
+from app.services.account_name import clean_name, set_account_full_name, set_account_name
 
 
 
@@ -350,7 +351,15 @@ async def reset_password(db: AsyncSession, token: str, new_password: str) -> dic
     return {"message": "Password updated. Please sign in with your new password."}
 
 
-async def register(db: AsyncSession, email: str, password: str, name: str) -> dict:
+async def register(
+    db: AsyncSession,
+    email: str,
+    password: str,
+    *,
+    first_name: str | None = None,
+    last_name: str | None = None,
+    name: str | None = None,
+) -> dict:
     existing = await db.scalar(select(Account).where(Account.email == email.lower()))
 
     if existing:
@@ -365,11 +374,14 @@ async def register(db: AsyncSession, email: str, password: str, name: str) -> di
 
     account = Account(
         email=email.lower(),
-        name=name,
         password_hash=await asyncio.to_thread(hash_password, password),
         created_via="register",
         last_login=datetime.now(timezone.utc),
     )
+    if clean_name(first_name):
+        set_account_name(account, first_name, last_name)
+    else:
+        set_account_full_name(account, name)
     db.add(account)
     await db.flush()
     await record_identity(db, account.id, "password")  # type: ignore[arg-type]
@@ -409,6 +421,8 @@ async def google_auth(db: AsyncSession, access_token: str) -> dict:
         raise InvalidCredentialsError("Could not retrieve email from Google account")
 
     name = str(info.get("name", ""))
+    given = str(info.get("given_name", ""))
+    family = str(info.get("family_name", ""))
     if not name:
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
@@ -417,14 +431,21 @@ async def google_auth(db: AsyncSession, access_token: str) -> dict:
                     headers={"Authorization": f"Bearer {access_token}"},
                 )
             if ui.status_code == 200:
-                name = str(ui.json().get("name", ""))
+                profile = ui.json()
+                name = str(profile.get("name", ""))
+                given = given or str(profile.get("given_name", ""))
+                family = family or str(profile.get("family_name", ""))
         except httpx.HTTPError:
             pass
     name = name or email.split("@")[0]
 
     account = await db.scalar(select(Account).where(Account.email == email))
     if not account:
-        account = Account(email=email, name=name, created_via="google")
+        account = Account(email=email, created_via="google")
+        if clean_name(given):
+            set_account_name(account, given, family)
+        else:
+            set_account_full_name(account, name)
         db.add(account)
     account.last_login = datetime.now(timezone.utc)  # type: ignore[assignment]
     await db.flush()

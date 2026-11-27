@@ -51,7 +51,10 @@ async def register(
     response: Response,
     db: AsyncSession = Depends(get_db),
 ):
-    result = await auth_service.register(db, payload.email, payload.password, payload.name)
+    result = await auth_service.register(
+        db, payload.email, payload.password,
+        first_name=payload.first_name, last_name=payload.last_name, name=payload.name,
+    )
     _set_refresh(response, result)
     return {"data": result, "error": None, "meta": {}}
 

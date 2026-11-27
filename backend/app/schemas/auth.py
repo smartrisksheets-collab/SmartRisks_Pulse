@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, field_validator, model_validator
 from app.schemas.limits import Password, Short, Tiny, TokenText
 import re
 
@@ -26,9 +26,21 @@ class WorkspaceSelectRequest(BaseModel):
 
 
 class RegisterRequest(BaseModel):
-    name: Short
+    first_name: Short | None = None
+    last_name: Short | None = None
+    # Older frontends send one full name. Accepted until every client sends first_name.
+    name: Short | None = None
     email: EmailStr
     password: Password
+
+    @model_validator(mode="after")
+    def _names(self) -> "RegisterRequest":
+        if (self.first_name or "").strip():
+            if not (self.last_name or "").strip():
+                raise ValueError("Enter your last name.")
+        elif not (self.name or "").strip():
+            raise ValueError("Enter your first name.")
+        return self
 
     @field_validator("password")
     @classmethod

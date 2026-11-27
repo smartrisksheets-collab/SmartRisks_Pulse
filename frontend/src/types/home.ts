@@ -37,11 +37,24 @@ export interface HomeIncidentRow {
   tags: string[];
 }
 
+export type SetupStepKey = 'workspace' | 'matrix' | 'appetite' | 'risks' | 'incidents' | 'team';
+
+export interface HomeSetupStep {
+  key: SetupStepKey;
+  done: boolean;
+}
+
+// Setup status, worked out on the backend (services/home.py build_setup).
 export interface HomeSetup {
+  matrix: boolean;
   appetite: boolean;
   risks: boolean;
   incidents: boolean;
   team: boolean;
+  steps: HomeSetupStep[];
+  done_count: number;
+  total: number;
+  percent: number;
   first_run: boolean;
 }
 

@@ -30,3 +30,5 @@ from app.models.account_identity import AccountIdentity
 from app.models.help_event import HelpEvent
 from app.models.matrix_config import MatrixConfig
 from app.models.report_template import ReportTemplate, ReportSettings
+from app.models.onboarding_draft import OnboardingDraft
+from app.models.join_request import JoinRequest

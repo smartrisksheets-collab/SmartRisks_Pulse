@@ -32,6 +32,7 @@ async def list_users(
             "account_id":   str(m.account_id),
             "email":        a.email,
             "name":         a.name,
+            "avatar_url":   a.avatar_url or None,
             "role":         m.role,
             "status":       m.status,
             "permissions":  m.permissions if can_manage else None,

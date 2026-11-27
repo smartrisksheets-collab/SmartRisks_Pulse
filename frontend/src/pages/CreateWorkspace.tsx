@@ -1,645 +1,612 @@
-import { useState, useRef, useEffect, type ChangeEvent } from 'react';
+// src/pages/CreateWorkspace.tsx
+// Setup wizard, 3 steps: you and your workspace, how you score risk, your appetite.
+// Each step is saved to the account's draft (PUT /api/v1/onboarding/draft), so a
+// closed tab resumes here. Finish creates the workspace, categories and appetite
+// in one go (POST /api/v1/onboarding/finish); the logo uploads right after.
+
+import { useEffect, useRef, useState, type ChangeEvent, type CSSProperties } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import {
-  Building2, Heart, Droplets, Factory, Cpu, Landmark, Zap, MoreHorizontal,
-  Check, Circle, Upload, Plus, Trash2, Rocket, X,
-} from 'lucide-react';
+import { Check, Circle, Minus, Plus, Upload } from 'lucide-react';
+import { SrLogo } from '../components/layout/SrLogo';
 import { useAuthStore } from '../store/authStore';
-import { apiPost, apiPatch, apiGet } from '../services/api';
+import { apiPatch, apiPost } from '../services/api';
 import { uploadLogo } from '../services/settings';
+import { finishOnboarding, getOnboardingDraft, saveOnboardingDraft, useOnboardingOptions } from '../services/onboarding';
 import type { LoginResult, WorkspaceInfo } from '../types/auth';
 import type { ModuleKey } from '../types/api';
-import {
-  WIZARD_INDUSTRIES, ORG_SIZES, FRAMEWORKS, CURRENCIES,
-  TIMEZONES, DATE_FORMATS, WIZARD_BAND_ROWS, WIZARD_HEATMAP, WIZARD_ROLES,
-  WIZARD_CATEGORY_EXAMPLES,
-} from '../utils/constants';
+import { EMPTY_ONBOARDING, type OnboardingData, type OnboardingOptions } from '../types/onboarding';
+import type { SetupLogoResult, SetupReadyState } from '../types/setup';
+import { levelChipClass } from '../utils/riskDisplay';
+import JoinTeamCard from '../components/onboarding/JoinTeamCard';
 
-// ── Types ────────────────────────────────────────────────────────────────────
-interface WizardData {
-  orgName: string;
-  workspaceName: string;
-  logoFile: File | null;
-  logoPreview: string | null;
-  industry: string;
-  orgSize: string;
-  framework: string;
-  currency: string;
-  timezone: string;
-  dateFormat: string;
-  invites: { email: string; role: string }[];
-  categories: { name: string; owner: string }[];
+const errorText = (err: unknown, fallback: string): string =>
+  err instanceof Error && err.message ? err.message : fallback;
+
+const STEP_TITLES = ['You and your workspace', 'How you score risk', 'Your appetite'];
+
+function savedLabel(iso: string | null, now: number): string {
+  if (!iso) return '';
+  const secs = Math.max(0, Math.round((now - new Date(iso).getTime()) / 1000));
+  if (secs < 45) return 'Saved just now';
+  const mins = Math.round(secs / 60);
+  if (mins < 60) return `Saved ${mins} minute${mins === 1 ? '' : 's'} ago`;
+  return 'Saved';
 }
 
-const ICON_MAP: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
-  Building2, Heart, Droplets, Factory, Cpu, Landmark, Zap, MoreHorizontal,
-};
-
-function buildLaunchSteps(data: WizardData): string[] {
-  const steps = [
-    'Preparing your workspace…',
-    'Creating your workspace…',
-    'Configuring your risk matrix…',
-  ];
-  if (data.categories.some(c => c.name.trim())) steps.push('Seeding risk categories…');
-  if (data.logoFile)                             steps.push('Uploading your logo…');
-  if (data.invites.some(i => i.email.trim()))    steps.push('Inviting your team…');
-  steps.push('Almost ready…');
-  return steps;
+// Band of each matrix cell, highest likelihood row first, for the preview grid.
+// SmartRisk suggested categories for a sector, or the defaults before one is picked.
+function baseCategories(options: OnboardingOptions, sector: string | null): string[] {
+  const rows = sector ? options.suggestions[sector] : undefined;
+  return rows?.length ? rows.map(r => r.category) : options.default_categories;
 }
 
-const INITIAL_DATA: WizardData = {
-  orgName: '', workspaceName: '', logoFile: null, logoPreview: null,
-  industry: '', orgSize: '', framework: 'ISO 31000', currency: '₦',
-  timezone: 'Africa/Lagos', dateFormat: 'DD/MM/YYYY',
-  invites: [{ email: '', role: 'Analyst' }],
-  categories: [
-    { name: '', owner: '' },
-    { name: '', owner: '' },
-    { name: '', owner: '' },
-  ],
-};
+// SmartRisk's suggested threshold for a category in this sector, if there is one.
+function suggestedValue(options: OnboardingOptions, sector: string | null, cat: string): number | undefined {
+  const rows = sector ? options.suggestions[sector] ?? [] : [];
+  return rows.find(r => r.category.toLowerCase() === cat.toLowerCase())?.threshold;
+}
 
-const STEPS = [
-  'Workspace & logo',
-  'Industry & size',
-  'Framework defaults',
-  'Risk matrix',
-  'Risk categories',
-  'Invite team',
-];
+// Where a category starts: its suggestion, else the middle of the scale.
+function startValue(options: OnboardingOptions, sector: string | null, cat: string): number {
+  return suggestedValue(options, sector, cat) ?? options.appetite_start;
+}
 
-// ── Step sub-components (module scope) ───────────────────────────────────────
+function heatCells(options: OnboardingOptions): number[] {
+  const side = Math.round(Math.sqrt(options.matrix_max));
+  const cells: number[] = [];
+  for (let l = side; l >= 1; l--) {
+    for (let i = 1; i <= side; i++) cells.push(options.band_for_score[l * i - 1] ?? 1);
+  }
+  return cells;
+}
+
+// ── Steps (module scope) ─────────────────────────────────────────────────────
 
 interface StepProps {
-  data: WizardData;
-  onChange: (patch: Partial<WizardData>) => void;
+  data: OnboardingData;
+  onChange: (patch: Partial<OnboardingData>) => void;
 }
 
-function StepWorkspace({ data, onChange }: StepProps) {
+function StepWorkspace({ data, onChange, logoFile, logoPreview, onLogo, email }: StepProps & {
+  logoFile: File | null;
+  logoPreview: string | null;
+  onLogo: (file: File | null) => void;
+  email: string;
+}) {
   const fileRef = useRef<HTMLInputElement>(null);
 
   function handleFile(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const preview = URL.createObjectURL(file);
-    onChange({ logoFile: file, logoPreview: preview });
+    onLogo(e.target.files?.[0] ?? null);
+    e.target.value = '';
   }
 
   return (
     <>
       <div className="wiz-field">
-        <label>Workspace name</label>
-        <p className="wiz-upload-hint" style={{ marginTop: 0, marginBottom: 6 }}>
-          Your department or team, e.g. "Risk Department." Shows in the sidebar, reports, and briefs.
-        </p>
+        <label htmlFor="ws-name">Workspace name</label>
+        <p className="wiz-upload-hint wiz-field-hint">Your team or department, for example "Risk Dept".</p>
         <input
+          id="ws-name"
           type="text"
-          value={data.workspaceName}
-          onChange={e => onChange({ workspaceName: e.target.value })}
-          placeholder="Risk Department"
+          maxLength={200}
+          value={data.workspace_name ?? ''}
+          onChange={e => onChange({ workspace_name: e.target.value })}
         />
       </div>
       <div className="wiz-field">
-        <label>Organization name <span style={{ color: '#94a3b8', fontWeight: 400 }}>(optional)</span></label>
-        <p className="wiz-upload-hint" style={{ marginTop: 0, marginBottom: 6 }}>
-          The parent company or entity, e.g. "Acme Financial Group." Used in report covers and board briefs.
-        </p>
+        <label htmlFor="ws-org">Organisation <span className="wiz-optional">optional</span></label>
+        <p className="wiz-upload-hint wiz-field-hint">Used in reports and board briefs.</p>
         <input
+          id="ws-org"
           type="text"
-          value={data.orgName}
-          onChange={e => onChange({ orgName: e.target.value })}
-          placeholder="Acme Financial Group"
+          maxLength={200}
+          value={data.org_name ?? ''}
+          onChange={e => onChange({ org_name: e.target.value })}
         />
       </div>
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-        <label style={{ fontSize: 13, fontWeight: 600, color: '#334155' }}>Logo</label>
-        <span style={{ fontSize: 12, color: '#94a3b8' }}>Optional — add anytime in Settings</span>
+      <div className="wiz-field">
+        <label>Organisation logo <span className="wiz-optional">optional</span></label>
+        <button type="button" className="wiz-upload" onClick={() => fileRef.current?.click()}>
+          {logoPreview
+            ? <img src={logoPreview} alt="Logo preview" className="wiz-upload-preview" />
+            : <span className="wiz-upload-icon"><Upload size={18} /></span>}
+          <span>
+            <span className="wiz-upload-label">{logoFile ? logoFile.name : 'Drop a logo here, or browse'}</span>
+            <span className="wiz-upload-hint">PNG, JPG or WebP, up to 2 MB. Shown in the sidebar and on reports.</span>
+          </span>
+        </button>
+        <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" onChange={handleFile} />
       </div>
-      <div className="wiz-upload" onClick={() => fileRef.current?.click()}>
-        {data.logoPreview
-          ? <img src={data.logoPreview} alt="Logo preview" className="wiz-upload-preview" />
-          : <div className="wiz-upload-icon"><Upload size={18} /></div>
-        }
-        <div>
-          <div className="wiz-upload-label">
-            {data.logoFile ? data.logoFile.name : 'Drag and drop, or click to browse'}
-          </div>
-          <div className="wiz-upload-hint">PNG, JPG or WebP · up to 2 MB · min 200×200 px</div>
+
+      {email && <p className="wiz-upload-hint">Signed up as {email}</p>}
+    </>
+  );
+}
+
+function StepScoring({ data, onChange, options }: StepProps & { options: OnboardingOptions }) {
+  const [custom, setCustom] = useState('');
+  const picked = new Set(data.categories.map(c => c.toLowerCase()));
+  // The sector's suggested categories (or the defaults) first, then anything the user added.
+  const base = baseCategories(options, data.sector);
+  const all = [
+    ...base,
+    ...data.categories.filter(c => !base.some(d => d.toLowerCase() === c.toLowerCase())),
+  ];
+
+  // A sector selects its SmartRisk suggested categories. Categories the user
+  // added themselves are kept; appetite values restart from the new suggestions.
+  function pickSector(s: string) {
+    if (s === data.sector) return;
+    const oldBase = baseCategories(options, data.sector).map(c => c.toLowerCase());
+    const own = data.categories.filter(c => !oldBase.includes(c.toLowerCase()));
+    const next = baseCategories(options, s);
+    const merged = [...next, ...own.filter(c => !next.some(n => n.toLowerCase() === c.toLowerCase()))];
+    onChange({ sector: s, categories: merged.slice(0, options.max_categories), appetite: {} });
+  }
+
+  function toggle(cat: string) {
+    const on = picked.has(cat.toLowerCase());
+    onChange({ categories: on ? data.categories.filter(c => c.toLowerCase() !== cat.toLowerCase()) : [...data.categories, cat] });
+  }
+
+  function addCustom() {
+    const name = custom.trim().replace(/\s+/g, ' ');
+    if (!name) return;
+    if (!picked.has(name.toLowerCase()) && data.categories.length < options.max_categories) {
+      onChange({ categories: [...data.categories, name] });
+    }
+    setCustom('');
+  }
+
+  const enough = data.categories.length >= options.min_categories;
+
+  return (
+    <>
+      <div className="wiz-field">
+        <label>Your sector</label>
+        <p className="wiz-upload-hint wiz-field-hint">
+          Picking a sector selects SmartRisk's suggested categories for it. Currency, time zone and date format
+          start as Naira, Lagos and DD/MM/YYYY. Change them in Settings.
+        </p>
+        <div className="wiz-chip-row" role="group" aria-label="Sector">
+          {options.sectors.map(s => (
+            <button
+              key={s}
+              type="button"
+              className={`wiz-size-pill${data.sector === s ? ' selected' : ''}`}
+              aria-pressed={data.sector === s}
+              onClick={() => pickSector(s)}
+            >
+              {s}
+            </button>
+          ))}
         </div>
-        <input
-          ref={fileRef}
-          type="file"
-          accept="image/png,image/jpeg,image/webp"
-          style={{ display: 'none' }}
-          onChange={handleFile}
-        />
+      </div>
+
+      <div className="wiz-field">
+        <label>Risk matrix</label>
+        <div className="wiz-matrix-cols">
+          <div>
+            <p className="wiz-band-name">SmartRisk default</p>
+            <p className="wiz-upload-hint wiz-field-hint">Likelihood × impact. {options.bands.length} bands.</p>
+            {options.bands.map((b, i) => (
+              <div key={b.label} className="wiz-band">
+                <span className={`pl-chip ${levelChipClass(i + 1, options.bands.length)}`}>{b.label}</span>
+                <span className="wiz-band-range">{b.min} to {b.max}</span>
+              </div>
+            ))}
+          </div>
+          <div className="wiz-heatmap" aria-hidden="true">
+            {heatCells(options).map((band, i) => (
+              <div key={i} className={`wiz-heatmap-cell wiz-heat-${levelChipClass(band, options.bands.length)}`} />
+            ))}
+          </div>
+        </div>
+        <p className="wiz-upload-hint">Want a 3 × 3 or 4 × 4 scale, or your own band names? Change it in Settings, Risk Matrix, after setup.</p>
+      </div>
+
+      <div className="wiz-field">
+        <label>
+          Risk categories <span className={enough ? 'wiz-count-ok' : 'wiz-count-low'}>{data.categories.length} selected</span>
+        </label>
+        <p className="wiz-upload-hint wiz-field-hint">
+          Pick at least {options.min_categories}. You set an appetite for each one in the next step.
+        </p>
+        <div className="wiz-chip-row" role="group" aria-label="Risk categories">
+          {all.map(c => {
+            const on = picked.has(c.toLowerCase());
+            return (
+              <button
+                key={c}
+                type="button"
+                className={`wiz-size-pill${on ? ' selected' : ''}`}
+                aria-pressed={on}
+                onClick={() => toggle(c)}
+              >
+                {on && <Check size={12} aria-hidden="true" />} {c}
+              </button>
+            );
+          })}
+        </div>
+        <div className="wiz-add-row">
+          <input
+            type="text"
+            maxLength={200}
+            placeholder="Add your own"
+            value={custom}
+            onChange={e => setCustom(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCustom(); } }}
+            aria-label="Add your own category"
+          />
+          <button type="button" className="wiz-btn" onClick={addCustom} disabled={!custom.trim()}>
+            <Plus size={14} aria-hidden="true" /> Add
+          </button>
+        </div>
       </div>
     </>
   );
 }
 
-function StepIndustry({ data, onChange }: StepProps) {
+function StepAppetite({ data, onChange, options }: StepProps & { options: OnboardingOptions }) {
+  const max = options.matrix_max;
+  const count = options.bands.length;
+  // Band edges as positions on the bar; the colours live in index.css.
+  const stops = options.bands.slice(0, -1).map(b => `${(b.max / max) * 100}%`);
+  const trackStyle = Object.fromEntries(stops.map((p, i) => [`--wiz-stop-${i + 1}`, p])) as CSSProperties;
+
+  function set(cat: string, value: number) {
+    const v = Math.min(max, Math.max(1, value));
+    onChange({ appetite: { ...data.appetite, [cat]: v }, appetite_skipped: false });
+  }
+
+  const value = (cat: string) => data.appetite[cat] ?? startValue(options, data.sector, cat);
+  const edited = data.categories.some(c => {
+    const s = suggestedValue(options, data.sector, c);
+    return s !== undefined && value(c) !== s;
+  });
+  const anyOwn = data.categories.some(c => suggestedValue(options, data.sector, c) === undefined);
+
+  function resetToSuggested() {
+    const appetite: Record<string, number> = { ...data.appetite };
+    data.categories.forEach(c => {
+      const s = suggestedValue(options, data.sector, c);
+      if (s !== undefined) appetite[c] = s;
+    });
+    onChange({ appetite, appetite_skipped: false });
+  }
+
   return (
     <>
-      <div className="wiz-tile-grid">
-        {WIZARD_INDUSTRIES.map(ind => {
-          const Icon = ICON_MAP[ind.icon];
+      <div className="wiz-appetite-head">
+        <span className="wiz-band-name">Thresholds by category</span>
+        <span className="wiz-upload-hint">
+          {data.categories.length} categories{data.sector ? ` · ${data.sector}` : ''} · scale 1 to {max}
+        </span>
+      </div>
+      <div className="wiz-suggest-banner">
+        <span className="wiz-suggest-tag">SmartRisk suggested</span>
+        <span className="wiz-suggest-text">
+          {options.appetite_note} Starting points, not regulatory limits.{' '}
+          {options.guide_url && (
+            <a href={options.guide_url} target="_blank" rel="noopener noreferrer">How these are set</a>
+          )}
+        </span>
+        {edited && (
+          <button type="button" className="wiz-btn-ghost" onClick={resetToSuggested}>Reset to suggested</button>
+        )}
+      </div>
+      <div className="wiz-appetite-list">
+        {data.categories.map(cat => {
+          const v = value(cat);
+          const band = options.band_for_score[v - 1] ?? 1;
+          const sug = suggestedValue(options, data.sector, cat);
           return (
-            <button
-              key={ind.key}
-              type="button"
-              className={`wiz-tile${data.industry === ind.key ? ' selected' : ''}`}
-              onClick={() => onChange({ industry: ind.key })}
-            >
-              <div className="wiz-tile-icon">{Icon && <Icon size={20} />}</div>
-              {ind.key}
-            </button>
+            <div key={cat} className="wiz-appetite-row">
+              <span className="wiz-appetite-cat">
+                {cat}
+                <span className="wiz-upload-hint wiz-appetite-sug">
+                  {sug === undefined ? 'Your category' : sug === v ? 'Suggested' : `Suggested ${sug}`}
+                </span>
+              </span>
+              <div className="wiz-stepper">
+                <button type="button" aria-label={`Lower ${cat}`} disabled={v <= 1} onClick={() => set(cat, v - 1)}>
+                  <Minus size={14} />
+                </button>
+                <span className="wiz-stepper-val" aria-live="polite">{v}</span>
+                <button type="button" aria-label={`Raise ${cat}`} disabled={v >= max} onClick={() => set(cat, v + 1)}>
+                  <Plus size={14} />
+                </button>
+              </div>
+              <div className="wiz-appetite-scale">
+                <span
+                  className={`wiz-appetite-track wiz-bands-${count}`}
+                  style={{ ...trackStyle, ['--wiz-pos' as string]: `${(v / max) * 100}%` }}
+                  aria-hidden="true"
+                />
+                <span className="wiz-upload-hint">
+                  Tolerates up to <span className={`pl-chip ${levelChipClass(band, count)}`}>{options.bands[band - 1]?.label}</span>
+                </span>
+              </div>
+            </div>
           );
         })}
       </div>
-
-      <label style={{ fontSize: 13, fontWeight: 600, color: '#334155', display: 'block', marginBottom: 8 }}>
-        Organization size
-      </label>
-      <div className="wiz-size-row">
-        {ORG_SIZES.map(s => (
-          <button
-            key={s}
-            type="button"
-            className={`wiz-size-pill${data.orgSize === s ? ' selected' : ''}`}
-            onClick={() => onChange({ orgSize: s })}
-          >
-            {s}
-          </button>
-        ))}
-      </div>
-    </>
-  );
-}
-
-function StepFramework({ data, onChange }: StepProps) {
-  const currencyLabel = CURRENCIES.find(c => c.value === data.currency)?.value ?? data.currency;
-
-  return (
-    <>
-      <div className="wiz-two-col">
-        <div className="wiz-field">
-          <label>Framework</label>
-          <select value={data.framework} onChange={e => onChange({ framework: e.target.value })}>
-            {FRAMEWORKS.map(f => <option key={f}>{f}</option>)}
-          </select>
-        </div>
-        <div className="wiz-field">
-          <label>Currency</label>
-          <select value={data.currency} onChange={e => onChange({ currency: e.target.value })}>
-            {CURRENCIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-          </select>
-        </div>
-        <div className="wiz-field">
-          <label>Timezone</label>
-          <select value={data.timezone} onChange={e => onChange({ timezone: e.target.value })}>
-            {TIMEZONES.map(t => <option key={t}>{t}</option>)}
-          </select>
-        </div>
-        <div className="wiz-field">
-          <label>Date format</label>
-          <select value={data.dateFormat} onChange={e => onChange({ dateFormat: e.target.value })}>
-            {DATE_FORMATS.map(d => <option key={d}>{d}</option>)}
-          </select>
-        </div>
-      </div>
-
       <div className="wiz-callout">
         <span className="wiz-callout-icon">✦</span>
         <p>
-          Preview: amounts will display like <strong>{currencyLabel}1,000,000</strong> across your reports and briefs.
+          Not sure yet? Keep the suggestions. Low-tolerance areas start tight on purpose, so some risks may show as
+          outside appetite at first.{anyOwn ? ` Categories you added start at ${options.appetite_start}, the middle of the scale.` : ''}{' '}
+          Your board can approve different thresholds later in Settings, Risk Appetite, and every change is kept in the Audit Log.
         </p>
       </div>
     </>
   );
 }
 
-function StepMatrix() {
-  return (
-    <>
-      <div className="wiz-toggle">
-        <button type="button" className="wiz-toggle-btn active">SmartRisk default</button>
-        <button type="button" className="wiz-toggle-btn" disabled title="Available in Settings after launch">
-          Custom
-        </button>
-      </div>
-
-      <div className="wiz-matrix-cols">
-        <div>
-          {WIZARD_BAND_ROWS.map(b => (
-            <div key={b.label} className="wiz-band">
-              <span className="wiz-swatch" style={{ background: b.color }} />
-              <span className="wiz-band-name">{b.label}</span>
-              <span className="wiz-band-range">{b.range}</span>
-            </div>
-          ))}
-        </div>
-        <div>
-          <p className="wiz-heatmap-label">Live preview</p>
-          <div className="wiz-heatmap">
-            {WIZARD_HEATMAP.map((color, i) => (
-              <div key={i} className="wiz-heatmap-cell" style={{ background: color }} />
-            ))}
-          </div>
-        </div>
-      </div>
-
-      <div className="wiz-callout">
-        <span className="wiz-callout-icon">✦</span>
-        <p>
-          Severity = Likelihood × Impact. Bands and colours are editable anytime from <strong>Settings → Risk Matrix</strong>.
-        </p>
-      </div>
-    </>
-  );
-}
-
-function StepCategories({ data, onChange }: StepProps) {
-  function updateCat(idx: number, key: 'name' | 'owner', val: string) {
-    const next = data.categories.map((c, i) => i === idx ? { ...c, [key]: val } : c);
-    onChange({ categories: next });
-  }
-
-  function addCat() {
-    if (data.categories.length >= 3) return;
-    onChange({ categories: [...data.categories, { name: '', owner: '' }] });
-  }
-
-  function removeCat(idx: number) {
-    if (data.categories.length === 1) return;
-    onChange({ categories: data.categories.filter((_, i) => i !== idx) });
-  }
-
-  function fillChip(example: string) {
-    const emptyIdx = data.categories.findIndex(c => !c.name.trim());
-    if (emptyIdx === -1) return;
-    updateCat(emptyIdx, 'name', example);
-  }
-
-  return (
-    <>
-      <div className="wiz-example-row">
-        <span className="wiz-example-label">Examples:</span>
-        {WIZARD_CATEGORY_EXAMPLES.map(ex => (
-          <button key={ex} type="button" className="wiz-example-chip" onClick={() => fillChip(ex)}>
-            {ex}
-          </button>
-        ))}
-      </div>
-
-      <div className="wiz-col-labels">
-        <span />
-        <span>Risk category</span>
-        <span>Owner name / role</span>
-        <span />
-      </div>
-
-      {data.categories.map((cat, idx) => (
-        <div key={idx} className="wiz-cat-row">
-          <div className="wiz-cat-num">{idx + 1}</div>
-          <input
-            type="text"
-            placeholder={`e.g. ${WIZARD_CATEGORY_EXAMPLES[idx] ?? 'Category'}`}
-            value={cat.name}
-            onChange={e => updateCat(idx, 'name', e.target.value)}
-          />
-          <input
-            type="text"
-            placeholder="e.g. Kola, Head of Strategy"
-            value={cat.owner}
-            onChange={e => updateCat(idx, 'owner', e.target.value)}
-          />
-          <button
-            type="button"
-            className="wiz-cat-remove"
-            onClick={() => removeCat(idx)}
-            title="Remove"
-          >
-            <X size={14} />
-          </button>
-        </div>
-      ))}
-
-      <button
-        type="button"
-        className="wiz-cat-add"
-        disabled={data.categories.length >= 3}
-        onClick={addCat}
-      >
-        <Plus size={14} />
-        Add another {data.categories.length >= 3 ? '(max 3 for now)' : ''}
-      </button>
-
-      <div className="wiz-callout">
-        <span className="wiz-callout-icon">✦</span>
-        <p>
-          These seed your Risk Register and drive <strong>Risk Distribution</strong> on the dashboard.
-          Owners don't need app access yet — you can invite them in the next step.
-        </p>
-      </div>
-    </>
-  );
-}
-
-function StepInvite({ data, onChange }: StepProps) {
-  function addRow() {
-    onChange({ invites: [...data.invites, { email: '', role: 'Analyst' }] });
-  }
-
-  function updateRow(idx: number, key: 'email' | 'role', val: string) {
-    const next = data.invites.map((inv, i) => i === idx ? { ...inv, [key]: val } : inv);
-    onChange({ invites: next });
-  }
-
-  function removeRow(idx: number) {
-    if (data.invites.length === 1) return;
-    onChange({ invites: data.invites.filter((_, i) => i !== idx) });
-  }
-
-  return (
-    <>
-      {data.invites.map((inv, idx) => (
-        <div key={idx} className="wiz-invite-row">
-          <input
-            type="email"
-            placeholder="name@company.com"
-            value={inv.email}
-            onChange={e => updateRow(idx, 'email', e.target.value)}
-          />
-          <select value={inv.role} onChange={e => updateRow(idx, 'role', e.target.value)}>
-            {WIZARD_ROLES.map(r => (
-              <option key={r} value={r}>{r === 'Owner' ? 'Admin' : r}</option>
-            ))}
-          </select>
-          {data.invites.length > 1 && (
-            <button type="button" onClick={() => removeRow(idx)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', display: 'flex', alignItems: 'center' }}>
-              <Trash2 size={15} />
-            </button>
-          )}
-        </div>
-      ))}
-      <button type="button" className="wiz-btn" style={{ marginBottom: '1.5rem' }} onClick={addRow}>
-        <Plus size={14} style={{ verticalAlign: -2, marginRight: 4 }} />
-        Add another
-      </button>
-    </>
-  );
-}
-
-// ── Main wizard component ─────────────────────────────────────────────────────
+// ── Wizard ───────────────────────────────────────────────────────────────────
 
 export default function CreateWorkspace() {
-  const navigate   = useNavigate();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { setToken, workspaces, setWorkspaces } = useAuthStore();
+  const { claims, setToken, workspaces, setWorkspaces } = useAuthStore();
+  const optionsQuery = useOnboardingOptions();
+  const options = optionsQuery.data;
 
-  const [step, setStep]     = useState(1);
-  const [data, setData]     = useState<WizardData>(INITIAL_DATA);
-  const [loading, setLoading]       = useState(false);
-  const [error, setError]           = useState('');
-  const [launchStep, setLaunchStep] = useState(0);
-  const intervalRef  = useRef<ReturnType<typeof setInterval> | null>(null);
-  const [launchSteps, setLaunchSteps] = useState<string[]>(['Preparing your workspace…', 'Almost ready…']);
+  const [step, setStep] = useState(1);
+  const [data, setData] = useState<OnboardingData>(EMPTY_ONBOARDING);
+  const [loaded, setLoaded] = useState(false);
+  const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+
+  // Resume a saved draft, or start with the default categories selected.
+  useEffect(() => {
+    if (!options || loaded) return;
+    let cancelled = false;
+    getOnboardingDraft()
+      .then(draft => {
+        if (cancelled) return;
+        if (draft) {
+          setData({ ...EMPTY_ONBOARDING, ...draft.data });
+          setStep(Math.min(3, Math.max(1, draft.step)));
+          setSavedAt(draft.updated_at);
+        } else {
+          setData({ ...EMPTY_ONBOARDING, categories: [...options.default_categories] });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setData({ ...EMPTY_ONBOARDING, categories: [...options.default_categories] });
+      })
+      .finally(() => { if (!cancelled) setLoaded(true); });
+    return () => { cancelled = true; };
+  }, [options, loaded]);
 
   useEffect(() => {
-    if (!loading) {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-      return;
-    }
-    intervalRef.current = setInterval(() => {
-      setLaunchStep(s => Math.min(s + 1, launchSteps.length - 1));
-    }, 1500);
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-  }, [loading, launchSteps.length]);
+    const t = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(t);
+  }, []);
 
-  function patch(updates: Partial<WizardData>) {
+  useEffect(() => () => { if (logoPreview) URL.revokeObjectURL(logoPreview); }, [logoPreview]);
+
+  function patch(updates: Partial<OnboardingData>) {
     setData(prev => ({ ...prev, ...updates }));
   }
 
-  function canAdvance(): boolean {
-    if (step === 1) return data.workspaceName.trim().length > 0;
-    if (step === 2) return !!data.industry && !!data.orgSize;
-    return true; // steps 3, 4, 5 are all optional / confirmatory
+  function onLogo(file: File | null) {
+    if (file && file.size > 2 * 1024 * 1024) {
+      setError('The logo must be 2 MB or smaller.');
+      return;
+    }
+    setError('');
+    setLogoFile(file);
+    setLogoPreview(file ? URL.createObjectURL(file) : null);
   }
 
-  async function handleLaunch() {
-    if (loading) return;
+  // Appetite values for every picked category: the SmartRisk suggestion for the
+  // sector, or the middle of the scale for a category the user added.
+  function withAppetite(d: OnboardingData, o: OnboardingOptions): OnboardingData {
+    const appetite: Record<string, number> = {};
+    d.categories.forEach(c => { appetite[c] = d.appetite[c] ?? startValue(o, d.sector, c); });
+    return { ...d, appetite };
+  }
+
+  function canContinue(): boolean {
+    if (!options) return false;
+    if (step === 1) return !!data.workspace_name?.trim();
+    if (step === 2) return data.categories.length >= options.min_categories;
+    return true;
+  }
+
+  async function save(nextStep: number, next: OnboardingData) {
+    const draft = await saveOnboardingDraft(nextStep, next);
+    setSavedAt(draft.updated_at);
+    setNow(Date.now());
+  }
+
+  async function goNext() {
+    if (!options || busy || !canContinue()) return;
+    setBusy(true);
     setError('');
-    setLaunchSteps(buildLaunchSteps(data));
-    setLaunchStep(0);
-    setLoading(true);
     try {
-      const ws = await apiPost<{ id: string; name: string }>('/api/v1/workspaces', {
-        name:         data.workspaceName.trim(),
-        org_name:     data.orgName.trim() || undefined,
-        industry:     data.industry     || undefined,
-        org_size:     data.orgSize      || undefined,
-        framework:    data.framework    || undefined,
-        timezone:     data.timezone     || undefined,
-        date_format:  data.dateFormat   || undefined,
-        currency:     data.currency     || undefined,
-      });
+      const next = step === 2 ? withAppetite(data, options) : data;
+      await save(step + 1, next);
+      setData(next);
+      setStep(step + 1);
+    } catch (err: unknown) {
+      setError(errorText(err, 'Could not save this step. Please try again.'));
+    } finally {
+      setBusy(false);
+    }
+  }
 
-      const authResult = await apiPost<LoginResult>('/api/v1/auth/select-workspace', {
-        tenant_id: ws.id,
-      });
+  function goBack() {
+    if (busy) return;
+    setError('');
+    setStep(s => Math.max(1, s - 1));
+  }
+
+  async function handleFinish(skipAppetite: boolean) {
+    if (!options || busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      const final = skipAppetite ? { ...data, appetite_skipped: true } : withAppetite(data, options);
+      await save(3, final);
+      const result = await finishOnboarding();
+
+      const authResult = await apiPost<LoginResult>('/api/v1/auth/select-workspace', { tenant_id: result.workspace_id });
       setToken(authResult.access_token);
-
-      // Add new workspace to store so sidebar reads it immediately
-      const newEntry: WorkspaceInfo = {
-        tenant_id: ws.id,
-        name: data.workspaceName.trim(),
+      const entry: WorkspaceInfo = {
+        tenant_id: result.workspace_id,
+        name: result.workspace_name,
         role: 'Owner',
         plan: 'TRIAL',
         modules: ['risk', 'incident'] as ModuleKey[],
       };
-      setWorkspaces([...workspaces.filter(w => w.tenant_id !== ws.id), newEntry]);
+      setWorkspaces([...workspaces.filter(w => w.tenant_id !== result.workspace_id), entry]);
 
-      const filledCategories = data.categories
-        .map(c => c.name.trim())
-        .filter(Boolean);
-      const filledOwners = data.categories
-        .map(c => c.owner.trim())
-        .filter(Boolean);
-      if (filledCategories.length > 0 || filledOwners.length > 0) {
+      // The workspace exists now, so a logo failure is reported on Ready, not here.
+      let logo: SetupLogoResult = 'none';
+      let logoError = '';
+      if (logoFile) {
         try {
-          const existing = await apiGet<{ category: string[]; risk_owner: string[] }>('/api/v1/lookups');
-          const patch: Record<string, string[]> = {};
-          if (filledCategories.length > 0) {
-            patch.category = Array.from(new Set([
-              ...(existing.category ?? []),
-              ...filledCategories,
-            ]));
-          }
-          if (filledOwners.length > 0) {
-            patch.risk_owner = Array.from(new Set([
-              ...(existing.risk_owner ?? []),
-              ...filledOwners,
-            ]));
-          }
-          await apiPatch('/api/v1/lookups', patch);
-        } catch {
-          // non-blocking
-        }
-      }
-
-      if (data.logoFile) {
-        try {
-          const { logo_url } = await uploadLogo(data.logoFile);
+          const { logo_url } = await uploadLogo(logoFile);
           await apiPatch('/api/v1/settings', { logo_url });
-        } catch {
-          // non-blocking — user can upload from Settings
+          logo = 'saved';
+        } catch (err: unknown) {
+          logo = 'failed';
+          logoError = errorText(err, 'Your logo could not be uploaded.');
         }
       }
 
-      for (const inv of data.invites) {
-        if (inv.email.trim()) {
-          apiPost('/api/v1/users', {
-            email: inv.email.trim(),
-            name:  inv.email.trim().split('@')[0],
-            role:  inv.role,
-          }).catch(() => {});
-        }
-      }
-
+      const ready: SetupReadyState = {
+        workspace: result.workspace_name,
+        organisation: (final.org_name ?? '').trim(),
+        categories: result.categories,
+        logo,
+        logoError,
+        appetiteSaved: result.appetite_saved,
+        appetiteSkipped: !!final.appetite_skipped,
+      };
       queryClient.clear();
-      navigate('/');
+      navigate('/workspaces/ready', { replace: true, state: ready });
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to create workspace. Please try again.');
-      setLoading(false);
+      setError(errorText(err, 'Could not finish setup. Nothing was created, so you can try again.'));
+      setBusy(false);
     }
   }
 
-  const progress = `${(step / 6) * 100}%`;
+  const railSubs = [
+    'Name, logo',
+    data.categories.length ? `Default matrix · ${data.categories.length} categories` : 'Matrix and categories',
+    'What Home flags',
+  ];
 
   return (
     <div className="wiz-shell">
-      {/* Left rail */}
       <div className="wiz-rail">
         <div>
           <div className="wiz-brand">
-            <img
-              src="https://smartrisksheets.com/wp-content/uploads/2025/09/cropped-Smartrisksheets-favicon-v2.png"
-              width="32" height="32"
-              alt="SmartRisk Pulse"
-              style={{ borderRadius: 7, flexShrink: 0 }}
-            />
+            <SrLogo size={32} borderRadius={7} />
             <span className="wiz-brand-name">SmartRisk Pulse</span>
           </div>
-          <p className="wiz-rail-eyebrow">Step {step} of 6</p>
-          <h2 className="wiz-rail-title">{step === 6 ? 'Almost there' : 'Set up your workspace'}</h2>
-          <p className="wiz-rail-copy">
-            {step === 6
-              ? 'Add teammates now, or skip and invite them anytime from Settings.'
-              : 'Your organization details appear in your sidebar, reports, and board briefs.'}
-          </p>
+          <h2 className="wiz-rail-title">Set up your workspace</h2>
+          <p className="wiz-rail-copy">Three short steps. Each one switches on part of your Home.</p>
         </div>
         <div className="wiz-checklist">
-          {STEPS.map((label, idx) => {
+          <div className="wiz-check-item done">
+            <span className="wiz-check-dot"><Check size={13} /></span>Account created
+          </div>
+          {STEP_TITLES.map((title, idx) => {
             const n = idx + 1;
             const state = n < step ? 'done' : n === step ? 'current' : 'todo';
             return (
-              <div key={label} className={`wiz-check-item ${state}`}>
+              <div key={title} className={`wiz-check-item ${state}`}>
                 <span className="wiz-check-dot">
-                  {state === 'done'    ? <Check size={13}  /> :
-                   state === 'current' ? <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#01b88e', display: 'inline-block' }} /> :
-                   <Circle size={13} />}
+                  {state === 'done' ? <Check size={13} /> : state === 'current' ? <span className="wiz-check-cur" /> : <Circle size={13} />}
                 </span>
-                {label}
+                <span>{title}<span className="wiz-check-sub">{railSubs[idx]}</span></span>
               </div>
             );
           })}
+          <div className="wiz-check-item todo">
+            <span className="wiz-check-dot"><Circle size={13} /></span>Ready
+          </div>
         </div>
+        <p className="wiz-rail-copy">Saved as you go. Close the tab and you pick up here.</p>
       </div>
 
-      {/* Right content */}
       <div className="wiz-content">
         <div className="wiz-panel">
           <div className="wiz-progress">
-            <div className="wiz-progress-fill" style={{ width: progress }} />
+            <div className="wiz-progress-fill" style={{ width: `${(step / 3) * 100}%` }} />
           </div>
-
-          <h2 className="wiz-panel-title">
-            {['Name your workspace', 'What industry are you in?', 'Framework & locale',
-              'Risk matrix & scoring bands', 'Name 3 risk categories', 'Invite your team'][step - 1]}
-          </h2>
+          <div className="wiz-step-head">
+            <span className="wiz-rail-eyebrow">Step {step} of 3</span>
+            {savedAt && <span className="wiz-upload-hint">{savedLabel(savedAt, now)}</span>}
+          </div>
+          <h2 className="wiz-panel-title">{STEP_TITLES[step - 1]}</h2>
           <p className="wiz-panel-sub">
             {[
-              'You can change any of this later in Settings.',
-              'Sets your default risk framework and AI tone.',
-              'Confirm or adjust — these apply across your whole workspace.',
-              'Severity = Likelihood × Impact. Fully editable in Settings after launch.',
-              'Pick any 3 that matter most right now. Add the rest later in Settings.',
-              'Optional — you can always add people later from Settings.',
+              'This is what your team sees at the top of Pulse. You can change all of it later in Settings.',
+              'Pick your sector and the categories your risks fall into. This switches on the Health score on your Home.',
+              'Set the highest residual score each category can carry. Any risk above its line shows as Outside appetite on your Home.',
             ][step - 1]}
           </p>
 
-          {error && <div className="wiz-error">{error}</div>}
+          {error && <div className="wiz-error" role="alert">{error}</div>}
 
-          {loading && (
-            <div style={{ margin: '0.5rem 0 1.25rem' }}>
-              <p style={{ fontSize: 13, fontWeight: 600, color: '#01b88e', marginBottom: 8 }}>
-                {launchSteps[launchStep]}
-              </p>
-              <div className="wiz-progress" style={{ marginBottom: 0 }}>
-                <div
-                  className="wiz-progress-fill"
-                  style={{ width: `${Math.min((launchStep / (launchSteps.length - 1)) * 95, 95)}%` }}
-                />
-              </div>
+          {optionsQuery.isError && (
+            <div className="wiz-error" role="alert">
+              Setup could not load.{' '}
+              <button type="button" className="wiz-btn-ghost" onClick={() => optionsQuery.refetch()}>Try again</button>
             </div>
           )}
 
-          {step === 1 && <StepWorkspace  data={data} onChange={patch} />}
-          {step === 2 && <StepIndustry   data={data} onChange={patch} />}
-          {step === 3 && <StepFramework  data={data} onChange={patch} />}
-          {step === 4 && <StepMatrix />}
-          {step === 5 && <StepCategories data={data} onChange={patch} />}
-          {step === 6 && <StepInvite     data={data} onChange={patch} />}
+          {(!options || !loaded) && !optionsQuery.isError && <p className="wiz-upload-hint" role="status">Loading…</p>}
 
-          <div className="wiz-footer">
-            {step === 1
-              ? <span />
-              : <button type="button" className="wiz-btn" onClick={() => setStep(s => s - 1)}>
-                  Back
-                </button>
-            }
+          {options && loaded && (
+            <>
+              {step === 1 && <JoinTeamCard />}
+              {step === 1 && (
+                <StepWorkspace
+                  data={data}
+                  onChange={patch}
+                  logoFile={logoFile}
+                  logoPreview={logoPreview}
+                  onLogo={onLogo}
+                  email={claims?.email ?? ''}
+                />
+              )}
+              {step === 2 && <StepScoring data={data} onChange={patch} options={options} />}
+              {step === 3 && <StepAppetite data={data} onChange={patch} options={options} />}
 
-            {step < 6
-              ? <button
-                  type="button"
-                  className="wiz-btn wiz-btn-primary"
-                  disabled={!canAdvance()}
-                  onClick={() => setStep(s => s + 1)}
-                >
-                  Continue
-                </button>
-              : <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                  <button type="button" className="wiz-btn-ghost" disabled={loading} onClick={handleLaunch}>
-                    Skip invites
+              <div className="wiz-footer">
+                {step === 1
+                  ? <span />
+                  : <button type="button" className="wiz-btn" disabled={busy} onClick={goBack}>Back</button>}
+                {step < 3 ? (
+                  <button type="button" className="wiz-btn wiz-btn-primary" disabled={busy || !canContinue()} onClick={goNext}>
+                    {busy ? 'Saving…' : 'Save and continue'}
                   </button>
-                  <button
-                    type="button"
-                    className="wiz-btn wiz-btn-launch"
-                    disabled={loading}
-                    onClick={handleLaunch}
-                  >
-                    {!loading && <Rocket size={15} />}
-                    {loading ? launchSteps[launchStep] : 'Launch workspace'}
-                  </button>
-                </div>
-            }
-          </div>
+                ) : (
+                  <div className="wiz-footer-actions">
+                    <button type="button" className="wiz-btn-ghost" disabled={busy} onClick={() => handleFinish(true)}>
+                      Skip for now
+                    </button>
+                    <button type="button" className="wiz-btn wiz-btn-launch" disabled={busy} onClick={() => handleFinish(false)}>
+                      {busy ? 'Setting up…' : 'Save and finish setup'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>

@@ -7,7 +7,7 @@ import type { LoginResult } from '../types/auth';
 import { SrLogo } from '../components/layout/SrLogo';
 import {
   validateEmail, validatePassword, validateConfirm,
-  validateName, getPasswordRules, type PasswordRuleState,
+  validateFirstName, validateLastName, getPasswordRules, type PasswordRuleState,
 } from '../utils/validation';
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
@@ -111,7 +111,8 @@ export default function Register() {
   const navigate = useNavigate();
   const { setToken } = useAuthStore();
 
-  const [name, setName]           = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName]   = useState('');
   const [email, setEmail]         = useState('');
   const [password, setPassword]   = useState('');
   const [confirm, setConfirm]     = useState('');
@@ -120,7 +121,8 @@ export default function Register() {
   const [existingAccount, setExistingAccount] = useState(false);
   const [showPwd, setShowPwd]     = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
-  const [nameErr, setNameErr]         = useState('');
+  const [firstErr, setFirstErr]       = useState('');
+  const [lastErr, setLastErr]         = useState('');
   const [emailErr, setEmailErr]       = useState('');
   const [passwordErr, setPasswordErr] = useState('');
   const [confirmErr, setConfirmErr]   = useState('');
@@ -128,22 +130,26 @@ export default function Register() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError('');
-    const nErr = validateName(name);
+    const fErr = validateFirstName(firstName);
+    const lErr = validateLastName(lastName);
     const eErr = validateEmail(email);
     const pErr = validatePassword(password);
     const cErr = validateConfirm(confirm, password);
-    setNameErr(nErr);
+    setFirstErr(fErr);
+    setLastErr(lErr);
     setEmailErr(eErr);
     setPasswordErr(pErr);
     setConfirmErr(cErr);
-    if (nErr || eErr || pErr || cErr) {
-      const firstId = nErr ? 'name' : eErr ? 'email' : pErr ? 'password' : 'confirm';
+    if (fErr || lErr || eErr || pErr || cErr) {
+      const firstId = fErr ? 'first_name' : lErr ? 'last_name' : eErr ? 'email' : pErr ? 'password' : 'confirm';
       (document.getElementById(firstId) as HTMLInputElement)?.focus();
       return;
     }
     setLoading(true);
     try {
-      const result = await apiPost<LoginResult>('/api/v1/auth/register', { name, email, password });
+      const result = await apiPost<LoginResult>('/api/v1/auth/register', {
+        first_name: firstName.trim(), last_name: lastName.trim(), email, password,
+      });
       setToken(result.access_token);
       if (result.requires_workspace_select) navigate('/workspaces');
       else if (result.workspaces && result.workspaces.length > 0) navigate('/');
@@ -247,20 +253,37 @@ export default function Register() {
                 <div className="auth-or-divider">or continue with email</div>
               </>
             )}
-            <div className="auth-field">
-              <label htmlFor="name">Full name</label>
-              <input
-                id="name"
-                type="text"
-                value={name}
-                onChange={(e) => { setName(e.target.value); if (nameErr) setNameErr(''); }}
-                onBlur={(e) => setNameErr(validateName(e.target.value))}
-                placeholder="Your full name"
-                autoComplete="name"
-                className={nameErr ? 'invalid' : ''}
-              />
-              {nameErr && <p className="form-error">{nameErr}</p>}
+            <div className="auth-name-row">
+              <div className="auth-field">
+                <label htmlFor="first_name">First name</label>
+                <input
+                  id="first_name"
+                  type="text"
+                  value={firstName}
+                  onChange={(e) => { setFirstName(e.target.value); if (firstErr) setFirstErr(''); }}
+                  onBlur={(e) => setFirstErr(validateFirstName(e.target.value))}
+                  autoComplete="given-name"
+                  className={firstErr ? 'invalid' : ''}
+                />
+                {firstErr && <p className="form-error">{firstErr}</p>}
+              </div>
+              <div className="auth-field">
+                <label htmlFor="last_name">Last name</label>
+                <input
+                  id="last_name"
+                  type="text"
+                  value={lastName}
+                  onChange={(e) => { setLastName(e.target.value); if (lastErr) setLastErr(''); }}
+                  onBlur={(e) => setLastErr(validateLastName(e.target.value))}
+                  autoComplete="family-name"
+                  className={lastErr ? 'invalid' : ''}
+                />
+                {lastErr && <p className="form-error">{lastErr}</p>}
+              </div>
             </div>
+            {firstName.trim() && (
+              <p className="field-hint auth-name-hint">Home will greet you as "Good morning, {firstName.trim().replace(/\s+/g, ' ')}".</p>
+            )}
             <div className="auth-field">
               <label htmlFor="email">Work email</label>
               <input

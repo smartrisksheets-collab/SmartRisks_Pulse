@@ -4,6 +4,64 @@ Older session summaries moved out of `SMARTRISK_V2_BUILD.md`, which keeps only t
 
 ---
 
+### Session 30: November 15 to 16, 2026, Partner UI Fixes, Ask Pulse Stage 1, AI Status From the Matrix
+
+Built on staging 0354ca2. Everything was delivered as patches in this order. Claude did not commit or push.
+
+**Completed:**
+
+**1. Partner UI corrections (`ui-fixes-1-3.patch`, 11 frontend files)**
+- The Home greeting reads "<org>'s risk posture is <status>" in bold. `<org>` is `tenants.workspace_settings.organization`, falling back to the workspace name.
+- The email is no longer shown in the sidebar profile or the topbar menu. They show `first_name` from the Home data, or "My account".
+- The plan value `PAID` is shown as PRO through `planLabel()` and `PLAN_LABELS` in `src/utils/constants.ts`, in WorkspacePicker, Users and Settings too. This is a label only: the stored value stays `PAID`, with no migration.
+- New class `.pl-stat.pl-stat-solid` (white, with a dark-mode rule on `var(--pl-bg-card)`) is used on the Overview, Incidents and Trends stat cards.
+- Checks: npm ci, lint (0 errors, 2 existing warnings) and build pass.
+
+**2. Ask Pulse stage 1 (`ask-pulse-stage1.patch`, the partner's patch corrected)**
+- The partner wrote it on main 8a7e872. It was rebased onto staging.
+- Fixes: an Analytics help entry was added (47 entries, up from 18), the add-risk and incident-workflow entries point to `/risks/new` and `/incidents/new`, `HELP_REPORT_EMAIL` is blanked in `backend/conftest.py`, inline styles in `Help.tsx` moved to `index.css`, and an em dash was removed.
+- Checks: 102 pytest pass on a fresh PostgreSQL 16 database (the partner's original had 1 failure). Pinned ruff 0.8.0 is clean on the changed files. Frontend lint and build pass.
+
+**3. AI insight status from the workspace matrix (`ai-status-matrix.patch`)**
+- `risk_status.ai_status` and `ai_status_thresholds` work out Escalate, Monitor, Review and Stable from band position (`level_index`) and the matrix's own band minimums, never from band names. The help registry uses the same functions.
+- Removed `AI_STATUS_ESCALATE_MIN`, `AI_STATUS_MONITOR_MIN` and `_derive_status` from `ai_risk.py`.
+- The 3 existing ruff errors were fixed (admin_panel E712, pptx_report E731, report F541), so `ruff check .` is fully clean.
+- `ADMIN_PERMS` moved from `Help.tsx` to `src/utils/permissions.ts`.
+- Checks: 110 pytest pass, ruff clean, migrations round trip, lint and build pass.
+
+**4. Top two bands escalate on 5-band matrices (`ai-status-5band-top-two.patch`, add-on to 3)**
+- New `ai_escalate_index(bands)`: on 5 bands, Critical and Extreme (17 and up) escalate, High monitors and Medium reviews. Other band counts are unchanged. The help text reads "Critical or Extreme".
+- The regenerated `ai-status-matrix.patch` already contains this change. The add-on is only for a tree that has the first version of patch 3.
+- Checks: 111 pytest pass, ruff clean.
+
+**5. Ask Pulse short queries (`ask-pulse-short-queries.patch`, frontend only)**
+- Cause: `src/utils/helpSearch.ts` dropped add, new, change, changing, edit, update, set and setup as filler words. So "add" found nothing and "add a risk" searched only for "risk".
+- Fix: these words are kept as search terms, with synonyms (add, create, new, record; change, edit, update, modify; set and setup to settings).
+- New `frontend/tests/helpSearch.test.ts` (5 node:test cases) and the npm script `test:search`. It needs Node 23.6 or later, so it is not in CI (CI runs Node 20).
+- Checks: 5 of 5 pass (4 fail on the old code), lint and build pass, 111 backend pytest pass.
+
+**Migrations:** none.
+
+**Files changed this session:**
+
+Backend: `app/api/v1/routes/help.py`, `app/core/config.py`, `app/main.py`, `app/scheduler/jobs.py`, `app/schemas/help.py`, `app/services/ask_pulse.py`, `app/services/email.py`, `app/services/help_registry.py`, `app/services/ai_risk.py`, `app/services/risk_status.py`, `app/services/admin_panel.py`, `app/services/pptx_report.py`, `app/services/report.py`, `conftest.py`, `tests/test_ai_status.py` (new), `tests/test_help_coverage.py`, `tests/test_help_registry.py`
+
+Frontend: `src/components/analytics/IncidentsTab.tsx`, `src/components/analytics/OverviewTab.tsx`, `src/components/analytics/TrendsTab.tsx`, `src/components/layout/Sidebar.tsx`, `src/components/layout/Topbar.tsx`, `src/components/help/AskPulse.tsx`, `src/pages/Home.tsx`, `src/pages/Settings.tsx`, `src/pages/Users.tsx`, `src/pages/WorkspacePicker.tsx`, `src/pages/Help.tsx`, `src/types/help.ts`, `src/utils/constants.ts`, `src/utils/helpSearch.ts`, `src/utils/permissions.ts`, `src/index.css`, `tests/helpSearch.test.ts` (new), `package.json`
+
+Docs: `docs/SMARTRISK_V2_BUILD.md`, `docs/SMARTRISK_V2_DECISIONS.md`, `docs/session_archive.md` (new)
+
+**Status:** All 5 patches delivered. The user applied patches 1 to 3 locally. Patches 4 and 5 and this docs patch are still to be applied, then everything is pushed to staging.
+
+**Incomplete (first tasks next session):**
+1. Apply `ai-status-5band-top-two.patch` (if not yet applied) and `ask-pulse-short-queries.patch`, run `pytest`, `ruff check .`, `npm run test:search`, `npm run lint` and `npm run build`, then push everything to staging.
+2. Check Ask Pulse on staging: "add", "add a risk", "How do I add a risk?" and "export" should each show the matching entry first.
+3. On a 5-band workspace, generate AI insights for a Critical risk (expect Escalate) and a High risk (expect Monitor).
+4. Partner: send the 48-topic Ask Pulse document, then build Ask Pulse stage 2 (redesigned UI).
+5. Get Started step 1 still says "risk exposure index". Reword it.
+6. `.github/workflows/ci.yml` does not set `ADMIN_JWT_SECRET`, which the backend tests need. Add it to the CI env.
+
+---
+
 ### Session 29: November 13 to 14, 2026, Pulse UI Redesign Rollout (Steps 1 to 7)
 
 The partner's UI pack (pl- tokens and 13 screens) was built in 7 steps, each delivered as a patch with a notes file, then pushed by the user.

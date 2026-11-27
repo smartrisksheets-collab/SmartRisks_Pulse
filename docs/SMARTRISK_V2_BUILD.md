@@ -3,7 +3,7 @@
 **Product:** SmartRisk Pulse v2
 **Stack:** FastAPI + React + Supabase + Render + Vercel
 **Setup document:** SMARTRISK_V2_SETUP.md
-**Last updated:** November 21, 2026
+**Last updated:** November 27, 2026
  
 ---
  
@@ -15,9 +15,71 @@ At the end of every session Claude outputs a fresh version of this file with all
  
 ---
  
-**Phase:** Product polish and hardening. Pulse UI redesign rolled out (Home, Analytics, Register, Incidents, Report Builder). Ask Pulse help live. Control effectiveness scale switch still locked pending staging tests.
-**Status:** Session 32, November 21, 2026: workspace brand colors in PDF and PPTX reports and in the app, pushed to staging in 246a4c2. Previous: Session 31, November 16 to 17, 2026 (Analytics paging, risk evidence upload, workspace clock, public incident form). Sessions 29 and older are in `docs/session_archive.md`.
-**Next action:** Begin next session by reading SMARTRISK_V2_SETUP.md, SMARTRISK_V2_DECISIONS.md, then this file. First task: the Session 32 incomplete list. Then the Session 31 incomplete list, then confirm migrations 057, 058, 059 and 062 to 066 have run on every database (including Supabase), then the open Session 28 partner items and the carried-over lists in `docs/session_archive.md`.
+**Phase:** Product polish and hardening. Pulse UI redesign rolled out. Onboarding redesign built (setup status, 3-step wizard with server draft, My profile, join by email domain, SmartRisk suggested appetite). Control effectiveness scale switch still locked pending staging tests.
+**Status:** Session 33, November 27, 2026: onboarding redesign delivered as 7 patches on staging 7d97d38 (migrations 072 to 076), applied by the user. Previous: Session 32, November 21, 2026 (workspace brand colors, pushed in 246a4c2) and Session 31, November 16 to 17, 2026. Sessions 30 and older are in `docs/session_archive.md`.
+**Next action:** Begin next session by reading SMARTRISK_V2_SETUP.md, SMARTRISK_V2_DECISIONS.md, then this file. First task: run SQL 072 to 076 in Supabase before the backend deploys, then the Session 33 incomplete list, then the Session 32 and Session 31 incomplete lists.
+
+---
+
+### Session 33: November 27, 2026, Onboarding Redesign (Setup Status, 3-Step Wizard, Profile, Join by Domain, Suggested Appetite)
+
+Built on staging 7d97d38 from partner Eddu's onboarding pack (7 screens and build notes). Delivered as 7 patches in `fixes/`, applied in this order. Claude did not commit or push.
+
+1. `onboarding-batch1-setup-status.patch`
+2. `onboarding-batch2-names-appetite-audit.patch`
+3. `onboarding-batch3-wizard-draft.patch`
+4. `onboarding-batch3-fix-rls-sectors.patch`
+5. `onboarding-batch4-profile-photo.patch`
+6. `onboarding-batch5-join-by-domain.patch`
+7. `onboarding-batch6-suggested-appetite.patch`
+
+**Completed:**
+
+**1. Setup status (batch 1)**
+- `home.build_setup` returns the steps, done count and one percent for the whole workspace. The frontend no longer works it out (`setupProgress` removed from `links.ts`).
+- Steps: workspace, matrix (done once non-blank categories are saved), appetite, first risk, first incident, team. Admin-only steps show to others with an admin note.
+- A "Setup status" pill in the top bar opens `SetupStatusPanel`. `GetStartedDrawer` is deleted. New Ready screen at `/workspaces/ready`.
+
+**2. First and last name, appetite audit (batch 2)**
+- Migration 072: `accounts.first_name` and `last_name`, backfilled from `name` (split at the first space). `name` is kept and still written.
+- `services/account_name.py` is the only place names are written. Sign-up takes first and last name (last name required) and still accepts the old single `name`. Google uses given and family name.
+- Home greets by `first_name`. Appetite set, change and delete write Audit Log rows (module Settings).
+
+**3. 3-step setup wizard with a server draft (batch 3 and its fix)**
+- Migration 073: `onboarding_drafts`, one row per account (step 1 to 3, answers as JSON). Each step saves, so setup resumes on any device. Drafts untouched for 30 days are purged by the daily clean-up. `Finance` workspaces moved to `Other Financial Services`.
+- Migration 074: RLS on `onboarding_drafts`, no access for `anon` and `authenticated` (073 had missed it).
+- Endpoints: `GET /onboarding/options`, `GET` and `PUT /onboarding/draft`, `POST /onboarding/finish`, signed-in account only. Finish creates the workspace, categories (replacing the defaults) and thresholds in one transaction, then deletes the draft. A second Finish gets 404.
+- One sector list of 10 in `services/onboarding.py`, used by the wizard and Settings (Industry is now Sector). Healthcare removed. A legacy value stays selectable in Settings.
+- `create_workspace` moved into the service, so `POST /workspaces` and Finish check the workspace limit in one place.
+
+**4. My profile and photo (batch 4)**
+- Migration 075: `accounts.avatar_url`. `GET` and `PATCH /me`, `POST` and `DELETE /me/photo`.
+- Photos go in the `workspace-logos` bucket under `avatars/<account id>/` through the shared `upload_image`. The weekly orphan sweep now also keeps files an account points at.
+- The top bar, sidebar, Users page and Home hero show the photo, else initials from first and last name. The menu gains My profile. Settings shows in the menu only with `manage_settings`.
+- The Risk Brief greets the reader by their saved first name.
+
+**5. Join by email domain (batch 5)**
+- Migration 076: `tenants.join_domain` and `join_requests` (RLS locked down).
+- An Admin (`manage_settings`) switches it on in Users. It always uses the Admin's own sign-in domain, and personal email domains are refused. Off by default.
+- Newcomers with that domain see the workspace on setup step 1 and ask to join. The Admin approves as Analyst or Manager (never Admin, user limit applies) or declines. All steps are audited.
+- 18 unused wizard CSS classes removed.
+
+**6. SmartRisk suggested appetite (batch 6)**
+- `SECTOR_SUGGESTIONS` (10 sectors, from Eddu's "SmartRisk suggested appetite thresholds by sector", November 2026). Picking a sector pre-fills its categories, and step 3 starts each one at its suggested threshold. Categories the user adds start at 13.
+- "SmartRisk suggested" banner, per-row hint and Reset to suggested. The guide PDF is served from `frontend/public/docs/` and linked in setup and in Settings, Risk Appetite.
+
+**Migrations:** 072 to 076, hand-written SQL with down files. Alembic head is now 076. Each must run in Supabase before the backend deploys.
+
+**Files changed this session:** see the File tables in each `fixes/onboarding-batch*.md`.
+
+**Checks (sandbox, fresh checkout of 7d97d38 with all 7 patches):** 278 pytest pass on PostgreSQL 16, ruff 0.8.0 clean, tsc, lint (0 errors) and build pass. Each migration upgraded, downgraded and upgraded again, and its SQL ran twice. Browser runs passed for sign-up, the wizard (with resume after reload), Ready at 50%, My profile, join by domain (ask, approve, open), and suggested appetite.
+
+**Incomplete (first tasks next session):**
+1. Run SQL 072 to 076 in Supabase (staging, then production) before each backend deploy, and run the checks in each notes file.
+2. Test what the sandbox could not: logo and photo upload to Supabase storage, Google sign-in with given and family name, and a real Risk Brief email.
+3. Join requests send no emails yet (Admin on a new request, newcomer on approval). Add them.
+4. Category notes under each appetite row (mock 04) need text from Eddu for the Technology, Government and Energy categories.
+5. Sign-up does not verify email ownership. Join by domain relies on Admin approval for now.
 
 ---
 
@@ -120,64 +182,6 @@ Docs: `docs/SMARTRISK_V2_BUILD.md`, `docs/SMARTRISK_V2_DECISIONS.md`, `docs/sess
 4. Test the public incident link end to end: workspace severity levels show, submit with a title, time and confidence, approve, then check the incident.
 5. Reskin the public risk form (`/external/risk`) when the partner sends its design. It still uses the old `ext-` styles.
 6. Carried from Session 30 and not confirmed this session: the Ask Pulse checks ("add", "add a risk", "export"), the 5-band AI status check, and adding `ADMIN_JWT_SECRET` to `.github/workflows/ci.yml` (still missing).
-
----
-
-### Session 30: November 15 to 16, 2026, Partner UI Fixes, Ask Pulse Stage 1, AI Status From the Matrix
-
-Built on staging 0354ca2. Everything was delivered as patches in this order. Claude did not commit or push.
-
-**Completed:**
-
-**1. Partner UI corrections (`ui-fixes-1-3.patch`, 11 frontend files)**
-- The Home greeting reads "<org>'s risk posture is <status>" in bold. `<org>` is `tenants.workspace_settings.organization`, falling back to the workspace name.
-- The email is no longer shown in the sidebar profile or the topbar menu. They show `first_name` from the Home data, or "My account".
-- The plan value `PAID` is shown as PRO through `planLabel()` and `PLAN_LABELS` in `src/utils/constants.ts`, in WorkspacePicker, Users and Settings too. This is a label only: the stored value stays `PAID`, with no migration.
-- New class `.pl-stat.pl-stat-solid` (white, with a dark-mode rule on `var(--pl-bg-card)`) is used on the Overview, Incidents and Trends stat cards.
-- Checks: npm ci, lint (0 errors, 2 existing warnings) and build pass.
-
-**2. Ask Pulse stage 1 (`ask-pulse-stage1.patch`, the partner's patch corrected)**
-- The partner wrote it on main 8a7e872. It was rebased onto staging.
-- Fixes: an Analytics help entry was added (47 entries, up from 18), the add-risk and incident-workflow entries point to `/risks/new` and `/incidents/new`, `HELP_REPORT_EMAIL` is blanked in `backend/conftest.py`, inline styles in `Help.tsx` moved to `index.css`, and an em dash was removed.
-- Checks: 102 pytest pass on a fresh PostgreSQL 16 database (the partner's original had 1 failure). Pinned ruff 0.8.0 is clean on the changed files. Frontend lint and build pass.
-
-**3. AI insight status from the workspace matrix (`ai-status-matrix.patch`)**
-- `risk_status.ai_status` and `ai_status_thresholds` work out Escalate, Monitor, Review and Stable from band position (`level_index`) and the matrix's own band minimums, never from band names. The help registry uses the same functions.
-- Removed `AI_STATUS_ESCALATE_MIN`, `AI_STATUS_MONITOR_MIN` and `_derive_status` from `ai_risk.py`.
-- The 3 existing ruff errors were fixed (admin_panel E712, pptx_report E731, report F541), so `ruff check .` is fully clean.
-- `ADMIN_PERMS` moved from `Help.tsx` to `src/utils/permissions.ts`.
-- Checks: 110 pytest pass, ruff clean, migrations round trip, lint and build pass.
-
-**4. Top two bands escalate on 5-band matrices (`ai-status-5band-top-two.patch`, add-on to 3)**
-- New `ai_escalate_index(bands)`: on 5 bands, Critical and Extreme (17 and up) escalate, High monitors and Medium reviews. Other band counts are unchanged. The help text reads "Critical or Extreme".
-- The regenerated `ai-status-matrix.patch` already contains this change. The add-on is only for a tree that has the first version of patch 3.
-- Checks: 111 pytest pass, ruff clean.
-
-**5. Ask Pulse short queries (`ask-pulse-short-queries.patch`, frontend only)**
-- Cause: `src/utils/helpSearch.ts` dropped add, new, change, changing, edit, update, set and setup as filler words. So "add" found nothing and "add a risk" searched only for "risk".
-- Fix: these words are kept as search terms, with synonyms (add, create, new, record; change, edit, update, modify; set and setup to settings).
-- New `frontend/tests/helpSearch.test.ts` (5 node:test cases) and the npm script `test:search`. It needs Node 23.6 or later, so it is not in CI (CI runs Node 20).
-- Checks: 5 of 5 pass (4 fail on the old code), lint and build pass, 111 backend pytest pass.
-
-**Migrations:** none.
-
-**Files changed this session:**
-
-Backend: `app/api/v1/routes/help.py`, `app/core/config.py`, `app/main.py`, `app/scheduler/jobs.py`, `app/schemas/help.py`, `app/services/ask_pulse.py`, `app/services/email.py`, `app/services/help_registry.py`, `app/services/ai_risk.py`, `app/services/risk_status.py`, `app/services/admin_panel.py`, `app/services/pptx_report.py`, `app/services/report.py`, `conftest.py`, `tests/test_ai_status.py` (new), `tests/test_help_coverage.py`, `tests/test_help_registry.py`
-
-Frontend: `src/components/analytics/IncidentsTab.tsx`, `src/components/analytics/OverviewTab.tsx`, `src/components/analytics/TrendsTab.tsx`, `src/components/layout/Sidebar.tsx`, `src/components/layout/Topbar.tsx`, `src/components/help/AskPulse.tsx`, `src/pages/Home.tsx`, `src/pages/Settings.tsx`, `src/pages/Users.tsx`, `src/pages/WorkspacePicker.tsx`, `src/pages/Help.tsx`, `src/types/help.ts`, `src/utils/constants.ts`, `src/utils/helpSearch.ts`, `src/utils/permissions.ts`, `src/index.css`, `tests/helpSearch.test.ts` (new), `package.json`
-
-Docs: `docs/SMARTRISK_V2_BUILD.md`, `docs/SMARTRISK_V2_DECISIONS.md`, `docs/session_archive.md` (new)
-
-**Status:** All 5 patches delivered. The user applied patches 1 to 3 locally. Patches 4 and 5 and this docs patch are still to be applied, then everything is pushed to staging.
-
-**Incomplete (first tasks next session):**
-1. Apply `ai-status-5band-top-two.patch` (if not yet applied) and `ask-pulse-short-queries.patch`, run `pytest`, `ruff check .`, `npm run test:search`, `npm run lint` and `npm run build`, then push everything to staging.
-2. Check Ask Pulse on staging: "add", "add a risk", "How do I add a risk?" and "export" should each show the matching entry first.
-3. On a 5-band workspace, generate AI insights for a Critical risk (expect Escalate) and a High risk (expect Monitor).
-4. Partner: send the 48-topic Ask Pulse document, then build Ask Pulse stage 2 (redesigned UI).
-5. Get Started step 1 still says "risk exposure index". Reword it.
-6. `.github/workflows/ci.yml` does not set `ADMIN_JWT_SECRET`, which the backend tests need. Add it to the CI env.
 
 ---
 

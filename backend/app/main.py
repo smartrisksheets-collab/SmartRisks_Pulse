@@ -55,6 +55,9 @@ from app.api.v1.routes.appetite import router as appetite_router
 from app.api.v1.routes.submissions import router as submissions_router
 from app.api.v1.routes.incident_severity import router as incident_severity_router
 from app.api.v1.routes.help import router as help_router
+from app.api.v1.routes.onboarding import router as onboarding_router
+from app.api.v1.routes.profile import router as profile_router
+from app.api.v1.routes.join import router as join_router
 from app.scheduler.jobs import (
     job_incident_escalation,
     job_daily_snapshot,
@@ -248,6 +251,9 @@ app.include_router(appetite_router,        prefix="/api/v1")
 app.include_router(incident_severity_router, prefix="/api/v1")
 app.include_router(submissions_router,     prefix="/api/v1")
 app.include_router(help_router,            prefix="/api/v1")
+app.include_router(onboarding_router,      prefix="/api/v1")
+app.include_router(profile_router,         prefix="/api/v1")
+app.include_router(join_router,            prefix="/api/v1")
 
 app.include_router(admin_auth_router,       prefix="/api")
 app.include_router(admin_overview_router,   prefix="/api")

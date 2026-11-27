@@ -211,11 +211,14 @@ def build_help(m: MatrixConfigResponse) -> list[HelpEntry]:
                 "Each risk is compared with the threshold for its category: **Exceeds** when residual is "
                 f"above the threshold, **Near** when it is above {near}% of it, and **Within** otherwise. "
                 "A category with no threshold shows No threshold. In the board report, Top Risks lists "
-                "appetite breaches first."
+                "appetite breaches first. New workspaces start from SmartRisk suggested thresholds for "
+                "their sector (a PDF guide is linked on this tab). They are starting points, not regulatory "
+                "limits: set yours in line with your board-approved risk appetite."
             ),
             where="Settings › Risk Appetite",
             route="/settings?tab=appetite", requires=MANAGE_SETTINGS,
-            keywords=["appetite", "tolerance", "threshold", "limit", "breach", "exceeds", "within", "near"],
+            keywords=["appetite", "tolerance", "threshold", "limit", "breach", "exceeds", "within", "near",
+                      "suggested", "sector", "smartrisk suggested"],
             related=["residual-risk", "enterprise-risk-health"],
         ),
         HelpEntry(
@@ -660,6 +663,42 @@ def build_help(m: MatrixConfigResponse) -> list[HelpEntry]:
             route="/audit", requires=MANAGE_SETTINGS,
             keywords=["audit", "log", "history", "who changed", "changed", "trail", "changes", "accountability",
                       "risk history", "record history"],
+        ),
+        HelpEntry(
+            id="my-profile", group="Users & access", title="My profile", kind="page",
+            what="Your own first name, last name and photo.",
+            steps=[
+                "Open the menu under your initials or photo in the top bar.",
+                "Choose **My profile**.",
+            ],
+            how=(
+                "Change your name or upload, change or remove your photo (PNG, JPEG or WebP, up to 2 MB). "
+                "Your photo shows in the top bar and is never used in reports. Your sign-in email can't be "
+                "changed here. Home and the Risk Brief greet you by your first name."
+            ),
+            route="/profile",
+            keywords=["profile", "my profile", "photo", "picture", "avatar", "headshot", "name", "first name",
+                      "last name", "my account"],
+        ),
+        HelpEntry(
+            id="join-by-domain", group="Users & access", title="Let colleagues ask to join", kind="setting",
+            what="People who sign up with your work email domain can ask to join this workspace.",
+            steps=[
+                "Open **Users**.",
+                "Under **Join by email domain**, tick the box for your @domain.",
+                "When someone asks, choose their role and **Approve**, or **Decline**.",
+            ],
+            how=(
+                "It uses your own sign-in domain and is off until an Admin switches it on. Personal email "
+                "providers such as gmail.com can't be used. Nobody joins without an Admin's approval, new "
+                "members are never made Admin this way, and your user limit still applies. Every switch, "
+                "request, approval and decline is in the Audit Log."
+            ),
+            where="Users › Join by email domain",
+            route="/users", requires=MANAGE_SETTINGS,
+            keywords=["join", "domain", "email domain", "colleague", "request", "approve", "team", "sign up",
+                      "self join", "join request"],
+            related=["invite-users"],
         ),
         HelpEntry(
             id="workspaces", group="Users & access", title="Switch or create a workspace", kind="how-to",

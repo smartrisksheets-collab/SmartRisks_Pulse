@@ -1,5 +1,5 @@
 // Where each Home item opens. Paths only; the backend decides what is listed.
-import type { HomeAction, HomeSetup } from '../../types/home';
+import type { HomeAction } from '../../types/home';
 
 export const riskPath = (id: string) => `/risks?risk=${encodeURIComponent(id)}`;
 export const incidentPath = (id: string) => `/incidents?incident=${encodeURIComponent(id)}`;
@@ -28,12 +28,6 @@ export function localDateLine(iso: string | null): string {
   if (!m) return '';
   const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
   return d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
-}
-
-// Share of first-time setup steps done, for the hero progress bar.
-export function setupProgress(setup: HomeSetup, hasRisk: boolean, hasIncident: boolean): number {
-  const flags = [true, ...(hasRisk ? [setup.appetite, setup.risks] : []), ...(hasIncident ? [setup.incidents] : []), setup.team];
-  return Math.round((flags.filter(Boolean).length / flags.length) * 100);
 }
 
 // The 60-second tour steps, in page order.

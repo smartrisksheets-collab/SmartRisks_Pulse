@@ -43,11 +43,12 @@ export function validateConfirm(value: string, against: string): string {
   return '';
 }
 
-export function validateName(value: string): string {
-  const v = value.trim();
-  if (!v) return 'Full name is required';
-  if (v.length < 2) return 'Name must be at least 2 characters';
-  return '';
+export function validateFirstName(value: string): string {
+  return value.trim() ? '' : 'First name is required';
+}
+
+export function validateLastName(value: string): string {
+  return value.trim() ? '' : 'Last name is required';
 }
 
 export function getPasswordStrength(value: string): PasswordStrength | '' {
